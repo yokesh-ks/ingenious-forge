@@ -18,7 +18,7 @@ import { join } from "node:path";
 
 const ROOT = process.cwd();
 const INPUT_PATH = join(ROOT, ".docs-input", "pages.json");
-const OUTPUT_DIR = join(ROOT, "docs", "reference", "deepseek-harness");
+const OUTPUT_DIR = join(ROOT, "docs", "reference", "openhands");
 
 function readPages() {
   if (!existsSync(INPUT_PATH)) {
