@@ -209,7 +209,7 @@ loop inside Claude with no install required.
 ## Source spec
 
 This skill operationalises a written spec on divergent ideation. The
-original prose is preserved in `SOURCE-SPEC.md` for reference. The
+original prose is preserved in `references/source-spec.md`. The
 implementation choices made here (parallel isolated Agent calls,
 mechanical generator/critic split, frame-based branching) follow from
 that spec.
