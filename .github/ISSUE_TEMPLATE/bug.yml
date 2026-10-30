@@ -68,6 +68,8 @@ body:
         - Critical — data loss, security issue, or Forge unusable with no workaround
         - Major — a feature is broken and a workaround exists
         - Minor — cosmetic or a small annoyance
+    validations:
+      required: true
   - type: textarea
     id: regression-test
     attributes:
