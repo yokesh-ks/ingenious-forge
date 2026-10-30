@@ -34,6 +34,12 @@ maintainer approves that exact change in chat (Principles I and IV).
 | C. Replan | `docs/PRD.md` changed, a new ADR in `docs/decisions/`, or a retrospective finding. | Updated issues, `stale` labels proposed, dated `Decision:` lines. |
 | D. Status | "Status", "what's next", "how far along is Phase N". | A progress report; nothing written. |
 
+A **product epic** is an issue labelled `epic` *and* assigned to a
+`Phase <n> — <name>` milestone. An `epic` issue with no Phase milestone
+(such as the existing process epics #3 and #16) is a **process epic**:
+leave it out of every mode, never edit it and never count it as a product
+epic.
+
 If product epics already exist and the user asks to "plan the roadmap",
 run Mode D first and show what exists; do not create a second set.
 
