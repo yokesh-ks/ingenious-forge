@@ -65,6 +65,11 @@ unless one is introduced or an explicit test command is supplied.
 
 - Product docs describe Forge's own features only; do not name competing
   products in `docs/PRD.md`.
+- Forge is open source under Apache 2.0 (`LICENSE`, `NOTICE`). Third-party
+  material keeps its own license file beside it: vendored skills carry
+  their `LICENSE`, and each `docs/reference/<project>/` keeps the
+  project's `LICENSE` and is listed in `docs/reference/README.md`. Record
+  new third-party material in `NOTICE`.
 - Commits and PRs carry no AI attribution: no `Co-Authored-By` trailers, no
   "Generated with" lines, and no "Assisted by the code-assist SOP" footer,
   even where an SOP suggests one.
