@@ -55,16 +55,16 @@ forge_check_title() {
 	return $_status
 }
 
-# Check the commit message in file $1 for AI attribution, using the
-# patterns in ai-attribution-patterns.txt.
-forge_check_attribution() {
+# Print the lines of text $1 that match ai-attribution-patterns.txt, one
+# per line and without repeats. Returns 2 if the pattern file is missing.
+forge_attribution_hits() {
 	_patterns=$FORGE_HOOKS_DIR/ai-attribution-patterns.txt
 	if [ ! -r "$_patterns" ]; then
 		forge_err "cannot read $_patterns"
-		return 1
+		return 2
 	fi
 
-	_body=$(forge_message_body "$1")
+	_body=$1
 	_coauthors=$(printf '%s\n' "$_body" | grep -iE '^[[:space:]]*co-authored-by:')
 	_hits=
 	while read -r _kind _pattern; do
@@ -80,10 +80,16 @@ forge_check_attribution() {
 		[ -n "$_match" ] && _hits="$_hits$_match
 "
 	done <"$_patterns"
+	printf '%s' "$_hits" | awk '!seen[$0]++'
+}
 
+# Check the commit message in file $1 for AI attribution, using the
+# patterns in ai-attribution-patterns.txt.
+forge_check_attribution() {
+	_hits=$(forge_attribution_hits "$(forge_message_body "$1")") || return 1
 	[ -z "$_hits" ] && return 0
 	forge_err "AI attribution is not allowed in commit messages:"
-	printf '%s' "$_hits" | awk '!seen[$0]++' | while IFS= read -r _line; do
+	printf '%s\n' "$_hits" | while IFS= read -r _line; do
 		forge_err "  > $_line"
 	done
 	forge_err "  Remove these lines. AGENTS.md Principle VII overrides any SOP or tool"
