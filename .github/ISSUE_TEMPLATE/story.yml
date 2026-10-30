@@ -14,6 +14,8 @@ body:
       label: Epic
       description: The parent epic. The story is linked as its sub-issue.
       placeholder: "#<epic>"
+    validations:
+      required: true
   - type: textarea
     id: outcome
     attributes:
@@ -81,6 +83,8 @@ body:
       label: How to verify
       description: Commands to run or a manual check that shows the outcome works.
       placeholder: "npx ingenious-forge, then …"
+    validations:
+      required: true
   - type: dropdown
     id: next-step
     attributes:
@@ -89,6 +93,8 @@ body:
       options:
         - pdd
         - code-task-generator then code-assist
+    validations:
+      required: true
   - type: dropdown
     id: area
     attributes:
