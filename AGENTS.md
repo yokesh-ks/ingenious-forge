@@ -137,6 +137,10 @@ working.
     building, and lists the remaining work as new tasks after building,
     adapted from https://github.com/github/spec-kit (MIT, see its
     `LICENSE`).
+  - `verify-before-done/`: no claim that work is done, fixed or passing
+    without fresh command output, compared with the `workspace-setup`
+    baseline and the acceptance criteria, adapted from
+    https://github.com/obra/superpowers (MIT, see its `LICENSE`).
 
   To add, adapt or vendor a skill, use `skill-intake`. It places the skill
   in `.agents/skills/<name>/`, links it with
@@ -187,6 +191,8 @@ unless one is introduced or an explicit test command is supplied.
   `.docs-input/pages.json`.
 - `.agents/skills/agent-sop/scripts/validate-sop.sh <file.sop.md>` — validate the
   structure of a new or edited SOP.
+
+Before claiming success, follow `verify-before-done`.
 
 ## Conventions
 
