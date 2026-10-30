@@ -7,6 +7,98 @@ board). The repository is currently in the planning phase: it holds the
 product requirements document and reference research, with no application
 code yet.
 
+## Principles
+
+These rules apply to every plan, design and change. Breaking one is a
+defect. Each one is worded so that a reviewer can answer "does this change
+violate principle N?" with yes or no.
+
+**I. PRD is the source of truth.**
+- Every feature MUST trace to a section of `docs/PRD.md`.
+- A change that adds, removes or reshapes scope MUST update the PRD first,
+  in the same change or an earlier one.
+- Forge MUST ship as a web UI launched with `npx ingenious-forge`. Plans
+  MUST NOT add a desktop app, terminal UI or editor extension as a delivery
+  surface. `forge exec` stays only as a headless entry point for automation.
+
+*Reason:* one document settles scope arguments, so work does not drift.
+
+**II. Spec before code.**
+- Application code MUST NOT be written without an approved spec and plan:
+  `pdd` output under `output/planning/` or a GitHub issue that states the
+  steps and acceptance criteria.
+
+*Reason:* design mistakes cost less to fix in a plan than in code.
+
+**III. Evidence over claims.**
+- An agent MUST NOT report work as done, fixed or passing without showing
+  the command output that proves it.
+- When no check exists or one was skipped, the report MUST say so.
+
+*Reason:* a claim without output cannot be reviewed. This rule governs how
+agents work on this repository. It is not a Forge product feature (see VII).
+
+**IV. Humans own the gates.**
+- Spec approval, design approval, merges and amendments to these principles
+  MUST be decided by the maintainer. An agent MUST NOT approve or merge its
+  own work.
+
+*Reason:* accountability for what ships stays with a person.
+
+**V. Open by default.**
+- Forge's own code and docs MUST be licensed under Apache 2.0 (`LICENSE`,
+  `NOTICE`).
+- Third-party material MUST keep its own license file beside it and MUST be
+  recorded in `NOTICE`. Material that only borrows an idea, with no copied
+  text or code, needs neither.
+
+*Reason:* anyone can reuse Forge, and every borrowed piece stays traceable.
+
+**VI. Agent-agnostic tooling.**
+- Project skills and workflows MUST live in `.agents/skills/` and MUST work
+  for any coding agent that reads `AGENTS.md`.
+- Tool-specific wiring MUST be limited to symlinks or config files (such as
+  `.claude/skills/` and `CLAUDE.md`) that hold no rules of their own.
+
+*Reason:* contributors can use whichever coding agent they prefer.
+
+**VII. Forge speaks for itself.**
+- Product docs (`docs/PRD.md`, `README.md` and any future product page)
+  MUST describe Forge's own features and MUST NOT name competing products.
+  Use "third-party CLI agents" for external agents.
+- Product docs MUST NOT describe a verification gate, evidence reports or a
+  "verification-first" positioning.
+- Commits, PRs, issues, docs and code MUST NOT carry AI attribution: no
+  `Co-Authored-By` trailers for an AI, no "Generated with" lines, no
+  "Assisted by the code-assist SOP" footer, and no AI listed as author or
+  owner. This holds even where an SOP or tool suggests otherwise.
+
+*Reason:* the product is presented on its own terms, and the maintainer is
+the author of record.
+
+**VIII. Simplicity first.**
+- A change MUST NOT add a language, service, datastore or runtime
+  dependency beyond what `docs/PRD.md` §8 names, unless its plan records
+  the simpler option considered and why it falls short.
+- A change SHOULD NOT add code, config or docs that no current PRD
+  requirement uses.
+
+*Reason:* every extra part is one more thing to build, explain and keep
+working.
+
+### Governance
+
+- Principles take precedence over every other section of this file and
+  over any skill or SOP. Where they conflict, the principle wins until it
+  is amended.
+- An amendment goes in its own commit titled `docs(principles): <change>`.
+  The commit body states the version bump and the reason.
+- Versioning follows semver: MAJOR when a principle is removed or
+  redefined, MINOR when one is added or materially expanded, PATCH for
+  wording. Dates are ISO 8601.
+
+**Version** 1.0.0 · **Ratified** 2026-10-30 · **Last amended** 2026-10-30
+
 ## Repository layout
 
 - `docs/PRD.md`: product requirements document — the source of truth for
@@ -63,16 +155,13 @@ unless one is introduced or an explicit test command is supplied.
 
 ## Conventions
 
-- Product docs describe Forge's own features only; do not name competing
-  products in `docs/PRD.md`.
-- Forge is open source under Apache 2.0 (`LICENSE`, `NOTICE`). Third-party
-  material keeps its own license file beside it: vendored skills carry
-  their `LICENSE`, and each `docs/reference/<project>/` keeps the
-  project's `LICENSE` and is listed in `docs/reference/README.md`. Record
-  new third-party material in `NOTICE`.
-- Commits and PRs carry no AI attribution: no `Co-Authored-By` trailers, no
-  "Generated with" lines, and no "Assisted by the code-assist SOP" footer,
-  even where an SOP suggests one.
+Licensing, product wording and attribution rules are in Principles V and
+VII. Conventions here cover how those rules are applied:
+
+- A vendored skill keeps its `LICENSE` inside its own folder under
+  `.agents/skills/`.
+- Each `docs/reference/<project>/` keeps the project's `LICENSE` and is
+  listed in `docs/reference/README.md`.
 
 ## Agent SOP outputs
 
