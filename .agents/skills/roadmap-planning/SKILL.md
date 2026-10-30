@@ -124,7 +124,8 @@ run Mode D first and show what exists; do not create a second set.
 4. **Check every story before presenting** and split any that fails:
 
    - [ ] size XS, S or M (L and XL are split);
-   - [ ] title has no "and", "&", "plus" or two outcomes joined by a comma;
+   - [ ] title has no "and", "&", "plus" or a comma joining two outcomes
+     (a comma before a detail of one outcome is fine);
    - [ ] at most 3 acceptance criteria, each testable;
    - [ ] PRD ref, `Blocked by` line, likely areas, size and next step.
 

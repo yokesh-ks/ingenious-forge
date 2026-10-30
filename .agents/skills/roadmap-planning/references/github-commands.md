@@ -12,8 +12,10 @@ maintainer has approved that exact change in chat.
 | Status options | Todo `f75ad846`, In Progress `47fc9ee4`, Done `98236657` |
 | Labels | From `.github/labels.yml` if it exists; else `epic` (exists), `story`, `stale` (create if missing) |
 
-The ids were read on 2026-10-30. If a command fails with an unknown id,
-re-read them:
+The ids were read on 2026-10-30 and change if the project or its Status
+field is recreated. Before the first write in a session, re-read them and
+compare with the table; if they differ, use the fresh values and update the
+table in the same change:
 
 ```bash
 gh project view 34 --owner yokesh-ks --format json --jq .id
