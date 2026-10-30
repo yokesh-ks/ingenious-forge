@@ -17,6 +17,11 @@ own license:
 - .agents/skills/workspace-setup/ is derived from
   https://github.com/obra/superpowers, Copyright (c) 2025 Jesse Vincent,
   under the MIT License. See .agents/skills/workspace-setup/LICENSE.
+  
+- .agents/skills/decision-records/ is derived from
+  https://github.com/addyosmani/agent-skills, Copyright (c) 2025 Addy
+  Osmani, under the MIT License. See
+  .agents/skills/decision-records/LICENSE.
 
 - docs/reference/<project>/ holds reference documentation describing other
   open-source projects, including excerpts of their source. Each project's
