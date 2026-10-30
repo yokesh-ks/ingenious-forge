@@ -132,6 +132,11 @@ working.
     stories on the GitHub project board, keeps `docs/ROADMAP.md` in sync
     and re-plans after PRD changes, adapted from
     https://github.com/addyosmani/agent-skills (MIT, see its `LICENSE`).
+  - `plan-analysis/`: checks a feature's story, `pdd` design and plan,
+    code tasks, ADRs and principles for gaps and conflicts before
+    building, and lists the remaining work as new tasks after building,
+    adapted from https://github.com/github/spec-kit (MIT, see its
+    `LICENSE`).
 
   To add, adapt or vendor a skill, use `skill-intake`. It places the skill
   in `.agents/skills/<name>/`, links it with
@@ -162,6 +167,10 @@ For any meaningful engineering request, start with front-door triage:
 - **Decisions**: Use `decision-records` when a significant technical
   choice is made, changed or needs justifying under Principle VIII. Its
   gate turns away choices that are cheap to reverse.
+- **Plan check**: Use `plan-analysis` after `code-task-generator` and
+  before `code-assist`, to check a feature's planning documents against
+  each other and the principles; use its converge mode after building to
+  list what is still missing.
 - **Review work**: Start review-first; prioritize consistency with
   `docs/PRD.md` and missing validation.
 - **All other requests**: Use normal conversational or investigative behavior
