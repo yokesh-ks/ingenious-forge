@@ -1,0 +1,39 @@
+# Names of competing products that must not appear in docs/PRD.md
+# (AGENTS.md Principle VII). One name per line. Matching is
+# case-insensitive, fixed-string and whole-word. Blank lines and lines
+# starting with "#" are ignored.
+#
+# Consumer: scripts/check-prd-names.sh (CI job prd-names).
+#
+# Seeded from the projects under docs/reference/. Names that are also
+# ordinary words (continue, goose, pi, void) are listed only in a form
+# that does not match normal prose. Add a project here when you add it
+# to docs/reference/.
+
+aider
+cline
+continue.dev
+deepagents
+deepseek-harness
+goose agent
+hermes-agent
+hermes agent
+mini-swe-agent
+omnigent
+openclaw
+opencode
+openhands
+plandex
+roo-code
+roo code
+swe-agent
+vibe-kanban
+vibe kanban
+void editor
+
+# Other third-party CLI agents and coding tools.
+claude code
+codex cli
+gemini cli
+github copilot
+windsurf

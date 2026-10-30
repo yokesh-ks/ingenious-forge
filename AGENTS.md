@@ -117,6 +117,11 @@ working.
 - `.githooks/`: shared git hooks, their check library and AI attribution
   patterns; `scripts/setup-dev.sh` enables them and `scripts/test-hooks.sh`
   tests them (see "Development and validation").
+- `.github/workflows/repo-hygiene.yml` and `scripts/check-*`: the CI
+  repo-hygiene checks and the scripts they run; `scripts/check-all.sh`
+  runs them locally (see "Continuous integration").
+- `.github/prd-banned-names.txt`: competing product names that
+  `docs/PRD.md` must not contain (Principle VII).
 - `tools/clean-mark/`: local Node tool for converting web pages to clean
   markdown.
 - `.docs-input/`: Git-ignored scratch input for `generate-docs.mjs`.
@@ -188,8 +193,8 @@ If the request is ambiguous, ask one concise clarification.
 ## Development and validation
 
 There is no build or lint setup yet; the only tests are the git hook
-tests below. Do not claim a test suite ran unless one is introduced or an
-explicit test command is supplied.
+tests and the repo-hygiene checks below. Do not claim a test suite ran
+unless one is introduced or an explicit test command is supplied.
 
 Run `scripts/setup-dev.sh` once after cloning. It enables the shared git
 hooks in `.githooks/` (`git config core.hooksPath .githooks`), which apply
@@ -211,6 +216,8 @@ The checks live in `.githooks/lib/checks.sh` and the attribution patterns
 in `.githooks/ai-attribution-patterns.txt`, so CI can source the same
 code. Change checks and patterns there only.
 
+- `scripts/check-all.sh` — run every CI check locally (see "Continuous
+  integration"). Run it before reporting work as done.
 - `scripts/test-hooks.sh` — test the git hooks against sample commit
   messages and commits in a throwaway repository.
 - `node scripts/generate-docs.mjs` — regenerate a reference doc set from
@@ -221,6 +228,32 @@ code. Change checks and patterns there only.
   `.github/labels.json` (dry run). Add `--apply` to create and update
   labels, and `--prune` to list labels not in the file; deleting them
   needs `--apply --prune --yes` and the maintainer's approval.
+
+### Continuous integration
+
+`.github/workflows/repo-hygiene.yml` runs on every pull request (opened,
+synchronize, edited, reopened, labeled, unlabeled) and every push to
+`main`. Local hooks can be skipped; CI cannot. Each job is a separate
+status check with a stable name, and each runs one script, so
+`scripts/check-all.sh` checks the same things locally (it skips
+`pr-body`, which needs a pull request):
+
+| Check | Script | Fails when |
+| --- | --- | --- |
+| `commits` | `scripts/check-commits.sh [<range>]` | a commit in the PR (or push) has a non-conventional title or AI attribution; names each SHA |
+| `pr-body` | `scripts/check-pr-body.sh <title> <body-file> [<labels>]` | the PR title is not conventional, the body has AI attribution, or the body links no issue (`Closes`, `Fixes`, `Resolves` or `Refs #N`); a PR with the `chore` label and a `chore:` or `docs:` title needs no issue |
+| `skills` | `scripts/check-skills.sh` | a skill in `.agents/skills/` fails `skill-intake`'s `check-skill.sh`: frontmatter, `.claude/skills/` symlink, `LICENSE` and `NOTICE` for a `license:` field, or the bullet in this file |
+| `sop` | `scripts/check-sop.sh` | a tracked `*.sop.md` or an `agent-sop/references/*.md` SOP fails `validate-sop.sh` |
+| `notice` | `scripts/check-notice.sh` | a `docs/reference/<project>/` has no `LICENSE` or is not listed in `docs/reference/README.md` |
+| `links` | `node scripts/check-links.mjs` | a relative link in `AGENTS.md`, `README.md`, `docs/**` (except `docs/reference/`) or `.agents/skills/**` points at a missing file |
+| `prd-names` | `scripts/check-prd-names.sh` | `docs/PRD.md` contains a name from `.github/prd-banned-names.txt` |
+
+`validate-sop.sh` rejects any file not named `*.sop.md`, but the agent-sop
+references follow the same structure, so `check-sop.sh` validates each
+one as a temporary `*.sop.md` copy. The workflow pins third-party actions
+to a full commit SHA and grants only `contents: read` (plus
+`pull-requests: read` for `pr-body`). Put new check logic in `scripts/`,
+not in the workflow file.
 
 ## Issue tracking
 
