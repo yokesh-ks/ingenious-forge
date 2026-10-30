@@ -1,0 +1,98 @@
+# Repo-hygiene checks: the server-side copy of the process rules in
+# AGENTS.md. Local hooks can be skipped; these checks cannot.
+#
+# Each job is its own status check, so branch rules can require them one
+# by one. Keep the job names stable: commits, pr-body, skills, sop,
+# notice, links, prd-names. All logic lives in scripts/;
+# scripts/check-all.sh runs the same checks locally.
+#
+# Third-party actions are pinned to a full commit SHA.
+
+name: repo-hygiene
+
+on:
+  pull_request:
+    types: [opened, synchronize, edited, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  commits:
+    name: commits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Check commit titles and attribution
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            range="$PR_BASE..$PR_HEAD"
+          elif [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = 0000000000000000000000000000000000000000 ]; then
+            range="$PUSH_AFTER^!"
+          else
+            range="$PUSH_BEFORE..$PUSH_AFTER"
+          fi
+          scripts/check-commits.sh "$range"
+
+  pr-body:
+    name: pr-body
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check PR title and body
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          printf '%s\n' "$PR_BODY" >"$RUNNER_TEMP/pr-body.md"
+          scripts/check-pr-body.sh "$PR_TITLE" "$RUNNER_TEMP/pr-body.md" "$PR_LABELS"
+
+  skills:
+    name: skills
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: scripts/check-skills.sh
+
+  sop:
+    name: sop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: scripts/check-sop.sh
+
+  notice:
+    name: notice
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: scripts/check-notice.sh
+
+  links:
+    name: links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: node scripts/check-links.mjs
+
+  prd-names:
+    name: prd-names
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: scripts/check-prd-names.sh
