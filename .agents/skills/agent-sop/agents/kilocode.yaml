@@ -1,0 +1,6 @@
+interface:
+  display_name: "Agent SOP"
+  short_description: "Run structured software delivery SOPs"
+  default_prompt: "Use $agent-sop to choose and run the right software workflow for this task."
+policy:
+  allow_implicit_invocation: true

@@ -1,2 +1,5 @@
 # docs-input
 .docs-input/
+
+# Agent SOP workflow output (transient)
+output/
