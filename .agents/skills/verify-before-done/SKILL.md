@@ -54,6 +54,7 @@ memory or a guess. Today:
 | --- | --- |
 | A new or edited SOP (`*.sop.md`) | `bash .agents/skills/agent-sop/scripts/validate-sop.sh <file>`, once per file |
 | A project skill in `.agents/skills/` | `bash .agents/skills/skill-intake/scripts/check-skill.sh <name>` |
+| GitHub labels (`.github/labels.json`) | `node scripts/sync-labels.mjs` (dry run) shows no differences |
 | Reference docs under `docs/reference/` | `node scripts/generate-docs.mjs`, then `git diff --stat` on the output |
 | Anything else (PRD, README, ADRs, prose) | No automated check exists. Go to step 3's "no check" rule. |
 
