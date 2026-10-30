@@ -69,9 +69,13 @@ forge_check_attribution() {
 	_hits=
 	while read -r _kind _pattern; do
 		case $_kind in
+		'' | '#'*) continue ;; # blank line or comment
 		coauthor) _match=$(printf '%s\n' "$_coauthors" | grep -iF -- "$_pattern") ;;
 		phrase) _match=$(printf '%s\n' "$_body" | grep -iF -- "$_pattern") ;;
-		*) continue ;;
+		*)
+			forge_err "unknown pattern kind in $_patterns: $_kind"
+			continue
+			;;
 		esac
 		[ -n "$_match" ] && _hits="$_hits$_match
 "

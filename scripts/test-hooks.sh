@@ -75,7 +75,7 @@ msg fail "code-assist SOP footer" "feat: add hooks
 
 🤖 Assisted by the code-assist SOP"
 
-# commit <expected> <name> [env assignments...] -- run git commit in the
+# commit <expected> <name> [VAR=value...] -- run git commit in the
 # throwaway repository and record the result.
 commit() {
 	_expected=$1 _name=$2
@@ -100,42 +100,44 @@ git init -q -b main "$repo"
 	git add seed.txt
 )
 
-commit fail "commit on main" X=1
+commit fail "commit on main"
 commit pass "commit on main with FORGE_ALLOW_MAIN=1" FORGE_ALLOW_MAIN=1
 (cd "$repo" && git switch -q -c feat/test)
 
 echo ok >"$repo/ok.txt" && (cd "$repo" && git add ok.txt)
-commit pass "commit on a branch" X=1
+commit pass "commit on a branch"
 
 echo SECRET=1 >"$repo/.env" && (cd "$repo" && git add .env)
-commit fail ".env file" X=1
+commit fail ".env file"
 
 echo key >"$repo/server.pem" && (cd "$repo" && git add server.pem)
-commit fail "*.pem file" X=1
+commit fail "*.pem file"
 
-echo key >"$repo/id_rsa" && (cd "$repo" && git add id_rsa)
-commit fail "id_rsa file" X=1
+for key in id_rsa id_dsa id_ecdsa id_ed25519; do
+	echo key >"$repo/$key" && (cd "$repo" && git add "$key")
+	commit fail "$key file"
+done
 
 echo EXAMPLE=1 >"$repo/.env.example" && (cd "$repo" && git add .env.example)
-commit pass ".env.example file" X=1
+commit pass ".env.example file"
 
 dd if=/dev/zero of="$repo/big.bin" bs=1048576 count=6 2>/dev/null
 (cd "$repo" && git add big.bin)
-commit fail "file over 5 MB" X=1
+commit fail "file over 5 MB"
 
 mkdir -p "$repo/.agents/skills/demo"
 echo demo >"$repo/.agents/skills/demo/SKILL.md"
 (cd "$repo" && git add .agents)
-commit fail "new skill without symlink" X=1
+commit fail "new skill without symlink"
 
 mkdir -p "$repo/.agents/skills/demo" "$repo/.claude/skills"
 echo demo >"$repo/.agents/skills/demo/SKILL.md"
 ln -s ../../.agents/skills/demo "$repo/.claude/skills/demo"
 (cd "$repo" && git add .agents .claude)
-commit pass "new skill with symlink" X=1
+commit pass "new skill with symlink"
 
 echo more >"$repo/.agents/skills/demo/notes.md" && (cd "$repo" && git add .agents)
-commit pass "file added to existing skill" X=1
+commit pass "file added to existing skill"
 
 echo
 echo "$passed passed, $failed failed"
