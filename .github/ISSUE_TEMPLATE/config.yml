@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Feature idea not yet in the PRD
+    url: https://github.com/yokesh-ks/ingenious-forge/blob/main/docs/PRD.md
+    about: Every feature traces to docs/PRD.md (Principle I). Propose a PRD change first, then file an epic or story that cites it.

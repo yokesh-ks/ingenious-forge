@@ -1,0 +1,35 @@
+name: Chore
+description: Upkeep with no user-facing change, such as dependencies, tooling or cleanup.
+labels: ["chore"]
+body:
+  - type: textarea
+    id: what-and-why
+    attributes:
+      label: What and why
+      description: The change and the reason it is needed now.
+    validations:
+      required: true
+  - type: textarea
+    id: done-when
+    attributes:
+      label: Done when
+      description: Checks a reviewer can run or observe.
+      placeholder: |
+        - [ ] <observable check>
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Suggested area
+      description: Triage applies the matching area labels.
+      multiple: true
+      options:
+        - area:agent
+        - area:web-ui
+        - area:board
+        - area:server
+        - area:launcher
+        - area:skills
+        - area:process
+        - area:docs

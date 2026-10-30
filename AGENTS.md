@@ -112,6 +112,8 @@ working.
   `OUTPUT_DIR`; update it before generating a new reference set.
 - `.github/labels.json` and `scripts/sync-labels.mjs`: the GitHub label
   set as code and the script that syncs it (see "Issue tracking").
+- `.github/ISSUE_TEMPLATE/`: issue forms for epics, stories, bugs and
+  chores (see "Issue tracking").
 - `tools/clean-mark/`: local Node tool for converting web pages to clean
   markdown.
 - `.docs-input/`: Git-ignored scratch input for `generate-docs.mjs`.
@@ -209,6 +211,18 @@ new ones to the file first, then sync.
   split it first).
 - **Flags**: `blocked`, `stale`, `needs-decision`, `good first issue`,
   `help wanted`.
+
+Issues are filed through the forms in
+[`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/): Epic, Story, Bug
+and Chore. Each form applies its type label; triage applies area,
+priority and size labels and the milestone. Blank issues are disabled.
+
+Agents creating issues via `gh` must use the same headings as
+`.github/ISSUE_TEMPLATE/*.yml`: each field's `label` becomes a
+`### <label>` heading, in the form's order, and the issue gets the
+form's type label. Write the body to a file and pass `--body-file`.
+For epics and stories, use the `roadmap-planning` templates, which
+follow the forms.
 
 ## Conventions
 

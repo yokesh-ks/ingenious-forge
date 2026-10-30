@@ -30,7 +30,7 @@ maintainer approves that exact change in chat (Principles I and IV).
 | Mode | Trigger | Ends with |
 | --- | --- | --- |
 | A. Initial roadmap | No product epics exist yet, or the user asks what to build first. | Approved milestones and thin epics on the board. |
-| B. Refine an epic | An epic is `**Refined:** no` and is next in build order, or the user names one. | Approved stories as sub-issues of the epic. |
+| B. Refine an epic | An epic's Refined section is `no` and is next in build order, or the user names one. | Approved stories as sub-issues of the epic. |
 | C. Replan | `docs/PRD.md` changed, a new ADR in `docs/decisions/`, or a retrospective finding. | Updated issues, `stale` labels proposed, dated `Decision:` lines. |
 | D. Status | "Status", "what's next", "how far along is Phase N". | A progress report; nothing written. |
 
@@ -109,7 +109,7 @@ run Mode D first and show what exists; do not create a second set.
    maintainer approves the checks that will be created, so none are left
    "to be written at creation". Then stop for approval.
 8. **Create** after approval: milestones, epics (label `epic`, milestone,
-   `**Refined:** no`), `blocked_by` links, board items with Status Todo.
+   Refined `no`), `blocked_by` links, board items with Status Todo.
    Then write `docs/ROADMAP.md`.
 
 ## Mode B: Refine an epic into stories
@@ -133,15 +133,16 @@ run Mode D first and show what exists; do not create a second set.
    - [ ] title has no "and", "&", "plus" or a comma joining two outcomes
      (a comma before a detail of one outcome is fine);
    - [ ] at most 3 acceptance criteria, each testable;
-   - [ ] PRD ref, `Blocked by` line, likely areas, size and next step.
+   - [ ] PRD ref, size, priority, `Blocked by` line, likely areas, how to
+     verify and next step.
 
    Every epic done-when check is covered by at least one story's criteria.
 5. **Present** stories in build order with the check results, then stop
    for approval.
 6. **Create** after approval: each story as an issue (label `story`, the
    epic's milestone), linked as a **sub-issue** of the epic, `blocked_by`
-   links, added to project 34 with Status Todo. Then set the epic to
-   `**Refined:** yes`, fill its "Stories" list, and update
+   links, added to project 34 with Status Todo. Then set the epic's
+   Refined section to `yes`, fill its "Stories" list, and update
    `docs/ROADMAP.md`.
 7. **Hand off.** Each story's "Next step" names `pdd` (needs design) or
    `code-task-generator` then `code-assist` (clear). Do not start either.
