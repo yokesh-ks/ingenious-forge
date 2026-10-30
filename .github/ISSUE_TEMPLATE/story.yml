@@ -1,0 +1,106 @@
+name: Story
+description: One deliverable, user-visible change with at most three acceptance criteria.
+labels: ["story"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A story is a vertical slice: one outcome a user can see or run, working end to end through every layer it touches.
+        Split it before filing if its size is L, its title joins two outcomes with "and", or it needs more than 3 acceptance criteria.
+        Triage sets the milestone, priority, size and area labels.
+  - type: input
+    id: epic
+    attributes:
+      label: Epic
+      description: The parent epic. The story is linked as its sub-issue.
+      placeholder: "#<epic>"
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: One sentence on what the user can see or do after this story.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: At most 3 testable bullets, each something a reviewer can run or look at. More than 3 means split it.
+      placeholder: |
+        - [ ] <testable condition>
+        - [ ] <testable condition>
+        - [ ] <testable condition>
+    validations:
+      required: true
+  - type: input
+    id: prd
+    attributes:
+      label: PRD references
+      description: The PRD section this story traces to (Principle I).
+      placeholder: "PRD §6.2 Chat"
+    validations:
+      required: true
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size
+      description: XS is one function or config change, S one component or endpoint, M one feature slice through 3 to 5 files. L means split it before starting.
+      options:
+        - XS
+        - S
+        - M
+        - L — split before starting
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: As in PRD §6. P0 is needed for the MVP, P1 for v1.0, P2 for a later release.
+      options:
+        - P0
+        - P1
+        - P2
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: "One line per blocker: Blocked by #<n>. Write None if there are none."
+      placeholder: "Blocked by #<n>"
+  - type: textarea
+    id: likely-areas
+    attributes:
+      label: Likely areas
+      description: Paths or modules this story is likely to touch.
+      placeholder: "server/, web/src/session/"
+  - type: textarea
+    id: how-to-verify
+    attributes:
+      label: How to verify
+      description: Commands to run or a manual check that shows the outcome works.
+      placeholder: "npx ingenious-forge, then …"
+  - type: dropdown
+    id: next-step
+    attributes:
+      label: Next step
+      description: The workflow to run next. pdd when a design choice is still open; code-task-generator then code-assist when the outcome, criteria and areas are clear.
+      options:
+        - pdd
+        - code-task-generator then code-assist
+  - type: dropdown
+    id: area
+    attributes:
+      label: Suggested area
+      description: Triage applies the matching area labels.
+      multiple: true
+      options:
+        - area:agent
+        - area:web-ui
+        - area:board
+        - area:server
+        - area:launcher
+        - area:skills
+        - area:process
+        - area:docs

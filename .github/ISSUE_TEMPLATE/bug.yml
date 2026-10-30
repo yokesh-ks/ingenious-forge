@@ -1,0 +1,90 @@
+name: Bug
+description: Something that works differently from the PRD or the docs.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Triage sets the priority and area labels.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, including any error message.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What was expected
+      description: What should have happened, with the PRD section or doc that says so if you know it.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run npx ingenious-forge
+        2. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: "0.1.0 or a commit SHA"
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      description: PRD §7 platforms. Windows runs through WSL for the MVP (PRD R1).
+      options:
+        - macOS
+        - Linux
+        - Windows (WSL)
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      description: PRD §7 supports the latest two versions of each.
+      options:
+        - Chrome
+        - Edge
+        - Firefox
+        - Safari
+        - Other or not applicable
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste logs as text; drag screenshots in.
+      render: text
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Critical — data loss, security issue, or Forge unusable with no workaround
+        - Major — a feature is broken and a workaround exists
+        - Minor — cosmetic or a small annoyance
+  - type: textarea
+    id: regression-test
+    attributes:
+      label: Regression test idea
+      description: A test that would fail now and pass once this is fixed.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Suggested area
+      description: Triage applies the matching area labels.
+      multiple: true
+      options:
+        - area:agent
+        - area:web-ui
+        - area:board
+        - area:server
+        - area:launcher
+        - area:skills
+        - area:process
+        - area:docs

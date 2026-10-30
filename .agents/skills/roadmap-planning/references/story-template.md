@@ -12,32 +12,57 @@ chat`. One outcome only.
 
 ## Body
 
-```markdown
-**Epic:** #<epic>
-**Size:** <XS | S | M>
-**PRD:** §<x.y> <feature>
+The headings are the field labels of the Story issue form,
+[`.github/ISSUE_TEMPLATE/story.yml`](../../../../.github/ISSUE_TEMPLATE/story.yml),
+in the same order, so a story written with `gh` reads like one filed in
+the browser.
 
-## Outcome
+```markdown
+### Epic
+
+#<epic>
+
+### Outcome
 
 <One sentence: what the user can see or do after this story.>
 
-## Acceptance criteria
+### Acceptance criteria
 
 - [ ] <Testable condition>
 - [ ] <Testable condition>
 - [ ] <Testable condition>   <!-- three at most -->
 
-## Dependencies
+### PRD references
+
+PRD §<x.y> <feature>
+
+### Size
+
+<XS | S | M>
+
+### Priority
+
+<P0 | P1 | P2>
+
+### Dependencies
 
 - Blocked by #<n>   <!-- or "None" -->
 
-## Likely areas
+### Likely areas
 
 - `<path or module, e.g. server/, web/src/session/>`
 
-## Next step
+### How to verify
 
-<`pdd` (needs design) | `code-task-generator` then `code-assist` (clear)>
+<Commands to run, or a manual check that shows the outcome works.>
+
+### Next step
+
+<pdd | code-task-generator then code-assist>
+
+### Suggested area
+
+area:<name>
 ```
 
 ## Sizing
@@ -75,7 +100,7 @@ example the §7 "< 200 ms" streaming target) over adjectives.
 
 ## Hand-off
 
-The "Next step" line tells the next agent which workflow to run:
+The "Next step" section tells the next agent which workflow to run:
 
 - `pdd` when the story leaves a design choice open (data model, protocol,
   library);
