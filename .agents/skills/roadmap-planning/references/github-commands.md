@@ -41,9 +41,10 @@ issues as markdown (the templates' bodies under each heading) and say that
 gh api "repos/$R/milestones?state=all&per_page=100" \
   --jq '.[] | [.number, .title, .state, .open_issues, .closed_issues] | @tsv'
 
-# Epics, and stories in a milestone
+# Product epics (label epic + a Phase milestone), and stories in a milestone
 gh issue list -R $R --label epic --state all --limit 200 \
-  --json number,title,state,milestone,labels
+  --json number,title,state,milestone,labels \
+  --jq '[.[] | select(.milestone.title // "" | startswith("Phase "))]'
 gh issue list -R $R --milestone "<milestone title>" --state all \
   --json number,title,state,labels
 
