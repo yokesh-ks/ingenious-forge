@@ -15,6 +15,9 @@ so it can be rebuilt from scratch, and lists the `gh` commands agents use.
 | **In Review** | PR open, waiting for review and maintainer approval | Workflow: PR linked to issue |
 | **Done** | Merged or closed | Workflow: item closed, PR merged |
 
+These statuses track work on Forge itself. The columns of the Forge Board
+product feature (PRD §6.3) are separate and unaffected.
+
 An item moves forward only. Reopening sends it back to **Todo**. An agent
 sets **In Progress** itself when it claims an issue; the other moves are
 made by the workflows below or by the maintainer.
@@ -72,6 +75,10 @@ on.
 | Auto-add sub-issues to project | Default |
 | Auto-close issue | Default (closes the issue when its Status becomes Done) |
 
+In the auto-add filter, a comma joins values of one qualifier with "or",
+and a space joins qualifiers with "and": `is:issue,pr is:open` means open
+issues and open pull requests.
+
 GitHub Actions automation beyond these workflows is out of scope.
 
 ## Rebuild from scratch
@@ -83,14 +90,20 @@ workflows can only be set in the web UI.
 P=$(gh project view 34 --owner yokesh-ks --format json --jq .id)
 STATUS=$(gh project field-list 34 --owner yokesh-ks --format json \
   --jq '.fields[] | select(.name=="Status") | .id')
+opt() {  # opt <name>: id of an existing Status option
+  gh project field-list 34 --owner yokesh-ks --format json \
+    --jq ".fields[] | select(.name==\"Status\") | .options[] | select(.name==\"$1\") | .id"
+}
+TODO=$(opt Todo); IN_PROGRESS=$(opt "In Progress"); DONE=$(opt Done)
 
-# 1. Status options. Pass the existing option ids so items keep their status.
+# 1. Status options. Pass the existing option ids so items keep their status;
+#    an option sent without an id is created new.
 gh api graphql -f query="mutation { updateProjectV2Field(input:{fieldId:\"$STATUS\", singleSelectOptions:[
   {name:\"Backlog\", color:GRAY, description:\"Captured, not yet planned or refined\"},
-  {id:\"<todo id>\", name:\"Todo\", color:GREEN, description:\"Refined and ready to start; dependencies met\"},
-  {id:\"<in progress id>\", name:\"In Progress\", color:YELLOW, description:\"Claimed: assigned and a branch exists\"},
+  {id:\"$TODO\", name:\"Todo\", color:GREEN, description:\"Refined and ready to start; dependencies met\"},
+  {id:\"$IN_PROGRESS\", name:\"In Progress\", color:YELLOW, description:\"Claimed: assigned and a branch exists\"},
   {name:\"In Review\", color:BLUE, description:\"PR open, waiting for review and maintainer approval\"},
-  {id:\"<done id>\", name:\"Done\", color:PURPLE, description:\"Merged or closed\"}]}) { clientMutationId } }"
+  {id:\"$DONE\", name:\"Done\", color:PURPLE, description:\"Merged or closed\"}]}) { clientMutationId } }"
 
 # 2. Custom fields
 gh project field-create 34 --owner yokesh-ks --name Priority \

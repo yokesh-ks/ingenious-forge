@@ -110,12 +110,26 @@ lines in the body; they are the fallback and are always written.
 ```bash
 item=$(gh project item-add 34 --owner yokesh-ks \
   --url https://github.com/$R/issues/<n> --format json --jq .id)
-# Status: Todo (f75ad846) when refined with no open blocker, else Backlog (fdb23e39)
-gh project item-edit --id "$item" --project-id PVT_kwHOBAdtHM4BpdXc \
-  --field-id PVTSSF_lAHOBAdtHM4BpdXczhn47Y8 --single-select-option-id f75ad846
-# Phase, and for stories Priority and Size, with the option ids above
-gh project item-edit --id "$item" --project-id PVT_kwHOBAdtHM4BpdXc \
-  --field-id PVTSSF_lAHOBAdtHM4BpdXczhn6_0w --single-select-option-id 33879dff
+set_field() {  # set_field <field id> <option id>
+  gh project item-edit --id "$item" --project-id PVT_kwHOBAdtHM4BpdXc \
+    --field-id "$1" --single-select-option-id "$2"
+}
+
+# Status: Backlog for an epic before refinement and for a story with an
+# open blocker; Todo for a refined story with none.
+open_blockers=$(gh api repos/$R/issues/<n>/dependencies/blocked_by \
+  --jq '[.[] | select(.state=="open")] | length')
+if [ "<epic or story>" = story ] && [ "$open_blockers" = 0 ]; then
+  set_field PVTSSF_lAHOBAdtHM4BpdXczhn47Y8 f75ad846   # Todo
+else
+  set_field PVTSSF_lAHOBAdtHM4BpdXczhn47Y8 fdb23e39   # Backlog
+fi
+
+# Phase from the issue's milestone ("Phase <n> — …"); option ids in the table above
+set_field PVTSSF_lAHOBAdtHM4BpdXczhn6_0w <phase option id>
+# Stories only: Priority and Size matching their P* and size:* labels
+set_field PVTSSF_lAHOBAdtHM4BpdXczhn6_y8 <priority option id>
+set_field PVTSSF_lAHOBAdtHM4BpdXczhn6_0o <size option id>
 ```
 
 `item-add` is idempotent: adding an issue already on the board returns its
