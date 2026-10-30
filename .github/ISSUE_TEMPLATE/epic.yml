@@ -1,0 +1,94 @@
+name: Epic
+description: A large body of work that delivers one outcome a user can see, tracked as sub-issue stories.
+labels: ["epic"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        An epic names one outcome. Two outcomes are two epics, and a single layer ("Backend", "Database") is not an epic.
+        New epics start thin (Refined: no) and are refined into stories with `roadmap-planning` before any story is written.
+        Triage sets the milestone and area labels.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: One or two sentences on what a user or developer can do when this epic is done, in the PRD's words.
+    validations:
+      required: true
+  - type: input
+    id: prd
+    attributes:
+      label: PRD references
+      description: Every capability traces to a PRD section (Principle I).
+      placeholder: "PRD §6.2 npx launch, PRD §8 Distribution"
+    validations:
+      required: true
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Milestone
+      description: The PRD §9 phase this epic belongs to.
+      options:
+        - Phase 0 — Foundation
+        - Phase 1 — MVP
+        - Phase 2 — v1.0
+        - Phase 3 — Forge Board
+        - Phase 4 — Cloud
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Boundaries
+      description: What is in scope and what is out, each with a PRD reference or the epic it belongs to.
+      placeholder: |
+        - In: <capability, PRD §ref>
+        - Out: <nearby capability, and where it lives>
+    validations:
+      required: true
+  - type: textarea
+    id: done-when
+    attributes:
+      label: Done when
+      description: 2 to 5 checks a reviewer can run or observe. More than 5 means the epic holds two outcomes; split it.
+      placeholder: |
+        - [ ] <observable check a reviewer can run>
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: "One line per blocker: Blocked by #<n>. Write None if there are none."
+      placeholder: "Blocked by #<n>"
+  - type: dropdown
+    id: refined
+    attributes:
+      label: Refined
+      description: New epics start at "no". Set to "yes" only after its stories are approved and created.
+      options:
+        - "no"
+        - "yes"
+      default: 0
+    validations:
+      required: true
+  - type: textarea
+    id: open-questions
+    attributes:
+      label: Open questions
+      description: "Questions or decisions still needed, each with a recommendation: settle now, spike or defer to story."
+  - type: dropdown
+    id: area
+    attributes:
+      label: Suggested area
+      description: Triage applies the matching area labels.
+      multiple: true
+      options:
+        - area:agent
+        - area:web-ui
+        - area:board
+        - area:server
+        - area:launcher
+        - area:skills
+        - area:process
+        - area:docs

@@ -112,6 +112,8 @@ working.
   `OUTPUT_DIR`; update it before generating a new reference set.
 - `.github/labels.json` and `scripts/sync-labels.mjs`: the GitHub label
   set as code and the script that syncs it (see "Issue tracking").
+- `.github/ISSUE_TEMPLATE/`: issue forms for epics, stories, bugs and
+  chores (see "Issue tracking").
 - `tools/clean-mark/`: local Node tool for converting web pages to clean
   markdown.
 - `.docs-input/`: Git-ignored scratch input for `generate-docs.mjs`.
@@ -200,6 +202,14 @@ unless one is introduced or an explicit test command is supplied.
   `.github/labels.json` (dry run). Add `--apply` to create and update
   labels, and `--prune` to list labels not in the file; deleting them
   needs `--apply --prune --yes` and the maintainer's approval.
+- `bash .agents/skills/skill-intake/scripts/check-skill.sh [<name>]` —
+  check a project skill's name, frontmatter, symlink, licence, `NOTICE`
+  entry and `AGENTS.md` registration (all skills when no name is given).
+
+Before claiming success, follow `verify-before-done`: read
+`.agents/skills/verify-before-done/SKILL.md` before saying work is done,
+fixed or passing, writing a status line, PR body or closing comment, or
+saying a failure is pre-existing.
 
 ## Issue tracking
 
@@ -217,10 +227,17 @@ new ones to the file first, then sync.
 - **Flags**: `blocked`, `stale`, `needs-decision`, `good first issue`,
   `help wanted`.
 
-Before claiming success, follow `verify-before-done`: read
-`.agents/skills/verify-before-done/SKILL.md` before saying work is done,
-fixed or passing, writing a status line, PR body or closing comment, or
-saying a failure is pre-existing.
+Issues are filed through the forms in
+[`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/): Epic, Story, Bug
+and Chore. Each form applies its type label; triage applies area,
+priority and size labels and the milestone. Blank issues are disabled.
+
+Agents creating issues via `gh` must use the same headings as
+`.github/ISSUE_TEMPLATE/*.yml`: each field's `label` becomes a
+`### <label>` heading, in the form's order, and the issue gets the
+form's type label. Write the body to a file and pass `--body-file`.
+For epics and stories, use the `roadmap-planning` templates, which
+follow the forms.
 
 ## Conventions
 
