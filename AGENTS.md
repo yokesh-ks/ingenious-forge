@@ -119,6 +119,10 @@ working.
   - `skill-intake/`: the standard way to add, adapt, vendor or check a
     project skill, adapted from https://github.com/obra/superpowers (MIT,
     see its `LICENSE`).
+  - `workspace-setup/`: gives change work an isolated, correctly named
+    branch (or worktree) and records a baseline before the first edit,
+    adapted from https://github.com/obra/superpowers (MIT, see its
+    `LICENSE`).
 
   To add, adapt or vendor a skill, use `skill-intake`. It places the skill
   in `.agents/skills/<name>/`, links it with
@@ -132,7 +136,8 @@ For any meaningful engineering request, start with front-door triage:
 - **Change work**: Use `agent-sop` for implementation, bug fixing,
   refactoring, or changes to architecture, tests, or QA expectations. Select
   the appropriate workflow: `codebase-summary`, `pdd`,
-  `code-task-generator`, or `code-assist`.
+  `code-task-generator`, or `code-assist`. Before the first edit, use
+  `workspace-setup` to get a branch, or a worktree, and a baseline.
 - **Product planning**: Use the `pdd` workflow of `agent-sop` to turn a
   feature idea into a design and implementation plan. Ground it in
   `docs/PRD.md`.
@@ -167,6 +172,12 @@ VII. Conventions here cover how those rules are applied:
   `.agents/skills/`.
 - Each `docs/reference/<project>/` keeps the project's `LICENSE` and is
   listed in `docs/reference/README.md`.
+- Branches are named `<type>/<short-kebab-slug>[-<issue>]`, where `<type>`
+  is one of `feat`, `fix`, `docs`, `chore`, `refactor` or `test`, and the
+  issue number is appended when the work comes from an issue (for example
+  `feat/forge-exec-stub-42`). Branch from an up-to-date `origin/main`.
+- Git worktrees made by hand go in `.worktrees/<slug>/` at the repository
+  root, which is Git-ignored.
 
 ## Agent SOP outputs
 

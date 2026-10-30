@@ -3,3 +3,6 @@
 
 # Agent SOP workflow output (transient)
 output/
+
+# Git worktrees created by the workspace-setup skill
+.worktrees/
