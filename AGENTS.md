@@ -116,9 +116,14 @@ working.
   - `agent-sop/`: structured SOP workflows for change work and planning.
   - `adhd/`: parallel divergent ideation, vendored from
     https://github.com/UditAkhourii/adhd (MIT, see its `LICENSE`).
+  - `skill-intake/`: the standard way to add, adapt, vendor or check a
+    project skill, adapted from https://github.com/obra/superpowers (MIT,
+    see its `LICENSE`).
 
-  To add a skill, place it in `.agents/skills/<name>/` and link it with
-  `ln -s ../../.agents/skills/<name> .claude/skills/<name>`.
+  To add, adapt or vendor a skill, use `skill-intake`. It places the skill
+  in `.agents/skills/<name>/`, links it with
+  `ln -s ../../.agents/skills/<name> .claude/skills/<name>`, and records
+  its licence in `NOTICE` and its purpose here.
 
 ## Front door
 
