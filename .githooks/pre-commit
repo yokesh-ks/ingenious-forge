@@ -1,0 +1,12 @@
+#!/bin/sh
+# Block commits on main, staged secrets and large files, and new skills
+# without their .claude/skills/ symlink. See AGENTS.md.
+FORGE_HOOKS_DIR=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source-path=SCRIPTDIR source=lib/checks.sh
+. "$FORGE_HOOKS_DIR/lib/checks.sh"
+
+rc=0
+forge_check_branch || rc=1
+forge_check_staged_files || rc=1
+forge_check_skill_links || rc=1
+exit $rc

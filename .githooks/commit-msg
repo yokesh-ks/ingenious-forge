@@ -1,0 +1,13 @@
+#!/bin/sh
+# Reject commit messages that break the commit rules in AGENTS.md:
+# conventional titles and no AI attribution (Principle VII).
+FORGE_HOOKS_DIR=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source-path=SCRIPTDIR source=lib/checks.sh
+. "$FORGE_HOOKS_DIR/lib/checks.sh"
+
+if ! forge_check_message "$1"; then
+	forge_err "commit rejected. Your message is saved in $1."
+	forge_err "  edit it and retry: git commit -e -F '$1'"
+	forge_err "  (add --amend if you were amending a commit)"
+	exit 1
+fi

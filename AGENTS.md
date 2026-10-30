@@ -112,6 +112,9 @@ working.
   `OUTPUT_DIR`; update it before generating a new reference set.
 - `.github/labels.json` and `scripts/sync-labels.mjs`: the GitHub label
   set as code and the script that syncs it (see "Issue tracking").
+- `.githooks/`: shared git hooks, their check library and AI attribution
+  patterns; `scripts/setup-dev.sh` enables them and `scripts/test-hooks.sh`
+  tests them (see "Development and validation").
 - `tools/clean-mark/`: local Node tool for converting web pages to clean
   markdown.
 - `.docs-input/`: Git-ignored scratch input for `generate-docs.mjs`.
@@ -182,9 +185,32 @@ If the request is ambiguous, ask one concise clarification.
 
 ## Development and validation
 
-There is no build, lint, or test setup yet. Do not claim a test suite ran
-unless one is introduced or an explicit test command is supplied.
+There is no build or lint setup yet; the only tests are the git hook
+tests below. Do not claim a test suite ran unless one is introduced or an
+explicit test command is supplied.
 
+Run `scripts/setup-dev.sh` once after cloning. It enables the shared git
+hooks in `.githooks/` (`git config core.hooksPath .githooks`), which apply
+to every committer, human or agent:
+
+- `commit-msg` requires a conventional title,
+  `type(scope)?: subject` with `type` one of `feat`, `fix`, `docs`,
+  `chore`, `refactor`, `test`, `build`, `ci`, `perf` or `revert`, a
+  subject of at most 72 characters and no trailing period. Git's own
+  `Merge`, `Revert`, `fixup!`, `squash!` and `amend!` titles pass. It
+  rejects AI attribution (Principle VII); human `Co-Authored-By` lines
+  pass.
+- `pre-commit` blocks commits on `main` and `master`, staged secret files
+  (`.env`, `*.pem`, `id_rsa` and similar) and files over 5 MB, and a new
+  skill in `.agents/skills/` whose `.claude/skills/` symlink is not
+  staged. The maintainer can commit on `main` with `FORGE_ALLOW_MAIN=1`.
+
+The checks live in `.githooks/lib/checks.sh` and the attribution patterns
+in `.githooks/ai-attribution-patterns.txt`, so CI can source the same
+code. Change checks and patterns there only.
+
+- `scripts/test-hooks.sh` — test the git hooks against sample commit
+  messages and commits in a throwaway repository.
 - `node scripts/generate-docs.mjs` — regenerate a reference doc set from
   `.docs-input/pages.json`.
 - `.agents/skills/agent-sop/scripts/validate-sop.sh <file.sop.md>` — validate the
