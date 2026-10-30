@@ -177,6 +177,9 @@ For any meaningful engineering request, start with front-door triage:
   before `code-assist`, to check a feature's planning documents against
   each other and the principles; use its converge mode after building to
   list what is still missing.
+- **Completion claims**: Use `verify-before-done` before saying work is
+  done, fixed or passing, before committing, opening a PR or closing an
+  issue, and before calling a failure pre-existing.
 - **Review work**: Start review-first; prioritize consistency with
   `docs/PRD.md` and missing validation.
 - **All other requests**: Use normal conversational or investigative behavior
@@ -214,7 +217,10 @@ new ones to the file first, then sync.
 - **Flags**: `blocked`, `stale`, `needs-decision`, `good first issue`,
   `help wanted`.
 
-Before claiming success, follow `verify-before-done`.
+Before claiming success, follow `verify-before-done`: read
+`.agents/skills/verify-before-done/SKILL.md` before saying work is done,
+fixed or passing, writing a status line, PR body or closing comment, or
+saying a failure is pre-existing.
 
 ## Conventions
 
