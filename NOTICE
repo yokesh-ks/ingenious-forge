@@ -1,0 +1,17 @@
+Ingenious Forge
+Copyright 2026 The Ingenious Forge Authors
+
+This product is licensed under the Apache License, Version 2.0. See LICENSE.
+
+This repository also contains third-party material that remains under its
+own license:
+
+- .agents/skills/adhd/ is derived from https://github.com/UditAkhourii/adhd,
+  Copyright (c) 2026 ADHD contributors, under the MIT License. See
+  .agents/skills/adhd/LICENSE.
+
+- docs/reference/<project>/ holds reference documentation describing other
+  open-source projects, including excerpts of their source. Each project's
+  material remains under that project's license, kept in its folder as
+  LICENSE (and NOTICE where the project provides one). See
+  docs/reference/README.md for the list.
