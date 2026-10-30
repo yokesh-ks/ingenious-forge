@@ -55,7 +55,9 @@ chat`. One outcome only.
 Split a story, before proposing it, when any of these hold:
 
 - its size is L or XL;
-- its title contains "and" (or "&", "plus", a comma joining two outcomes);
+- its title contains "and" (or "&", "plus", a comma joining two outcomes;
+  a comma before a detail of one outcome, as in "User sees streamed text,
+  inline", is fine);
 - it needs more than three acceptance criteria;
 - it touches two independent subsystems (for example git and the model
   provider);

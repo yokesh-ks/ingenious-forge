@@ -127,6 +127,7 @@ working.
     `LICENSE`).
   - `decision-records/`: write, supersede and index architecture decision
     records in `docs/decisions/`, adapted from
+    https://github.com/addyosmani/agent-skills (MIT, see its `LICENSE`).
   - `roadmap-planning/`: turns `docs/PRD.md` into milestones, epics and
     stories on the GitHub project board, keeps `docs/ROADMAP.md` in sync
     and re-plans after PRD changes, adapted from
@@ -146,7 +147,6 @@ For any meaningful engineering request, start with front-door triage:
   the appropriate workflow: `codebase-summary`, `pdd`,
   `code-task-generator`, or `code-assist`. Before the first edit, use
   `workspace-setup` to get a branch, or a worktree, and a baseline.
-  `code-task-generator`, or `code-assist`.
 - **Roadmap**: Use `roadmap-planning` to decide what to build first or
   next, break the PRD or an epic into issues on the project board, replan
   after a PRD change, or report progress. It picks the feature; `pdd`
