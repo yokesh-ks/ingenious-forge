@@ -15,10 +15,11 @@
  */
 
 import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-const ROOT = process.cwd();
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const LABELS_PATH = join(ROOT, ".github", "labels.json");
 const FLAGS = new Set(["--apply", "--prune", "--yes"]);
 
@@ -106,11 +107,12 @@ function plan(wanted, remote) {
     if (!current) {
       create.push(label);
     } else if (
+      // A casing-only difference counts: the file sets the exact name.
       current.name !== label.name ||
       current.color.toLowerCase() !== label.color ||
       (current.description ?? "") !== label.description
     ) {
-      update.push(label);
+      update.push({ ...label, from: current.name });
     }
   }
   const extra = remote.filter((l) => !wantedNames.has(l.name.toLowerCase()));
@@ -131,7 +133,10 @@ function main() {
   const mode = opts.apply ? "apply" : "dry run";
 
   for (const l of create) console.log(`create  ${l.name}`);
-  for (const l of update) console.log(`update  ${l.name}`);
+  for (const l of update) {
+    const rename = l.from !== l.name ? ` (rename from "${l.from}")` : "";
+    console.log(`update  ${l.name}${rename}`);
+  }
   if (opts.prune) {
     for (const l of extra) console.log(`delete  ${l.name}`);
   } else if (extra.length > 0) {
@@ -150,7 +155,7 @@ function main() {
     return;
   }
 
-  for (const l of [...create, ...update]) {
+  for (const l of create) {
     gh([
       "label",
       "create",
@@ -159,7 +164,20 @@ function main() {
       l.color,
       "--description",
       l.description,
-      "--force",
+    ]);
+  }
+  // Edit by the current name so a casing change renames the label.
+  for (const l of update) {
+    gh([
+      "label",
+      "edit",
+      l.from,
+      "--name",
+      l.name,
+      "--color",
+      l.color,
+      "--description",
+      l.description,
     ]);
   }
   if (deletes.length > 0) {
