@@ -105,6 +105,8 @@ working.
   scope and features.
 - `docs/reference/<project>/`: generated reference documentation for studied
   coding-agent projects, one markdown file per page.
+- `docs/decisions/`: architecture decision records (`NNNN-kebab-title.md`)
+  and their index in `README.md`. Managed with `decision-records`.
 - `scripts/generate-docs.mjs`: writes `.docs-input/pages.json` into
   markdown pages under `docs/reference/`. The output folder is hard-coded in
   `OUTPUT_DIR`; update it before generating a new reference set.
@@ -123,6 +125,9 @@ working.
     branch (or worktree) and records a baseline before the first edit,
     adapted from https://github.com/obra/superpowers (MIT, see its
     `LICENSE`).
+  - `decision-records/`: write, supersede and index architecture decision
+    records in `docs/decisions/`, adapted from
+    https://github.com/addyosmani/agent-skills (MIT, see its `LICENSE`).
 
   To add, adapt or vendor a skill, use `skill-intake`. It places the skill
   in `.agents/skills/<name>/`, links it with
@@ -146,6 +151,9 @@ For any meaningful engineering request, start with front-door triage:
   asks for `/adhd` or brainstorming. Its pre-flight gate decides whether a
   direct answer is better. Feed its shortlist into `pdd` when it leads to
   a feature.
+- **Decisions**: Use `decision-records` when a significant technical
+  choice is made, changed or needs justifying under Principle VIII. Its
+  gate turns away choices that are cheap to reverse.
 - **Review work**: Start review-first; prioritize consistency with
   `docs/PRD.md` and missing validation.
 - **All other requests**: Use normal conversational or investigative behavior
