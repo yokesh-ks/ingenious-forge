@@ -1,0 +1,30 @@
+[
+  { "name": "epic", "color": "5319e7", "description": "Type: a large body of work tracked as sub-issues. Apply exactly one type." },
+  { "name": "story", "color": "8250df", "description": "Type: one deliverable change with acceptance criteria. Apply exactly one type." },
+  { "name": "bug", "color": "a475f9", "description": "Type: something that works differently from the PRD or docs. Apply exactly one type." },
+  { "name": "chore", "color": "d8b9ff", "description": "Type: upkeep with no user-facing change (deps, tooling, cleanup). Apply exactly one type." },
+
+  { "name": "area:agent", "color": "0550ae", "description": "Area: Forge Agent loop, tools, sandbox and models (PRD 6.1)." },
+  { "name": "area:web-ui", "color": "0969da", "description": "Area: the React web UI in the browser (PRD 6.2)." },
+  { "name": "area:board", "color": "218bff", "description": "Area: Forge Board kanban workflow (PRD 6.3)." },
+  { "name": "area:server", "color": "1f6feb", "description": "Area: local Rust server, API, services and SQLite (PRD 8)." },
+  { "name": "area:launcher", "color": "54aeff", "description": "Area: npx ingenious-forge package and binary launch (PRD 6.2, 8)." },
+  { "name": "area:skills", "color": "1d76db", "description": "Area: project skills in .agents/skills/." },
+  { "name": "area:process", "color": "80ccff", "description": "Area: how we build Forge: tracking, CI, hooks, agent setup." },
+  { "name": "area:docs", "color": "b6e3ff", "description": "Area: PRD, README, AGENTS.md, decision records and reference docs." },
+
+  { "name": "P0", "color": "b60205", "description": "Priority: needed for the first release (MVP). Stories and bugs only." },
+  { "name": "P1", "color": "d93f0b", "description": "Priority: needed for v1.0. Stories and bugs only." },
+  { "name": "P2", "color": "fbca04", "description": "Priority: later release. Stories and bugs only." },
+
+  { "name": "size:XS", "color": "eaeef2", "description": "Size: under an hour, one small edit. Stories only." },
+  { "name": "size:S", "color": "d0d7de", "description": "Size: about half a day. Stories only." },
+  { "name": "size:M", "color": "afb8c1", "description": "Size: one to two days. Stories only." },
+  { "name": "size:L", "color": "8c959f", "description": "Size: too big for one story; split it before starting." },
+
+  { "name": "blocked", "color": "e11d21", "description": "Flag: cannot move until a linked issue or outside event resolves." },
+  { "name": "stale", "color": "ededed", "description": "Flag: no activity for a long time; confirm it still matters or close it." },
+  { "name": "needs-decision", "color": "fef2c0", "description": "Flag: waiting on a decision record or the maintainer." },
+  { "name": "good first issue", "color": "7057ff", "description": "Flag: small, well-scoped and a good start for a new contributor." },
+  { "name": "help wanted", "color": "008672", "description": "Flag: the maintainer welcomes an outside contributor taking this." }
+]

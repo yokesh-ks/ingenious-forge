@@ -110,6 +110,8 @@ working.
 - `scripts/generate-docs.mjs`: writes `.docs-input/pages.json` into
   markdown pages under `docs/reference/`. The output folder is hard-coded in
   `OUTPUT_DIR`; update it before generating a new reference set.
+- `.github/labels.json` and `scripts/sync-labels.mjs`: the GitHub label
+  set as code and the script that syncs it (see "Issue tracking").
 - `tools/clean-mark/`: local Node tool for converting web pages to clean
   markdown.
 - `.docs-input/`: Git-ignored scratch input for `generate-docs.mjs`.
@@ -178,6 +180,26 @@ unless one is introduced or an explicit test command is supplied.
   `.docs-input/pages.json`.
 - `.agents/skills/agent-sop/scripts/validate-sop.sh <file.sop.md>` — validate the
   structure of a new or edited SOP.
+- `node scripts/sync-labels.mjs` — compare GitHub labels with
+  `.github/labels.json` (dry run). Add `--apply` to create and update
+  labels, and `--prune` to list labels not in the file; deleting them
+  needs `--apply --prune --yes` and the maintainer's approval.
+
+## Issue tracking
+
+Labels are defined in [`.github/labels.json`](.github/labels.json); each
+description says when to apply the label. Use only these labels, and add
+new ones to the file first, then sync.
+
+- **Type**, exactly one: `epic`, `story`, `bug`, `chore`.
+- **Area**, one or more: `area:agent`, `area:web-ui`, `area:board`,
+  `area:server`, `area:launcher`, `area:skills`, `area:process`,
+  `area:docs`.
+- **Priority**, stories and bugs: `P0`, `P1`, `P2`, as in PRD §6.
+- **Size**, stories: `size:XS`, `size:S`, `size:M`, `size:L` (`L` means
+  split it first).
+- **Flags**: `blocked`, `stale`, `needs-decision`, `good first issue`,
+  `help wanted`.
 
 ## Conventions
 
