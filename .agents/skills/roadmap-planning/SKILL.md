@@ -65,8 +65,12 @@ run Mode D first and show what exists; do not create a second set.
    for type, area, priority and size. Otherwise use `epic`, `story` and
    `stale` only, creating `story` or `stale` (after approval) when first
    needed. Do not invent other labels.
-6. **Board.** Every epic and story is added to project 34 with Status
-   Todo, and gets the milestone of its phase.
+6. **Board.** Every epic and story is added to project 34 and gets the
+   milestone of its phase and the matching Phase field; stories also get
+   the Priority and Size fields matching their labels. Status follows
+   `docs/process/project-board.md`: a new epic is **Backlog** until it
+   is refined; a story is **Todo** when it has no open blocker, else
+   **Backlog**, and moves to Todo when its blockers close.
 7. **Drafts.** Write proposals and issue bodies to
    `output/planning/roadmap/` (Git-ignored), then show them in chat.
 8. **Sync the index.** After any approved write, update `docs/ROADMAP.md`
@@ -109,7 +113,7 @@ run Mode D first and show what exists; do not create a second set.
    maintainer approves the checks that will be created, so none are left
    "to be written at creation". Then stop for approval.
 8. **Create** after approval: milestones, epics (label `epic`, milestone,
-   Refined `no`), `blocked_by` links, board items with Status Todo.
+   Refined `no`), `blocked_by` links, board items with Status Backlog.
    Then write `docs/ROADMAP.md`.
 
 ## Mode B: Refine an epic into stories
@@ -141,7 +145,8 @@ run Mode D first and show what exists; do not create a second set.
    for approval.
 6. **Create** after approval: each story as an issue (label `story`, the
    epic's milestone), linked as a **sub-issue** of the epic, `blocked_by`
-   links, added to project 34 with Status Todo. Then set the epic's
+   links, added to project 34 with Status and fields as in rule 6. Move
+   the epic to Todo. Then set the epic's
    Refined section to `yes`, fill its "Stories" list, and update
    `docs/ROADMAP.md`.
 7. **Hand off.** Each story's "Next step" names `pdd` (needs design) or

@@ -105,6 +105,8 @@ working.
   scope and features.
 - `docs/reference/<project>/`: generated reference documentation for studied
   coding-agent projects, one markdown file per page.
+- `docs/process/`: how Forge is built: the project board
+  (`project-board.md`).
 - `docs/decisions/`: architecture decision records (`NNNN-kebab-title.md`)
   and their index in `README.md`. Managed with `decision-records`.
 - `scripts/generate-docs.mjs`: writes `.docs-input/pages.json` into
@@ -249,6 +251,20 @@ Agents creating issues via `gh` must use the same headings as
 form's type label. Write the body to a file and pass `--body-file`.
 For epics and stories, use the `roadmap-planning` templates, which
 follow the forms.
+
+Every issue and PR is tracked on the
+[IngeniousForge project board](https://github.com/users/yokesh-ks/projects/34).
+[`docs/process/project-board.md`](docs/process/project-board.md) holds
+its fields, views, workflows, ids and the `gh` commands to update it.
+Status moves in this order:
+
+- **Backlog**: captured, not yet planned or refined; set when an item is
+  added.
+- **Todo**: refined and ready to start, dependencies met.
+- **In Progress**: claimed; the agent assigns itself and sets this at
+  `workspace-setup`.
+- **In Review**: a PR is open and waits for review and the maintainer.
+- **Done**: merged or closed.
 
 ## Conventions
 
