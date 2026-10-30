@@ -14,6 +14,10 @@ own license:
   https://github.com/obra/superpowers, Copyright (c) 2025 Jesse Vincent,
   under the MIT License. See .agents/skills/skill-intake/LICENSE.
 
+- .agents/skills/workspace-setup/ is derived from
+  https://github.com/obra/superpowers, Copyright (c) 2025 Jesse Vincent,
+  under the MIT License. See .agents/skills/workspace-setup/LICENSE.
+
 - docs/reference/<project>/ holds reference documentation describing other
   open-source projects, including excerpts of their source. Each project's
   material remains under that project's license, kept in its folder as
