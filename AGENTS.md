@@ -21,6 +21,12 @@ code yet.
 - `.docs-input/`: Git-ignored scratch input for `generate-docs.mjs`.
 - `.agents/skills/`: project skills shared by all agents.
   `.claude/skills/` holds symlinks to them for Claude Code.
+  - `agent-sop/`: structured SOP workflows for change work and planning.
+  - `adhd/`: parallel divergent ideation, vendored from
+    https://github.com/UditAkhourii/adhd (MIT, see its `LICENSE`).
+
+  To add a skill, place it in `.agents/skills/<name>/` and link it with
+  `ln -s ../../.agents/skills/<name> .claude/skills/<name>`.
 
 ## Front door
 
@@ -33,6 +39,11 @@ For any meaningful engineering request, start with front-door triage:
 - **Product planning**: Use the `pdd` workflow of `agent-sop` to turn a
   feature idea into a design and implementation plan. Ground it in
   `docs/PRD.md`.
+- **Ideation**: Use `adhd` for open-ended, high-stakes decisions such as
+  architecture, naming, API surface, or fuzzy debugging, or when the user
+  asks for `/adhd` or brainstorming. Its pre-flight gate decides whether a
+  direct answer is better. Feed its shortlist into `pdd` when it leads to
+  a feature.
 - **Review work**: Start review-first; prioritize consistency with
   `docs/PRD.md` and missing validation.
 - **All other requests**: Use normal conversational or investigative behavior
