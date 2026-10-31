@@ -157,6 +157,22 @@ prose. The structure is the point.
 5. **Provocation.** One wildcard question or idea that opens a new
    direction the user can push into if nothing landed.
 
+## Agent portability
+
+This skill assumes an **Agent** or **Task** tool that spawns isolated,
+parallel sub-sessions. If your agent does not have one:
+
+- **No subagent tool at all:** run the diverge branches sequentially in
+  separate chat sessions or fresh contexts. The critical invariant is
+  isolation: each branch must not see another's output. Copy-pasting the
+  frame prompt into a new session achieves this. The focus phase runs in
+  your main session.
+- **Subagent tool but no parallelism:** run the branches sequentially.
+  Isolation still holds as long as each branch starts from a clean context.
+- **CLI companion:** use `adhd-agent` (see "Companion library and CLI"
+  below), which handles the loop, JSON parsing and scoring outside any
+  specific coding agent.
+
 ## Anti-patterns
 
 These are how this skill goes wrong. Watch for them.
