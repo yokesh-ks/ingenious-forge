@@ -36,6 +36,10 @@ own license:
   https://github.com/obra/superpowers, Copyright (c) 2025 Jesse Vincent,
   under the MIT License. See .agents/skills/verify-before-done/LICENSE.
 
+- .agents/skills/change-review/ is derived from
+  https://github.com/obra/superpowers, Copyright (c) 2025 Jesse Vincent,
+  under the MIT License. See .agents/skills/change-review/LICENSE.
+
 - docs/reference/<project>/ holds reference documentation describing other
   open-source projects, including excerpts of their source. Each project's
   material remains under that project's license, kept in its folder as
