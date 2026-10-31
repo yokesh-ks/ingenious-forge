@@ -182,6 +182,13 @@ working.
     and AI attribution rules, links the issue and project board, and
     cleans up the workspace, adapted from
     https://github.com/obra/superpowers (MIT, see its `LICENSE`).
+  - `retrospective/`: reviews a completed epic against its evidence
+    (issues, PRs, review threads, ADRs, commits), produces a sourced
+    retrospective document with an acceptance verdict, and proposes
+    owned action items — especially improvements to `AGENTS.md`,
+    principles, skills and agent memory, adapted from
+    https://github.com/bmad-code-org/BMAD-METHOD (MIT, see its
+    `LICENSE`).
 
   To add, adapt or vendor a skill, use `skill-intake`. It places the skill
   in `.agents/skills/<name>/`, links it with
@@ -225,6 +232,10 @@ For any meaningful engineering request, start with front-door triage:
   correctness; human approval on the PR is the final gate (Principle IV).
   Use `address-pr-comments` to work through a PR's open review threads on
   GitHub: fetch, triage, fix (with maintainer approval) and reply in-thread.
+- **Retrospective**: Use `retrospective` when an epic or milestone closes
+  and the team wants to learn from it. It gathers evidence, analyses
+  delivery, quality, spec alignment and process, gives an acceptance
+  verdict and proposes action items. Nothing is applied without approval.
 - **All other requests**: Use normal conversational or investigative behavior
   without forcing an SOP workflow.
 
