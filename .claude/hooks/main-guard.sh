@@ -26,7 +26,8 @@ BRANCH=$(git symbolic-ref --short -q HEAD 2>/dev/null) || exit 0
 
 case "$BRANCH" in
   main | master)
-    reason="Working on '${BRANCH}' is blocked. Use workspace-setup to create a branch (see .agents/skills/workspace-setup/)."
+    [ "${FORGE_ALLOW_MAIN:-}" = "1" ] && exit 0
+    reason="Working on '${BRANCH}' is blocked. Use workspace-setup to create a branch (see .agents/skills/workspace-setup/). Maintainer override: FORGE_ALLOW_MAIN=1."
     jq -n --arg reason "$reason" '{
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
