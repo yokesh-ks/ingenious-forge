@@ -60,8 +60,10 @@ gh api -X POST repos/yokesh-ks/ingenious-forge/rulesets \
   --input docs/process/rulesets/main-protection.json
 ```
 
-To change it later, edit the JSON in a PR, then after merging update the
-ruleset in place (find `<id>` with `gh api repos/yokesh-ks/ingenious-forge/rulesets`):
+The live ruleset has id `26260094`; `gh api
+repos/yokesh-ks/ingenious-forge/rulesets` lists it. To change it later,
+edit the JSON in a PR, then after merging update the ruleset in place
+(`<id>` below is that id):
 
 ```bash
 gh api -X PUT repos/yokesh-ks/ingenious-forge/rulesets/<id> \
