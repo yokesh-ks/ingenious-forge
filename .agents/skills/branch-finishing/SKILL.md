@@ -64,13 +64,21 @@ Record `WORKTREE_PATH` now; you will need it for cleanup. Also record
 ### 3. Determine the base branch
 
 ```bash
-git fetch origin main
 BASE_BRANCH=main
+git fetch origin "$BASE_BRANCH"
 ```
 
 The base branch is `main` unless the branch was cut from something else.
 Confirm with the user which base branch to use and set `$BASE_BRANCH`
 accordingly; this value is used in steps 4, 6d and 7a.
+
+Compute the display values used in the options below:
+
+```bash
+BASE_SHORT_SHA=$(git rev-parse --short "$BASE_BRANCH")
+HEAD_SHORT_SHA=$(git rev-parse --short HEAD)
+COMMIT_COUNT=$(git rev-list --count "$BASE_BRANCH"..HEAD)
+```
 
 ### 4. Present the options
 
@@ -78,7 +86,7 @@ accordingly; this value is used in steps 4, 6d and 7a.
 
 > The branch `<branch>` has N commit(s) over `$BASE_BRANCH` (base `<short SHA>`).
 >
-> 1. **Merge locally** — merge into `main` in this checkout, rerun checks,
+> 1. **Merge locally** — merge into `$BASE_BRANCH` in this checkout, rerun checks,
 >    do not push.
 > 2. **Push and open a PR** — push the branch and create a pull request
 >    linked to the issue.
@@ -107,6 +115,7 @@ Before any push or merge, scan every commit message on the branch for AI
 attribution:
 
 ```bash
+BASE=$(git merge-base HEAD "$BASE_BRANCH")
 git log --format='%H %s' "$BASE"..HEAD
 ```
 
@@ -245,7 +254,7 @@ user asks.
 
 Report:
 
-> Branch `<branch>` is at `<short SHA>` with N commit(s) over `main`.
+> Branch `<branch>` is at `<short SHA>` with N commit(s) over `$BASE_BRANCH`.
 > Workspace: `<path>`.
 > To resume: `cd <path>` (or switch to the worktree).
 
