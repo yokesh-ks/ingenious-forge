@@ -29,8 +29,8 @@ Choose the entry point that matches the work at hand:
   decisions, and `pdd` for the first story.
 - **Clear story**: start at `pdd` or `code-task-generator` if the story is
   already well-defined and linked to an issue.
-- **Small bug fix**: start at `workspace-setup` and skip the planning stages
-  (Spec, Tasks, Check plan); run Verify → Review → Integrate as normal.
+- **Small bug fix**: start at `workspace-setup`; skip the planning stages
+  (Spec, Tasks, Check plan); run Build → Verify → Review → Integrate as normal.
 - **Docs-only change**: start at `workspace-setup`; skip planning; run
   Verify → Review → Integrate.
 
