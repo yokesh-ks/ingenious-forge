@@ -24,7 +24,7 @@ format of the GitHub REST rulesets API.
 | Require a pull request | On | No direct pushes |
 | ↳ Required approvals | 0 | A solo maintainer cannot approve their own PR; the review gate is the maintainer merging it. See "Raising approvals" |
 | ↳ Dismiss stale approvals on push | On | An approval covers only the commits it saw |
-| ↳ Require conversation resolution | On | Review findings from `change-review` must be resolved before merging |
+| ↳ Require conversation resolution | On | Review comments must be resolved before merging |
 | ↳ Allowed merge methods | Squash (primary), rebase | The PR title becomes the commit title, and CI checks it |
 | Require status checks | `commits`, `pr-body`, `skills`, `sop`, `notice`, `links`, `prd-names` | The jobs of `.github/workflows/repo-hygiene.yml` (see `AGENTS.md`, "Continuous integration") |
 | ↳ Require branches to be up to date | On | Checks run against the latest `main` |
