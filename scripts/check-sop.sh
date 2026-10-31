@@ -31,7 +31,9 @@ for f in $files; do
 	else
 		failed=$((failed + 1))
 		printf 'FAIL  %s\n' "$f"
-		grep '❌' "$tmp/out" | sed 's/^/        /'
+		# Show the errors, or the end of the output if the validator stopped
+		# before reporting one.
+		{ grep '❌' "$tmp/out" || tail -n 5 "$tmp/out"; } | sed 's/^/        /'
 	fi
 done
 
