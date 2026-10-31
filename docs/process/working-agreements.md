@@ -13,14 +13,15 @@ rules:
 - Only pick issues whose Status is **Todo** and whose blocking issues are
   all closed.
 - **Claim** means doing all three of the following in a single step:
-  1. Assign the issue to the maintainer's GitHub account (agents act as
-     the user).
+  1. Assign the issue to yourself (agents act as the maintainer's GitHub
+     account, so the assignee reflects the maintainer).
   2. Move the issue to **In Progress** on the project board.
   3. Post a claim comment on the issue (template below).
 - One story per agent session; one branch or worktree per story
   (`workspace-setup`).
 - Never take an issue that is already **In Progress** unless the claim
-  comment is more than 48 hours old **and** the maintainer agrees in chat.
+  comment is more than 48 hours old **and** the maintainer agrees (in the
+  agent session or in a GitHub comment on the issue).
 
 ### Claim comment template
 
@@ -31,7 +32,7 @@ Claimed by <agent name or session id> on branch `<branch>` at <ISO 8601 date>.
 Example:
 
 ```
-Claimed by Claude Code (session abc123) on branch `docs/working-agreements-26` at 2026-10-31.
+Claimed by agent (session abc123) on branch `docs/working-agreements-26` at 2026-10-31.
 ```
 
 ## 2. Avoiding collisions
@@ -95,8 +96,8 @@ Example:
 
 ## 4. Which agent or model for which work
 
-This section applies to Claude Code today. Revisit it when adding other
-agents.
+This section applies to the current primary agent today. Revisit it when
+adding other agents.
 
 | Work | Suggested setup | Why |
 |---|---|---|
