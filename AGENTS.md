@@ -106,8 +106,12 @@ working.
 - `docs/reference/<project>/`: generated reference documentation for studied
   coding-agent projects, one markdown file per page.
 - `docs/process/`: how Forge is built: the project board
-  (`project-board.md`) and the protection of `main`
-  (`branch-protection.md`, with its ruleset as JSON in `rulesets/`).
+  (`project-board.md`), the protection of `main`
+  (`branch-protection.md`, with its ruleset as JSON in `rulesets/`), and
+  the agent permission policy (`agent-permissions.md`).
+- `.claude/settings.json`: the agent permission policy implemented for
+  Claude Code. Personal overrides go in the Git-ignored
+  `.claude/settings.local.json`.
 - `docs/decisions/`: architecture decision records (`NNNN-kebab-title.md`)
   and their index in `README.md`. Managed with `decision-records`.
 - `scripts/generate-docs.mjs`: writes `.docs-input/pages.json` into
@@ -258,6 +262,12 @@ code. Change checks and patterns there only.
 - `bash .agents/skills/skill-intake/scripts/check-skill.sh [<name>]` —
   check a project skill's name, frontmatter, symlink, licence, `NOTICE`
   entry and `AGENTS.md` registration (all skills when no name is given).
+
+Agents follow the permission policy in
+[`docs/process/agent-permissions.md`](docs/process/agent-permissions.md):
+what they may do without asking, must ask about, and must never do, such
+as `git commit --no-verify`, force-pushing or `npm publish`. An agent
+without its own implementation of the policy follows it by hand.
 
 Before claiming success, follow `verify-before-done`: read
 `.agents/skills/verify-before-done/SKILL.md` before saying work is done,
