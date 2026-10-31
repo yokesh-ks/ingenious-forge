@@ -1,14 +1,13 @@
 # Roadmap
 
-Index of product work on the [IngeniousForge board](https://github.com/users/yokesh-ks/projects/34).
+Index of product work on the [Ingenious Forge board](https://github.com/users/yokesh-ks/projects/34).
 Scope comes from [docs/PRD.md](PRD.md); detail lives in the linked issues.
 
 Last synced: 2026-10-31
 
 > **Note — milestones pending:** The five Phase milestones need to be created on
 > GitHub (Settings → Milestones) with the titles and exit criteria below, then
-> assigned to the open epics. The `gh` CLI token is not available in the current
-> session; use the GitHub web UI or a session with a valid token.
+> assigned to the open epics.
 
 ---
 
@@ -72,7 +71,7 @@ No epics yet. P2 features and team mode from PRD §6.
 ```
 Phase 0:  #62 → #63 → #64
 
-Phase 1:  #64 → #65 → #66, #67, #68, #72, #73, #74   (in parallel after #65)
+Phase 1 dependencies:  #64 → #65 → #66, #67, #68, #72, #73, #74   (in parallel after #65)
           #63 → #69 → #70 → #71
           #65 → #71
           #65 + #71 → #73
