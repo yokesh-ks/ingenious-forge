@@ -119,6 +119,12 @@ working.
   `.claude/settings.local.json`.
 - `docs/decisions/`: architecture decision records (`NNNN-kebab-title.md`)
   and their index in `README.md`. Managed with `decision-records`.
+- `docs/ROADMAP.md`: milestone and epic breakdown kept in sync by
+  `roadmap-planning`.
+- `docs/retrospectives/`: retrospective documents produced by `retrospective`
+  after epics or milestones close.
+- `docs/feature-delivery.md`: the full feature delivery stage table —
+  skills, outputs and human gates for every stage of feature work.
 - `scripts/generate-docs.mjs`: writes `.docs-input/pages.json` into
   markdown pages under `docs/reference/`. The output folder is hard-coded in
   `OUTPUT_DIR`; update it before generating a new reference set.
@@ -137,6 +143,8 @@ working.
 - `tools/clean-mark/`: local Node tool for converting web pages to clean
   markdown.
 - `.docs-input/`: Git-ignored scratch input for `generate-docs.mjs`.
+- `.worktrees/`: Git-ignored; holds worktrees created by hand or by
+  `workspace-setup` (one sub-directory per slug).
 - `.agents/skills/`: project skills shared by all agents.
   `.claude/skills/` holds symlinks to them for Claude Code.
   - `agent-sop/`: structured SOP workflows for change work and planning.
@@ -208,18 +216,17 @@ working.
 
 For any meaningful engineering request, start with front-door triage:
 
-- **Change work**: Use `agent-sop` for implementation, bug fixing,
-  refactoring, or changes to architecture, tests, or QA expectations. Select
-  the appropriate workflow: `codebase-summary`, `pdd`,
-  `code-task-generator`, or `code-assist`. Before the first edit, use
-  `workspace-setup` to get a branch, or a worktree, and a baseline.
+- **Change work**: Use `workspace-setup` first to get a branch or worktree
+  and a baseline. Then use `agent-sop` (`codebase-summary`, `pdd`,
+  `code-task-generator`, or `code-assist`) for the build. After building,
+  run `verify-before-done`, then `change-review`, then `branch-finishing`.
 - **Roadmap**: Use `roadmap-planning` to decide what to build first or
   next, break the PRD or an epic into issues on the project board, replan
   after a PRD change, or report progress. It picks the feature; `pdd`
   designs it.
-- **Product planning**: Use the `pdd` workflow of `agent-sop` to turn a
-  feature idea into a design and implementation plan. Ground it in
-  `docs/PRD.md`.
+- **Product planning**: Use `roadmap-planning` first to break the area into
+  epics and stories; then use the `pdd` workflow of `agent-sop` to turn a
+  story into a design and implementation plan. Ground it in `docs/PRD.md`.
 - **Ideation**: Use `adhd` for open-ended, high-stakes decisions such as
   architecture, naming, API surface, or fuzzy debugging, or when the user
   asks for `/adhd` or brainstorming. Its pre-flight gate decides whether a
@@ -235,12 +242,13 @@ For any meaningful engineering request, start with front-door triage:
 - **Completion claims**: Use `verify-before-done` before saying work is
   done, fixed or passing, before committing, opening a PR or closing an
   issue, and before calling a failure pre-existing.
-- **Review work**: Use `change-review` to request an independent review of
-  a change (request mode) or to respond to incoming feedback (receive mode).
-  Prioritize consistency with `docs/PRD.md` and Principles before
-  correctness; human approval on the PR is the final gate (Principle IV).
-  Use `address-pr-comments` to work through a PR's open review threads on
-  GitHub: fetch, triage, fix (with maintainer approval) and reply in-thread.
+- **Review work**: Use `change-review` for code reviews (request mode
+  dispatches an independent reviewer; receive mode responds to feedback).
+  Use `plan-analysis` to review a feature's planning documents against
+  each other and the principles. Use `address-pr-comments` to work through
+  a PR's open review threads on GitHub: fetch, triage, fix (with maintainer
+  approval) and reply in-thread. Human approval on the PR is the final gate
+  (Principle IV).
 - **Retrospective**: Use `retrospective` when an epic or milestone closes
   and the team wants to learn from it. It gathers evidence, analyses
   delivery, quality, spec alignment and process, gives an acceptance
@@ -255,6 +263,23 @@ For any meaningful engineering request, start with front-door triage:
   without forcing an SOP workflow.
 
 If the request is ambiguous, ask one concise clarification.
+
+## Feature delivery
+
+Every feature follows a staged flow: product plan → explore → decide →
+spec → tasks → check plan → workspace → build → verify → review →
+integrate → release → learn. The full stage table with skills, outputs and
+human gates is in [`docs/feature-delivery.md`](docs/feature-delivery.md).
+
+**Entry points**
+
+- **New product area**: `roadmap-planning` → `decision-records` → `pdd`.
+- **Clear story**: `pdd` or `code-task-generator` (skip roadmap stages).
+- **Small bug fix**: `workspace-setup` → build → verify → review → integrate.
+- **Docs-only**: `workspace-setup` → verify → review → integrate.
+
+**Non-skippable**: `verify-before-done` before any completion claim;
+`branch-finishing` for every change that reaches `main`.
 
 ## Development and validation
 
