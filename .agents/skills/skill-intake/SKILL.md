@@ -114,11 +114,10 @@ Create `.agents/skills/<name>/SKILL.md` from
   through their interpreter (`bash scripts/x.sh`), never by bare path.
 - **Agent-agnostic (Principle VI):** write for any agent. If the skill
   relies on a capability not every agent has (subagent spawning, parallel
-  tool calls, a built-in code-review command, specific MCP tools), it
-  MUST document a fallback: what to do when the capability is absent.
-  Place the fallback in an "Agent portability" section or inline next to
-  the step that needs it. Name Claude Code-specific behaviour only where
-  it matters, and say so.
+  tool calls, built-in code review, specific MCP tools), it MUST document
+  a fallback: what to do when the capability is absent. Place it in an
+  "Agent portability" section or inline next to the step that needs it.
+  Name Claude Code-specific behaviour only where it matters, and say so.
 - **No AI attribution** anywhere in the skill.
 
 ### 6. Link it
