@@ -31,8 +31,11 @@ esac
 
 if [ -z "$reason" ]; then
   case "$COMMAND" in
-    git\ commit*\ -n | git\ commit*\ -n\ *)
-      reason="-n is shorthand for --no-verify and skips the project's git hooks. Remove it."
+    git\ commit*)
+      # Detect -n standalone or combined (e.g. -nm, -an) using grep.
+      if printf '%s' "$COMMAND" | grep -qE ' -[a-zA-Z]*n[a-zA-Z]*([ "'\''\\]|$)'; then
+        reason="-n is shorthand for --no-verify and skips the project's git hooks. Remove it."
+      fi
       ;;
   esac
 fi
