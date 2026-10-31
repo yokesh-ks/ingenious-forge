@@ -1,4 +1,4 @@
-# PR template
+# Pull request template
 
 Use this template for the pull request body when finishing a branch with
 the "Push and open a PR" option. Fill in each section; do not remove

@@ -66,15 +66,11 @@ Record `WORKTREE_PATH` now; you will need it for cleanup. Also record
 ```bash
 git fetch origin main
 BASE_BRANCH=main
-BASE=$(git merge-base HEAD origin/main)
-BASE_TIP=$(git rev-parse origin/main)
 ```
 
-The base branch is `main` unless the branch was cut from something else. To
-check: compare `$BASE` (merge-base of HEAD and `origin/main`) with `$BASE_TIP`
-(the tip of `origin/main`). If they differ, the branch may have been based on
-another feature branch; warn the user, ask which base branch to use, and set
-`$BASE_BRANCH` accordingly.
+The base branch is `main` unless the branch was cut from something else.
+Confirm with the user which base branch to use and set `$BASE_BRANCH`
+accordingly; this value is used in steps 4, 6d and 7a.
 
 ### 4. Present the options
 
@@ -186,7 +182,7 @@ body. This is Principle VII.
 Write the body to a temporary file and use `--body-file`:
 
 ```bash
-gh pr create --base main --title "<conventional title>" --body-file <tmp>
+gh pr create --base "$BASE_BRANCH" --title "<conventional title>" --body-file <tmp>
 ```
 
 #### 6e. Add the PR to the project board
