@@ -50,6 +50,11 @@ own license:
 - .agents/skills/branch-finishing/ is derived from
   https://github.com/obra/superpowers, Copyright (c) 2025 Jesse Vincent,
   under the MIT License. See .agents/skills/branch-finishing/LICENSE.
+  
+- .agents/skills/retrospective/ is derived from
+  https://github.com/bmad-code-org/BMAD-METHOD, Copyright (c) 2025 BMad
+  Code, LLC, under the MIT License. See
+  .agents/skills/retrospective/LICENSE.
 
 - docs/reference/<project>/ holds reference documentation describing other
   open-source projects, including excerpts of their source. Each project's
