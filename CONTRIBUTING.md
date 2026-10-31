@@ -17,7 +17,7 @@ cd ingenious-forge
 scripts/setup-dev.sh
 ```
 
-`setup-dev.sh` sets `core.hooksPath` to `.githooks/`, which enables the
+`setup-dev.sh` sets `core.hooksPath` to `.githooks`, which enables the
 shared git hooks for commit messages, attribution checks and branch guards.
 Run it once after cloning.
 
@@ -77,9 +77,10 @@ ruleset.
 
 ## Checks
 
-The shared git hooks (`.githooks/`) and CI
-(`.github/workflows/repo-hygiene.yml`) enforce the same rules. Run them
-locally before opening a PR:
+The shared git hooks (`.githooks`) and CI
+(`.github/workflows/repo-hygiene.yml`) enforce the same core rules; CI
+adds the `pr-body` check and cannot be bypassed. Run them locally before
+opening a PR:
 
 ```bash
 scripts/check-all.sh
