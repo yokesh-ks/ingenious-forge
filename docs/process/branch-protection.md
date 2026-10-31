@@ -28,7 +28,7 @@ format of the GitHub REST rulesets API.
 | ↳ Allowed merge methods | Squash (primary), rebase | The PR title becomes the commit title, and CI checks it |
 | Require status checks | `commits`, `pr-body`, `skills`, `sop`, `notice`, `links`, `prd-names` | The jobs of `.github/workflows/repo-hygiene.yml` (see `AGENTS.md`, "Continuous integration") |
 | ↳ Require branches to be up to date | On | Checks run against the latest `main` |
-| Bypass list | Repository admin, for pull requests only | The maintainer can merge their own PR; there is no direct-push loophole |
+| Bypass list | Repository admin, for pull requests only | The maintainer can merge their own PR; there is no direct-push loophole. The bypass also lets an admin merge a PR whose required checks fail, so do that only deliberately and say why on the PR |
 
 Status checks are pinned to the GitHub Actions app (`integration_id`
 15368), so a status with the same name from another source does not count.

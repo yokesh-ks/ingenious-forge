@@ -20,9 +20,17 @@ Review in this order and report findings most severe first:
 
 Skip formatting and wording preferences unless they change meaning.
 
+Do not raise a finding again on a later push when the maintainer already
+answered its thread with "No change: <reason>" and the lines it concerns
+have not changed. Disagree in that thread instead.
+
 ## Principle checklist
 
 Answer each question yes or no for the change under review.
+
+Principles I and II govern the Forge product. Development-process tooling
+(skills, git and agent hooks, CI, `scripts/`, `docs/process/`) traces to a
+GitHub issue instead of a PRD section; do not report it under I or II.
 
 **I. PRD is the source of truth**
 - Does a feature lack a matching section in `docs/PRD.md`?
@@ -115,4 +123,5 @@ Answer each question yes or no for the change under review.
   (`feat(skills): ...`, `docs: ...`, `chore: ...`).
 - One logical change per commit. Principle amendments are never bundled
   with other work.
-- The PR description links the PRD section or plan the change traces to.
+- The PR description links the PRD section or plan the change traces to,
+  or, for development-process tooling, the issue.

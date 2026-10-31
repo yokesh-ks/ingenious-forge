@@ -188,9 +188,12 @@ body. This is Principle VII.
 
 #### 6d. Create the PR
 
-Write the body to a temporary file and use `--body-file`:
+Write the body to a temporary file, run the CI check on it, and use
+`--body-file`. Agent harnesses may append their own attribution line to
+PR bodies; the check catches it before it is published.
 
 ```bash
+bash scripts/check-pr-body.sh "<conventional title>" <tmp> "" "$(git branch --show-current)"
 gh pr create --base "$BASE_BRANCH" --title "<conventional title>" --body-file <tmp>
 ```
 

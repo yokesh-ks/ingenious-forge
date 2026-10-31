@@ -44,8 +44,13 @@ git worktree list
   - detached HEAD: "Already isolated at `<path>` (detached HEAD, managed
     externally). A branch is needed before finishing."
 
-  Keep the branch you are on, even if its name does not follow step 2: a
-  harness or the user chose it. Go to step 5.
+  If the branch name does not follow step 2 (a harness often picks names
+  like `claude/github-issue-27-f9ae37`) and the branch has no upstream yet
+  (`git rev-parse --abbrev-ref @{u}` fails), rename it now:
+  `git branch -m <name from step 2>`. CI's `pr-body` check fails a PR from
+  a non-conforming branch. If it is already pushed with an open PR, keep
+  it and tell the user: renaming a pushed branch closes its PR. Go to
+  step 5.
 - `SUPER` is not empty: you are in a submodule, not a worktree. Treat it
   as a normal checkout.
 - Otherwise you are in the main checkout. Continue.
@@ -195,7 +200,7 @@ its branch is merged or abandoned, and only with the user's agreement.
 | "I'm obviously not in a worktree." | Harness worktrees and submodules both fool a glance. Run step 1. |
 | "I can't read the issue, so I can't set up." | Number and title name the branch. Set up, then ask about the body. |
 | "I'll stash their changes and put them back." | The stash stack is shared and pops go wrong. Use a worktree. |
-| "Other branches here use another pattern." | Harness-made branches are not the convention. Use step 2 for new branches. |
+| "Other branches here use another pattern." | Harness-made branches are not the convention. Rename them before the first push (step 1). |
 | "No tests exist, so there's no baseline." | Write the file and say "No automated checks exist." |
 | "Branching from where I am is fine." | Fetch and branch from `origin/main`. |
 

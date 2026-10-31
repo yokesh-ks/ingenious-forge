@@ -67,9 +67,10 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          PR_HEAD: ${{ github.event.pull_request.head.ref }}
         run: |
           printf '%s\n' "$PR_BODY" >"$RUNNER_TEMP/pr-body.md"
-          scripts/check-pr-body.sh "$PR_TITLE" "$RUNNER_TEMP/pr-body.md" "$PR_LABELS"
+          scripts/check-pr-body.sh "$PR_TITLE" "$RUNNER_TEMP/pr-body.md" "$PR_LABELS" "$PR_HEAD"
 
   skills:
     name: skills

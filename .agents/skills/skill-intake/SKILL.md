@@ -160,8 +160,9 @@ If the skill should be picked up from the front door, add it to the
 Required (unless waived in step 4). Rerun the step 4 scenarios with a fresh
 agent that has the skill. For each failure, tighten the skill and rerun.
 Record before and after for each scenario in
-`output/scratchpad/skills/<name>/results.md`; this goes in the PR
-description.
+`output/scratchpad/skills/<name>/results.md`, and summarise it in the PR
+description under a `## Scenarios` heading. CI's `pr-body` check fails a
+`feat(skills):` PR without that heading; a waiver from step 4 goes there.
 
 ### 10. Check and commit
 
