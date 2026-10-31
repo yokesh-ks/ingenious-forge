@@ -5,11 +5,6 @@
 
 set -uo pipefail
 
-if ! command -v jq >/dev/null 2>&1; then
-  echo "bypass-guard: jq not found; skipping (fail open)" >&2
-  exit 0
-fi
-
 INPUT=$(cat)
 COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null) || {
   echo "bypass-guard: failed to parse stdin JSON; skipping (fail open)" >&2

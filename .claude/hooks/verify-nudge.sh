@@ -6,10 +6,6 @@
 # Fail open on any error — advisory only.
 trap 'exit 0' ERR
 
-if ! command -v jq >/dev/null 2>&1; then
-  exit 0
-fi
-
 INPUT=$(cat)
 TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null) || exit 0
 
