@@ -1,9 +1,13 @@
-# Claude Code pre-execution hooks
+# Agent pre-execution hooks
 
-Claude Code hooks that catch process violations **before** a command runs,
-so the agent corrects itself immediately instead of failing at the git hook
-or in CI. They are an optional layer on top of the git hooks (B1) and the
-permission deny rules (B3), which remain the actual enforcement.
+Hooks that catch process violations **before** a command runs, so the agent
+corrects itself immediately instead of failing at the git hook or in CI.
+They are an optional layer on top of the git hooks (B1) and the permission
+deny rules (B3), which remain the actual enforcement.
+
+The four hooks below are specified in an agent-agnostic way. The Claude Code
+adapter is wired in `.claude/settings.json` and `.claude/hooks/`; see the
+**Porting to another agent** section for how to implement them elsewhere.
 
 ## Overview
 
@@ -58,11 +62,12 @@ Working on 'main' is blocked. Use workspace-setup to create a branch
 ### Bypass guard
 
 **Trigger:** any Bash command containing `--no-verify`,
-`-c core.hooksPath=`, or `-n` on `git commit`.
+`-c core.hooksPath=`, or `-n` (including combined forms such as `-nm`)
+on `git commit`.
 
 **What it checks:** Pattern-matches the command text for hook-bypass
-flags. Overlaps the permission deny rules in `.claude/settings.json` but
-gives a clearer, contextual message.
+flags. The deny rules in `.claude/settings.json` cover the same flags
+but emit a generic block; the hook provides a clearer, contextual message.
 
 **Deny message example:**
 
@@ -72,7 +77,7 @@ commit conventions and attribution rules (AGENTS.md Principle VII).
 ```
 
 **`if` conditions:** `Bash(*--no-verify*)`, `Bash(*-c core.hooksPath=*)`,
-`Bash(git commit *-n)`, `Bash(git commit *-n *)`.
+`Bash(git commit *-n*)`.
 
 ### Verify nudge (Stop hook)
 

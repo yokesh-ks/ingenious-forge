@@ -28,7 +28,7 @@ if [ -z "$reason" ]; then
   case "$COMMAND" in
     git\ commit*)
       # Detect -n standalone or combined (e.g. -nm, -an) using grep.
-      if printf '%s' "$COMMAND" | grep -qE ' -[a-zA-Z]*n[a-zA-Z]*([ "'\''\\]|$)'; then
+      if printf '%s' "$COMMAND" | grep -qE ' -[a-zA-Z]{0,5}n[a-zA-Z]{0,5}([ "'\''\\]|$)'; then
         reason="-n is shorthand for --no-verify and skips the project's git hooks. Remove it."
       fi
       ;;

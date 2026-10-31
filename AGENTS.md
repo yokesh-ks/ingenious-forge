@@ -114,16 +114,16 @@ working.
     about and must never do; each agent's implementation details.
   - `agent-adapters.md`: how to wire a new coding agent, the layer table,
     the add-an-agent checklist, and the completed Claude Code section.
-  - `agent-hooks.md`: Claude Code pre-execution hooks wired in
-    `.claude/settings.json`.
+  - `agent-hooks.md`: agent-agnostic hook specification and porting guide;
+    the Claude Code implementation lives in `.claude/hooks/`.
   - `working-agreements.md`: how parallel agents claim work, avoid
     collisions, hand off and choose models.
 - `.claude/settings.json`: the agent permission policy and pre-execution
-  hooks implemented for Claude Code. Personal overrides go in the
+  hooks implemented for Claude Code. Hook scripts live in `.claude/hooks/`;
+  they reuse `.githooks/lib/checks.sh` and fail open. See
+  [`docs/process/agent-hooks.md`](docs/process/agent-hooks.md) for the
+  hook specification and porting guide. Personal overrides go in the
   Git-ignored `.claude/settings.local.json`.
-- `.claude/hooks/`: Claude Code hook scripts called from
-  `.claude/settings.json`. They reuse `.githooks/lib/checks.sh` and fail
-  open. See [`docs/process/agent-hooks.md`](docs/process/agent-hooks.md).
 - `docs/decisions/`: architecture decision records (`NNNN-kebab-title.md`)
   and their index in `README.md`. Managed with `decision-records`.
 - `docs/ROADMAP.md`: milestone and epic breakdown kept in sync by
