@@ -1,7 +1,7 @@
 # 0001. Record architecture decisions
 
-- **Status:** Proposed
-- **Date:** 2026-10-30
+- **Status:** Accepted
+- **Date:** 2026-10-31
 - **PRD:** §8 Architecture, §11 Risks and open questions
 
 ## Context
