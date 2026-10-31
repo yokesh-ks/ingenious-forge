@@ -1,0 +1,106 @@
+name: Add issues to project board
+# One-time workflow — deletes itself after running.
+# Adds issues #62–#109 to the IngeniousForge project board and sets
+# Status, Phase, Priority and Size fields on each item.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: read
+  repository-projects: write
+
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const PROJECT_ID = 'PVT_kwHOBAdtHM4BpdXc';
+            const OWNER = 'yokesh-ks';
+            const REPO = 'ingenious-forge';
+
+            // Field and option IDs from docs/process/project-board.md
+            const STATUS_FIELD    = 'PVTSSF_lAHOBAdtHM4BpdXczhn47Y8';
+            const PHASE_FIELD     = 'PVTSSF_lAHOBAdtHM4BpdXczhn6_0w';
+            const PRIORITY_FIELD  = 'PVTSSF_lAHOBAdtHM4BpdXczhn6_y8';
+            const SIZE_FIELD      = 'PVTSSF_lAHOBAdtHM4BpdXczhn6_0o';
+
+            const STATUS = { Backlog: 'fdb23e39', Todo: 'f75ad846' };
+            const PHASE  = { '0': '33879dff', '1': '89b5dcfa', '2': '92a79d08', '3': '802b4bb6', '4': 'f19a827e' };
+            const PRIORITY = { P0: 'd08c3f9a', P1: '75517596', P2: '2b0747d7' };
+            const SIZE = { 'XS': '58c8132b', 'S': 'ecae9bfa', 'M': '42f7c129', 'L': '0b773a21' };
+
+            // Epic→phase map (phase 0 = #62–64, phase 1 = #65–74)
+            const EPIC_PHASE = {
+              62:0,63:0,64:0,
+              65:1,66:1,67:1,68:1,69:1,70:1,71:1,72:1,73:1,74:1
+            };
+            // Story→epic→phase
+            const STORY_META = {
+              75:{epic:62,phase:0,p:'P0',sz:'S'},76:{epic:62,phase:0,p:'P0',sz:'XS'},
+              77:{epic:62,phase:0,p:'P0',sz:'S'},78:{epic:63,phase:0,p:'P0',sz:'M'},
+              79:{epic:63,phase:0,p:'P0',sz:'M'},80:{epic:63,phase:0,p:'P0',sz:'M'},
+              81:{epic:63,phase:0,p:'P0',sz:'S'},82:{epic:64,phase:0,p:'P0',sz:'S'},
+              83:{epic:64,phase:0,p:'P0',sz:'XS'},84:{epic:65,phase:1,p:'P0',sz:'S'},
+              85:{epic:65,phase:1,p:'P0',sz:'S'},86:{epic:65,phase:1,p:'P0',sz:'XS'},
+              87:{epic:66,phase:1,p:'P0',sz:'M'},88:{epic:66,phase:1,p:'P0',sz:'S'},
+              89:{epic:67,phase:1,p:'P0',sz:'S'},90:{epic:67,phase:1,p:'P0',sz:'S'},
+              91:{epic:68,phase:1,p:'P0',sz:'M'},92:{epic:68,phase:1,p:'P0',sz:'S'},
+              93:{epic:69,phase:1,p:'P0',sz:'M'},94:{epic:69,phase:1,p:'P0',sz:'M'},
+              95:{epic:70,phase:1,p:'P0',sz:'S'},96:{epic:70,phase:1,p:'P0',sz:'M'},
+              97:{epic:70,phase:1,p:'P0',sz:'M'},98:{epic:70,phase:1,p:'P0',sz:'S'},
+              99:{epic:71,phase:1,p:'P0',sz:'S'},100:{epic:71,phase:1,p:'P0',sz:'M'},
+              101:{epic:71,phase:1,p:'P0',sz:'S'},102:{epic:72,phase:1,p:'P0',sz:'M'},
+              103:{epic:72,phase:1,p:'P0',sz:'M'},104:{epic:73,phase:1,p:'P0',sz:'S'},
+              105:{epic:73,phase:1,p:'P0',sz:'M'},106:{epic:73,phase:1,p:'P0',sz:'S'},
+              107:{epic:74,phase:1,p:'P0',sz:'M'},108:{epic:74,phase:1,p:'P0',sz:'S'},
+              109:{epic:74,phase:1,p:'P0',sz:'S'}
+            };
+
+            async function setField(itemId, fieldId, optionId) {
+              await github.graphql(`
+                mutation($proj:ID!,$item:ID!,$field:ID!,$opt:String!) {
+                  updateProjectV2ItemFieldValue(input:{
+                    projectId:$proj, itemId:$item, fieldId:$field,
+                    value:{singleSelectOptionId:$opt}
+                  }) { projectV2Item { id } }
+                }
+              `, { proj: PROJECT_ID, item: itemId, field: fieldId, opt: optionId });
+            }
+
+            for (let n = 62; n <= 109; n++) {
+              const issue = await github.rest.issues.get({owner:OWNER, repo:REPO, issue_number:n});
+              const nodeId = issue.data.node_id;
+
+              // Add to project
+              const res = await github.graphql(`
+                mutation($proj:ID!, $content:ID!) {
+                  addProjectV2ItemById(input:{projectId:$proj,contentId:$content}) {
+                    item { id }
+                  }
+                }
+              `, { proj: PROJECT_ID, content: nodeId });
+
+              const itemId = res.addProjectV2ItemById.item.id;
+              const isEpic = n <= 74;
+              const meta = STORY_META[n];
+              const phase = isEpic ? EPIC_PHASE[n] : meta.phase;
+
+              // Status: Backlog for all epics; Todo for stories with no open blockers
+              // (simplified: set all epics to Backlog, all stories to Todo)
+              const status = isEpic ? STATUS.Backlog : STATUS.Todo;
+              await setField(itemId, STATUS_FIELD, status);
+              await setField(itemId, PHASE_FIELD, PHASE[String(phase)]);
+
+              if (!isEpic) {
+                await setField(itemId, PRIORITY_FIELD, PRIORITY[meta.p]);
+                await setField(itemId, SIZE_FIELD, SIZE[meta.sz]);
+              }
+
+              console.log(`✓ #${n} (${isEpic ? 'epic' : 'story'}) → item ${itemId}`);
+            }
+
+            console.log('Done: 48 issues added to project board #34.');
