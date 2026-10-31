@@ -13,8 +13,10 @@ fi
 INPUT=$(cat)
 TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null) || exit 0
 
-# Check for uncommitted changes to tracked files (staged or unstaged).
-if git diff --quiet HEAD 2>/dev/null && git diff --cached --quiet HEAD 2>/dev/null; then
+# Check for uncommitted changes (tracked or untracked).
+if git diff --quiet HEAD 2>/dev/null \
+    && git diff --cached --quiet HEAD 2>/dev/null \
+    && ! git status --porcelain 2>/dev/null | grep -q '^??'; then
   exit 0
 fi
 
