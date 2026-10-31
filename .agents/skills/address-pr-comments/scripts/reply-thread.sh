@@ -43,6 +43,9 @@ if [ -n "$errors" ] && [ "$errors" != "null" ]; then
 fi
 
 comment_url="$(echo "$result" | jq -r '.data.addPullRequestReviewThreadReply.comment.url')"
+if [ -z "$comment_url" ] || [ "$comment_url" = "null" ]; then
+  die "reply succeeded but no comment URL returned"
+fi
 echo "Replied: $comment_url"
 
 # --- resolve (optional) -----------------------------------------------------

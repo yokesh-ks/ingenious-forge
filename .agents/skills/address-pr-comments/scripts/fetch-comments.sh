@@ -19,6 +19,7 @@ die() { echo "error: $*" >&2; exit 1; }
 paginate() {
   local query_tpl="$1" jq_path="$2" out="$3"
   local cursor="null" has_next="true" page=0
+  local max_pages="${MAX_PAGES:-50}"
 
   echo '[]' > "$out"
 
@@ -50,8 +51,8 @@ paginate() {
     cursor="$(echo "$result" | jq -r "$jq_path.pageInfo.endCursor")"
     page=$((page + 1))
 
-    if [ "$page" -gt 50 ]; then
-      die "pagination safety limit reached (>5000 items) for $jq_path"
+    if [ "$page" -gt "$max_pages" ]; then
+      die "pagination safety limit reached (>${max_pages} pages) for $jq_path"
     fi
   done
 }
@@ -61,20 +62,14 @@ paginate() {
 gh auth status > /dev/null 2>&1 \
   || die "gh is not authenticated.  Run: gh auth login"
 
-pr_json="$(gh pr view --json number,url,headRefName,baseRefName 2>&1)" \
+pr_json="$(gh pr view --json number,url,id,headRefName,baseRefName 2>&1)" \
   || die "no open PR for this branch.  Push and open one first."
 
 pr_number="$(echo "$pr_json" | jq -r '.number')"
 pr_url="$(echo "$pr_json"    | jq -r '.url')"
+pr_node_id="$(echo "$pr_json" | jq -r '.id')"
 head_ref="$(echo "$pr_json"  | jq -r '.headRefName')"
 base_ref="$(echo "$pr_json"  | jq -r '.baseRefName')"
-
-owner_repo="$(echo "$pr_url" | sed -E 's|https://github.com/([^/]+/[^/]+)/pull/.*|\1|')"
-owner="${owner_repo%/*}"
-repo="${owner_repo#*/}"
-
-# Get the PR node id for GraphQL.
-pr_node_id="$(gh api "repos/$owner/$repo/pulls/$pr_number" --jq '.node_id')"
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
