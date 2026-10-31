@@ -11,7 +11,7 @@ instructions (lines starting with `>`).
 epic: "<#N — epic title>"
 milestone: "<milestone name, or omit if none>"
 date: <YYYY-MM-DD>
-verdict: <accepted | accepted-with-open-items | rejected>
+verdict: "accepted"  # one of: accepted, accepted-with-open-items, rejected
 ---
 
 # Retrospective: <epic title>
@@ -83,7 +83,7 @@ verdict: <accepted | accepted-with-open-items | rejected>
 | --- | --- | --- |
 | | | |
 
-**Verdict: <accepted | accepted-with-open-items | rejected>**
+**Verdict: accepted**  # replace with actual verdict; one of: accepted, accepted-with-open-items, rejected
 
 > If accepted-with-open-items, list the open items.
 > If rejected, state the reasons.
