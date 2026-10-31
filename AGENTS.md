@@ -106,7 +106,8 @@ working.
 - `docs/reference/<project>/`: generated reference documentation for studied
   coding-agent projects, one markdown file per page.
 - `docs/process/`: how Forge is built: the project board
-  (`project-board.md`).
+  (`project-board.md`) and the protection of `main`
+  (`branch-protection.md`, with its ruleset as JSON in `rulesets/`).
 - `docs/decisions/`: architecture decision records (`NNNN-kebab-title.md`)
   and their index in `README.md`. Managed with `decision-records`.
 - `scripts/generate-docs.mjs`: writes `.docs-input/pages.json` into
@@ -226,7 +227,8 @@ to every committer, human or agent:
 - `pre-commit` blocks commits on `main` and `master`, staged secret files
   (`.env`, `*.pem`, `id_rsa` and similar) and files over 5 MB, and a new
   skill in `.agents/skills/` whose `.claude/skills/` symlink is not
-  staged. The maintainer can commit on `main` with `FORGE_ALLOW_MAIN=1`.
+  staged. The maintainer can commit on `main` with `FORGE_ALLOW_MAIN=1`,
+  but such a commit can reach GitHub only through a PR (see "Conventions").
 
 The checks live in `.githooks/lib/checks.sh` and the attribution patterns
 in `.githooks/ai-attribution-patterns.txt`, so CI can source the same
@@ -336,6 +338,12 @@ VII. Conventions here cover how those rules are applied:
   `feat/forge-exec-stub-42`). Branch from an up-to-date `origin/main`.
 - Git worktrees made by hand go in `.worktrees/<slug>/` at the repository
   root, which is Git-ignored.
+- `main` is protected by a repository ruleset: all changes land by
+  squash-merged PR (rebase is also allowed) with every CI check green, and
+  direct pushes, force pushes and deletion are blocked. Finish work by
+  opening a PR, not by merging into `main` locally. Settings and how to
+  reapply them are in
+  [`docs/process/branch-protection.md`](docs/process/branch-protection.md).
 
 ## Agent SOP outputs
 
