@@ -65,6 +65,8 @@ forge_attribution_hits() {
 	fi
 
 	_body=$1
+	# Match Co-Authored-By: only at line start (conventional trailer position).
+	# A mid-paragraph occurrence in a PR body is unusual enough to leave as-is.
 	_coauthors=$(printf '%s\n' "$_body" | grep -iE '^[[:space:]]*co-authored-by:')
 	_hits=
 	while read -r _kind _pattern; do

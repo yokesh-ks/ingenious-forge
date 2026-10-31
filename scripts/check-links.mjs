@@ -37,18 +37,33 @@ function markdownFiles() {
 // Yield [lineNumber, target] for each link outside code blocks and spans.
 function* links(text) {
   let fence = null;
+  // Track indented-code-block state: a run of lines indented by 4+ spaces
+  // that is not part of a list item is treated as a code block.
+  let blankBefore = true; // conservatively treat start-of-file as a blank
   const lines = text.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const open = line.match(/^ {0,3}(`{3,}|~{3,})/);
     if (fence) {
       if (open && open[1][0] === fence[0] && open[1].length >= fence.length) fence = null;
+      blankBefore = false;
       continue;
     }
     if (open) {
       fence = open[1];
+      blankBefore = false;
       continue;
     }
+    const isBlank = /^\s*$/.test(line);
+    // An indented code block starts with 4+ spaces after a blank line and
+    // is not a continuation of a list (we do not track list state, so we
+    // skip any line that starts with 4+ spaces preceded by a blank).
+    if (!isBlank && blankBefore && /^ {4}/.test(line)) {
+      blankBefore = false;
+      continue;
+    }
+    blankBefore = isBlank;
+    if (isBlank) continue;
     const prose = line.replace(/(`+)[^`]*?\1/g, "");
     const def = prose.match(DEFINITION);
     if (def) yield [i + 1, def[1]];

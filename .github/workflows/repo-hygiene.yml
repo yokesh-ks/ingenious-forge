@@ -38,9 +38,18 @@ jobs:
           if [ "$EVENT" = pull_request ]; then
             range="$PR_BASE..$PR_HEAD"
           elif [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = 0000000000000000000000000000000000000000 ]; then
+            # Branch creation or initial push: check only the tip commit.
             range="$PUSH_AFTER^!"
           else
-            range="$PUSH_BEFORE..$PUSH_AFTER"
+            # Normal push. On a force-push $PUSH_BEFORE may not be an
+            # ancestor of $PUSH_AFTER, so git rev-list would produce an empty
+            # range; fall back to the tip commit in that case.
+            if git merge-base --is-ancestor "$PUSH_BEFORE" "$PUSH_AFTER" 2>/dev/null; then
+              range="$PUSH_BEFORE..$PUSH_AFTER"
+            else
+              echo "Force-push detected; checking tip commit only."
+              range="$PUSH_AFTER^!"
+            fi
           fi
           scripts/check-commits.sh "$range"
 

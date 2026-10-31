@@ -9,7 +9,23 @@ FORGE_HOOKS_DIR=$root/.githooks
 # shellcheck source-path=SCRIPTDIR source=../.githooks/lib/checks.sh
 . "$FORGE_HOOKS_DIR/lib/checks.sh"
 
-range=${1:-origin/main..HEAD}
+if [ $# -ge 1 ]; then
+	range=$1
+else
+	# Derive the default range. If origin/main hasn't been fetched yet,
+	# fall back to the merge-base so the script still works in a fresh clone.
+	if git -C "$root" rev-parse --verify origin/main >/dev/null 2>&1; then
+		range=origin/main..HEAD
+	else
+		base=$(git -C "$root" merge-base HEAD "$(git -C "$root" rev-parse HEAD)" 2>/dev/null) || base=
+		if [ -n "$base" ]; then
+			range="$base..HEAD"
+		else
+			range="HEAD^!"
+		fi
+		forge_err "warning: origin/main not found; checking $range only"
+	fi
+fi
 shas=$(git -C "$root" rev-list --reverse "$range") || exit 1
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
