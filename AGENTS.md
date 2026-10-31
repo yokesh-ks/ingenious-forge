@@ -165,6 +165,13 @@ working.
     evaluates and responds to incoming feedback with technical rigor,
     adapted from https://github.com/obra/superpowers (MIT, see its
     `LICENSE`).
+  - `address-pr-comments/`: fetches a PR's review threads and comments,
+    triages each with `change-review` receive mode, lets the maintainer
+    choose which to act on, fixes them, replies in-thread and resolves
+    only the fixed ones, adapted from
+    https://github.com/openai/skills (Apache-2.0) and
+    https://github.com/mnapoli/skill-address-pr-review (MIT, see its
+    `LICENSE`).
 
   To add, adapt or vendor a skill, use `skill-intake`. It places the skill
   in `.agents/skills/<name>/`, links it with
@@ -206,6 +213,8 @@ For any meaningful engineering request, start with front-door triage:
   a change (request mode) or to respond to incoming feedback (receive mode).
   Prioritize consistency with `docs/PRD.md` and Principles before
   correctness; human approval on the PR is the final gate (Principle IV).
+  Use `address-pr-comments` to work through a PR's open review threads on
+  GitHub: fetch, triage, fix (with maintainer approval) and reply in-thread.
 - **All other requests**: Use normal conversational or investigative behavior
   without forcing an SOP workflow.
 

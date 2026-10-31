@@ -40,6 +40,13 @@ own license:
   https://github.com/obra/superpowers, Copyright (c) 2025 Jesse Vincent,
   under the MIT License. See .agents/skills/change-review/LICENSE.
 
+- .agents/skills/address-pr-comments/ is derived from
+  https://github.com/openai/skills, Copyright (c) OpenAI, under the
+  Apache License 2.0; and from
+  https://github.com/mnapoli/skill-address-pr-review, Copyright (c)
+  Matthieu Napoli, under the MIT License. See
+  .agents/skills/address-pr-comments/LICENSE.
+
 - docs/reference/<project>/ holds reference documentation describing other
   open-source projects, including excerpts of their source. Each project's
   material remains under that project's license, kept in its folder as
