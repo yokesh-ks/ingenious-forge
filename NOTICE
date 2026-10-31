@@ -46,6 +46,10 @@ own license:
   https://github.com/mnapoli/skill-address-pr-review, Copyright (c)
   Matthieu Napoli, under the MIT License. See
   .agents/skills/address-pr-comments/LICENSE.
+  
+- .agents/skills/branch-finishing/ is derived from
+  https://github.com/obra/superpowers, Copyright (c) 2025 Jesse Vincent,
+  under the MIT License. See .agents/skills/branch-finishing/LICENSE.
 
 - docs/reference/<project>/ holds reference documentation describing other
   open-source projects, including excerpts of their source. Each project's

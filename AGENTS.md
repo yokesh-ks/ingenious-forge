@@ -177,6 +177,11 @@ working.
     https://github.com/openai/skills (Apache-2.0) and
     https://github.com/mnapoli/skill-address-pr-review (MIT, see its
     `LICENSE`).
+  - `branch-finishing/`: finishes a branch after verification and review —
+    presents merge, PR or keep-as-is options, enforces commit conventions
+    and AI attribution rules, links the issue and project board, and
+    cleans up the workspace, adapted from
+    https://github.com/obra/superpowers (MIT, see its `LICENSE`).
 
   To add, adapt or vendor a skill, use `skill-intake`. It places the skill
   in `.agents/skills/<name>/`, links it with
