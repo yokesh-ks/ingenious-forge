@@ -14,9 +14,12 @@ defect. Each one is worded so that a reviewer can answer "does this change
 violate principle N?" with yes or no.
 
 **I. PRD is the source of truth.**
-- Every feature MUST trace to a section of `docs/PRD.md`.
+- Every Forge product feature MUST trace to a section of `docs/PRD.md`.
 - A change that adds, removes or reshapes scope MUST update the PRD first,
   in the same change or an earlier one.
+- Development-process tooling (skills, git and agent hooks, CI, `scripts/`
+  and `docs/process/`) is not a product feature. It MUST trace to a GitHub
+  issue instead, and MUST NOT be added to the PRD.
 - Forge MUST ship as a web UI launched with `npx ingenious-forge`. Plans
   MUST NOT add a desktop app, terminal UI or editor extension as a delivery
   surface. `forge exec` stays only as a headless entry point for automation.
@@ -24,9 +27,12 @@ violate principle N?" with yes or no.
 *Reason:* one document settles scope arguments, so work does not drift.
 
 **II. Spec before code.**
-- Application code MUST NOT be written without an approved spec and plan:
-  `pdd` output under `output/planning/` or a GitHub issue that states the
-  steps and acceptance criteria.
+- Application code, meaning code that ships in the Forge product, MUST NOT
+  be written without an approved spec and plan: `pdd` output under
+  `output/planning/` or a GitHub issue that states the steps and
+  acceptance criteria.
+- Development-process tooling MUST NOT be written without a GitHub issue
+  that states the steps and acceptance criteria.
 
 *Reason:* design mistakes cost less to fix in a plan than in code.
 
@@ -97,7 +103,7 @@ working.
   redefined, MINOR when one is added or materially expanded, PATCH for
   wording. Dates are ISO 8601.
 
-**Version** 1.0.0 · **Ratified** 2026-10-30 · **Last amended** 2026-10-30
+**Version** 1.1.0 · **Ratified** 2026-10-30 · **Last amended** 2026-10-31
 
 ## Repository layout
 
