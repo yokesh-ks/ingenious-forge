@@ -1,7 +1,7 @@
 # Agent adapters
 
 How Forge stays agent-agnostic while keeping Claude Code fully wired as the
-primary agent today. Principle VI requires that rules and skills live in
+primary agent currently. Principle VI requires that rules and skills live in
 agent-neutral locations; each agent gets only a thin adapter that points at
 them.
 
@@ -40,7 +40,7 @@ Each item must pass before the agent is considered ready.
   confirm every CI check in `.github/workflows/repo-hygiene.yml` passes.
 - [ ] **Portability spot-check.** Start a session with only `AGENTS.md`
   and `.agents/skills/` available (no agent-specific config). Ask "what
-  are this repo's rules for commits?" The answer must be complete from
+  are this repo's rules and conventions?" The answer must be complete from
   `AGENTS.md` alone.
 - [ ] **Skill portability.** For each skill that documents an
   "Agent portability" fallback, confirm the agent can follow either the
