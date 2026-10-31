@@ -193,7 +193,7 @@ Write the body to a temporary file, run the CI check on it, and use
 PR bodies; the check catches it before it is published.
 
 ```bash
-bash scripts/check-pr-body.sh "<conventional title>" <tmp> "" "$(git branch --show-current)"
+bash scripts/check-pr-body.sh "<conventional title>" <tmp> "" "$(git branch --show-current)"  # labels arg is empty — PR doesn't exist yet
 gh pr create --base "$BASE_BRANCH" --title "<conventional title>" --body-file <tmp>
 ```
 
