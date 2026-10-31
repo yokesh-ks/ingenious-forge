@@ -10,7 +10,7 @@
 : "${FORGE_HOOKS_DIR:=$(git rev-parse --show-toplevel)/.githooks}"
 
 FORGE_TYPES='feat fix docs chore refactor test build ci perf revert'
-FORGE_BRANCH_TYPES='feat fix docs chore refactor test'
+FORGE_BRANCH_TYPES='feat fix docs chore refactor test'  # branch names exclude build/ci/perf/revert (see workspace-setup step 2)
 FORGE_MAX_SUBJECT=72
 FORGE_MAX_FILE_BYTES=5242880 # 5 MB
 
