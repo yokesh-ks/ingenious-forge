@@ -10,6 +10,7 @@
 : "${FORGE_HOOKS_DIR:=$(git rev-parse --show-toplevel)/.githooks}"
 
 FORGE_TYPES='feat fix docs chore refactor test build ci perf revert'
+FORGE_BRANCH_TYPES='feat fix docs chore refactor test'
 FORGE_MAX_SUBJECT=72
 FORGE_MAX_FILE_BYTES=5242880 # 5 MB
 
@@ -120,6 +121,15 @@ forge_check_branch() {
 	[ "${FORGE_ALLOW_MAIN:-}" = 1 ] && return 0
 	forge_err "commits on $_branch are blocked. Create a branch: see workspace-setup"
 	forge_err "  (.agents/skills/workspace-setup/). Maintainer override: FORGE_ALLOW_MAIN=1"
+	return 1
+}
+
+# Check branch name $1 against <type>/<short-kebab-slug>[-<issue>].
+forge_check_branch_name() {
+	_types=$(printf '%s' "$FORGE_BRANCH_TYPES" | tr ' ' '|')
+	printf '%s\n' "$1" | grep -Eq "^($_types)/[a-z0-9]+(-[a-z0-9]+)*$" && return 0
+	forge_err "branch name does not follow <type>/<short-kebab-slug>[-<issue>]: $1"
+	forge_err "  type is one of: $FORGE_BRANCH_TYPES (see workspace-setup step 2)"
 	return 1
 }
 

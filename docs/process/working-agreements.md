@@ -106,8 +106,11 @@ adding other agents.
 | `change-review` | A **separate session** from the builder; capable model | Independent context catches more |
 | Mechanical chores (labels, links, small docs) | Fast or cheap model | Low risk |
 
-The builder must not review its own work. `change-review` always runs in
-a separate session with a clean context (Principle IV).
+The builder must not review its own work (Principle IV). For application
+code, `change-review` request mode always runs in a separate session with
+a clean context before the PR opens. For process, skill and docs PRs, the
+automated reviewer on the PR plus the maintainer's review is the
+independent review; a separate `change-review` session is optional.
 
 ## 5. Human-in-the-loop points
 

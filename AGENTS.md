@@ -361,7 +361,7 @@ status check with a stable name, and each runs one script, so
 | Check | Script | Fails when |
 | --- | --- | --- |
 | `commits` | `scripts/check-commits.sh [<range>]` | a commit in the PR (or push) has a non-conventional title or AI attribution; names each SHA |
-| `pr-body` | `scripts/check-pr-body.sh <title> <body-file> [<labels>]` | the PR title is not conventional, the body has AI attribution, or the body links no issue (`Closes`, `Fixes`, `Resolves` or `Refs #N`); a PR with the `chore` label and a `chore:` or `docs:` title needs no issue |
+| `pr-body` | `scripts/check-pr-body.sh <title> <body-file> [<labels> [<head-branch>]]` | the PR title is not conventional, the body has AI attribution, the body links no issue (`Closes`, `Fixes`, `Resolves` or `Refs #N`; a PR with the `chore` label and a `chore:` or `docs:` title needs none), a `feat(skills):` PR has no `Scenarios` heading, or the head branch breaks the branch convention |
 | `skills` | `scripts/check-skills.sh` | a skill in `.agents/skills/` fails `skill-intake`'s `check-skill.sh`: frontmatter, `.claude/skills/` symlink, `LICENSE` and `NOTICE` for a `license:` field, or the bullet in this file |
 | `sop` | `scripts/check-sop.sh` | a tracked `*.sop.md` or an `agent-sop/references/*.md` SOP fails `validate-sop.sh` |
 | `notice` | `scripts/check-notice.sh` | a `docs/reference/<project>/` has no `LICENSE` or is not listed in `docs/reference/README.md` |
@@ -433,7 +433,8 @@ The full document is
 - **Handoff when pausing:** post a handoff comment (template in the doc)
   with state, branch, what's left, last verification and next step.
 - **The builder does not review its own work.** `change-review` runs in a
-  separate session.
+  separate session for application code; for process, skill and docs
+  PRs the automated reviewer plus the maintainer's review is enough.
 - **Human gates stay human:** spec approval, ADR acceptance, PR merge,
   release and retro action items need the maintainer.
 - **Ambiguous acceptance criteria:** stop, ask, label `needs-decision`.
@@ -451,6 +452,8 @@ VII. Conventions here cover how those rules are applied:
   is one of `feat`, `fix`, `docs`, `chore`, `refactor` or `test`, and the
   issue number is appended when the work comes from an issue (for example
   `feat/forge-exec-stub-42`). Branch from an up-to-date `origin/main`.
+  Rename a harness-made branch before its first push (`workspace-setup`);
+  CI's `pr-body` check rejects other names.
 - Git worktrees made by hand go in `.worktrees/<slug>/` at the repository
   root, which is Git-ignored.
 - `main` is protected by a repository ruleset: all changes land by
