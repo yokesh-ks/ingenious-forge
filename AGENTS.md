@@ -105,10 +105,15 @@ working.
   scope and features.
 - `docs/reference/<project>/`: generated reference documentation for studied
   coding-agent projects, one markdown file per page.
-- `docs/process/`: how Forge is built: the project board
-  (`project-board.md`), the protection of `main`
-  (`branch-protection.md`, with its ruleset as JSON in `rulesets/`), and
-  the agent permission policy (`agent-permissions.md`).
+- `docs/process/`: how Forge is built.
+  - `project-board.md`: GitHub project board fields, views, workflows and
+    `gh` commands.
+  - `branch-protection.md`: `main` branch ruleset and how to reapply it;
+    the ruleset JSON lives in `rulesets/`.
+  - `agent-permissions.md`: what agents may do without asking, must ask
+    about and must never do; each agent's implementation details.
+  - `agent-adapters.md`: how to wire a new coding agent, the layer table,
+    the add-an-agent checklist, and the completed Claude Code section.
 - `.claude/settings.json`: the agent permission policy implemented for
   Claude Code. Personal overrides go in the Git-ignored
   `.claude/settings.local.json`.

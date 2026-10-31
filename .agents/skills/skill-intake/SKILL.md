@@ -112,8 +112,13 @@ Create `.agents/skills/<name>/SKILL.md` from
   material into `references/` and reusable scripts into `scripts/`, and
   link each from the body with when to read or run it. Run bundled scripts
   through their interpreter (`bash scripts/x.sh`), never by bare path.
-- **Agent-agnostic:** write for any agent. Name Claude Code-specific
-  behaviour only where it matters, and say so.
+- **Agent-agnostic (Principle VI):** write for any agent. If the skill
+  relies on a capability not every agent has (subagent spawning, parallel
+  tool calls, a built-in code-review command, specific MCP tools), it
+  MUST document a fallback: what to do when the capability is absent.
+  Place the fallback in an "Agent portability" section or inline next to
+  the step that needs it. Name Claude Code-specific behaviour only where
+  it matters, and say so.
 - **No AI attribution** anywhere in the skill.
 
 ### 6. Link it

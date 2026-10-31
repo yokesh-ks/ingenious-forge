@@ -62,7 +62,12 @@ Gather, from the current issue or `.code-task.md`:
 
 Spawn a reviewer subagent with a clean context using the template in
 [`references/reviewer-prompt.md`](references/reviewer-prompt.md).
-Fill in these placeholders before dispatching:
+Fill in these placeholders before dispatching.
+
+**Agent portability:** if your agent cannot spawn a subagent, start a
+fresh session (or ask a colleague) with only the filled template as
+context. The reviewer must not share your working session's history.
+A human reviewer using the same template also satisfies this step.
 
 | Placeholder | Value |
 | --- | --- |

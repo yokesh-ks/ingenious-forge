@@ -116,10 +116,11 @@ use `Part of #N` and list what is left.
 
 ### 7. Check delegated work yourself
 
-A subagent's or helper's "done" is a claim, not evidence. Before passing
-it on: look at the diff (`git status`, `git diff`, `git log`), confirm the
-change exists where it should, and rerun the proving commands yourself.
-An empty diff means not done, whatever the report says.
+A subagent's, separate session's or helper's "done" is a claim, not
+evidence. Before passing it on: look at the diff (`git status`, `git diff`,
+`git log`), confirm the change exists where it should, and rerun the
+proving commands yourself. An empty diff means not done, whatever the
+report says.
 
 ### 8. Report
 
