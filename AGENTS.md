@@ -105,6 +105,8 @@ working.
   scope and features.
 - `docs/reference/<project>/`: generated reference documentation for studied
   coding-agent projects, one markdown file per page.
+- `docs/process/`: how Forge is built: the project board
+  (`project-board.md`).
 - `docs/decisions/`: architecture decision records (`NNNN-kebab-title.md`)
   and their index in `README.md`. Managed with `decision-records`.
 - `scripts/generate-docs.mjs`: writes `.docs-input/pages.json` into
@@ -149,6 +151,10 @@ working.
     building, and lists the remaining work as new tasks after building,
     adapted from https://github.com/github/spec-kit (MIT, see its
     `LICENSE`).
+  - `verify-before-done/`: no claim that work is done, fixed or passing
+    without fresh command output, compared with the `workspace-setup`
+    baseline and the acceptance criteria, adapted from
+    https://github.com/obra/superpowers (MIT, see its `LICENSE`).
 
   To add, adapt or vendor a skill, use `skill-intake`. It places the skill
   in `.agents/skills/<name>/`, links it with
@@ -183,6 +189,9 @@ For any meaningful engineering request, start with front-door triage:
   before `code-assist`, to check a feature's planning documents against
   each other and the principles; use its converge mode after building to
   list what is still missing.
+- **Completion claims**: Use `verify-before-done` before saying work is
+  done, fixed or passing, before committing, opening a PR or closing an
+  issue, and before calling a failure pre-existing.
 - **Review work**: Start review-first; prioritize consistency with
   `docs/PRD.md` and missing validation.
 - **All other requests**: Use normal conversational or investigative behavior
@@ -228,6 +237,14 @@ code. Change checks and patterns there only.
   `.github/labels.json` (dry run). Add `--apply` to create and update
   labels, and `--prune` to list labels not in the file; deleting them
   needs `--apply --prune --yes` and the maintainer's approval.
+- `bash .agents/skills/skill-intake/scripts/check-skill.sh [<name>]` —
+  check a project skill's name, frontmatter, symlink, licence, `NOTICE`
+  entry and `AGENTS.md` registration (all skills when no name is given).
+
+Before claiming success, follow `verify-before-done`: read
+`.agents/skills/verify-before-done/SKILL.md` before saying work is done,
+fixed or passing, writing a status line, PR body or closing comment, or
+saying a failure is pre-existing.
 
 ### Continuous integration
 
@@ -282,6 +299,20 @@ Agents creating issues via `gh` must use the same headings as
 form's type label. Write the body to a file and pass `--body-file`.
 For epics and stories, use the `roadmap-planning` templates, which
 follow the forms.
+
+Every issue and PR is tracked on the
+[IngeniousForge project board](https://github.com/users/yokesh-ks/projects/34).
+[`docs/process/project-board.md`](docs/process/project-board.md) holds
+its fields, views, workflows, ids and the `gh` commands to update it.
+Status moves in this order:
+
+- **Backlog**: captured, not yet planned or refined; set when an item is
+  added.
+- **Todo**: refined and ready to start, dependencies met.
+- **In Progress**: claimed; the agent assigns itself and sets this at
+  `workspace-setup`.
+- **In Review**: a PR is open and waits for review and the maintainer.
+- **Done**: merged or closed.
 
 ## Conventions
 

@@ -9,11 +9,15 @@ maintainer has approved that exact change in chat.
 | Repository | `yokesh-ks/ingenious-forge` |
 | Project | `34`, owner `yokesh-ks` (node id `PVT_kwHOBAdtHM4BpdXc`) |
 | Status field | `PVTSSF_lAHOBAdtHM4BpdXczhn47Y8` |
-| Status options | Todo `f75ad846`, In Progress `47fc9ee4`, Done `98236657` |
+| Status options | Backlog `fdb23e39`, Todo `f75ad846`, In Progress `47fc9ee4`, In Review `011a42ee`, Done `98236657` |
+| Priority field | `PVTSSF_lAHOBAdtHM4BpdXczhn6_y8`: P0 `d08c3f9a`, P1 `75517596`, P2 `2b0747d7` |
+| Size field | `PVTSSF_lAHOBAdtHM4BpdXczhn6_0o`: XS `58c8132b`, S `ecae9bfa`, M `42f7c129`, L `0b773a21` |
+| Phase field | `PVTSSF_lAHOBAdtHM4BpdXczhn6_0w`: 0 Foundation `33879dff`, 1 MVP `89b5dcfa`, 2 v1.0 `92a79d08`, 3 Board `802b4bb6`, 4 Cloud `f19a827e` |
 | Labels | From `.github/labels.yml` if it exists; else `epic` (exists), `story`, `stale` (create if missing) |
 
-The ids were read on 2026-10-30 and change if the project or its Status
-field is recreated. Before the first write in a session, re-read them and
+The ids were read on 2026-10-30 and change if the project or a field is
+recreated. `docs/process/project-board.md` defines each status and field
+and is the source for these ids. Before the first write in a session, re-read them and
 compare with the table; if they differ, use the fresh values and update the
 table in the same change:
 
@@ -106,8 +110,28 @@ lines in the body; they are the fallback and are always written.
 ```bash
 item=$(gh project item-add 34 --owner yokesh-ks \
   --url https://github.com/$R/issues/<n> --format json --jq .id)
-gh project item-edit --id "$item" --project-id PVT_kwHOBAdtHM4BpdXc \
-  --field-id PVTSSF_lAHOBAdtHM4BpdXczhn47Y8 --single-select-option-id f75ad846
+set_field() {  # set_field <field id> <option id>
+  gh project item-edit --id "$item" --project-id PVT_kwHOBAdtHM4BpdXc \
+    --field-id "$1" --single-select-option-id "$2"
+}
+
+# Status: Backlog for an epic before refinement and for a story with an
+# open blocker; Todo for a refined story with none.
+type=$(gh issue view <n> -R $R --json labels \
+  --jq 'if any(.labels[]; .name=="story") then "story" else "epic" end')
+open_blockers=$(gh api repos/$R/issues/<n>/dependencies/blocked_by \
+  --jq '[.[] | select(.state=="open")] | length')
+if [ "$type" = story ] && [ "$open_blockers" = 0 ]; then
+  set_field PVTSSF_lAHOBAdtHM4BpdXczhn47Y8 f75ad846   # Todo
+else
+  set_field PVTSSF_lAHOBAdtHM4BpdXczhn47Y8 fdb23e39   # Backlog
+fi
+
+# Phase from the issue's milestone ("Phase <n> — …"); option ids in the table above
+set_field PVTSSF_lAHOBAdtHM4BpdXczhn6_0w <phase option id>
+# Stories only: Priority and Size matching their P* and size:* labels
+set_field PVTSSF_lAHOBAdtHM4BpdXczhn6_y8 <priority option id>
+set_field PVTSSF_lAHOBAdtHM4BpdXczhn6_0o <size option id>
 ```
 
 `item-add` is idempotent: adding an issue already on the board returns its

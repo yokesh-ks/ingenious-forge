@@ -2,7 +2,7 @@
 
 A story is one GitHub issue labelled `story`, created as a **sub-issue** of
 its epic, given the epic's milestone and added to project 34 with Status
-Todo. It is a vertical slice: a user-visible change that works end to end
+Todo (Backlog while a blocker is open). It is a vertical slice: a user-visible change that works end to end
 through every layer it touches.
 
 ## Title
