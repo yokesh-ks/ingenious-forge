@@ -114,6 +114,8 @@ working.
     about and must never do; each agent's implementation details.
   - `agent-adapters.md`: how to wire a new coding agent, the layer table,
     the add-an-agent checklist, and the completed Claude Code section.
+  - `working-agreements.md`: how parallel agents claim work, avoid
+    collisions, hand off and choose models.
 - `.claude/settings.json`: the agent permission policy implemented for
   Claude Code. Personal overrides go in the Git-ignored
   `.claude/settings.local.json`.
@@ -403,6 +405,27 @@ Status moves in this order:
   `workspace-setup`.
 - **In Review**: a PR is open and waits for review and the maintainer.
 - **Done**: merged or closed.
+
+## Working agreements
+
+When several agents work on Forge at once, these rules prevent conflicts.
+The full document is
+[`docs/process/working-agreements.md`](docs/process/working-agreements.md).
+
+- **Claim before you start:** only pick **Todo** issues with no open
+  blockers. Assign, move to **In Progress** and post a claim comment.
+- **One story per session**, one branch or worktree per story.
+- **Check for overlapping files** before starting; if another In Progress
+  issue touches the same files, pick different work or ask.
+- **Shared hot files** (`AGENTS.md`, `NOTICE`, `docs/PRD.md`,
+  `.claude/settings.json`): small, focused edits only; rebase often.
+- **Handoff when pausing:** post a handoff comment (template in the doc)
+  with state, branch, what's left, last verification and next step.
+- **The builder does not review its own work.** `change-review` runs in a
+  separate session.
+- **Human gates stay human:** spec approval, ADR acceptance, PR merge,
+  release and retro action items need the maintainer.
+- **Ambiguous acceptance criteria:** stop, ask, label `needs-decision`.
 
 ## Conventions
 
