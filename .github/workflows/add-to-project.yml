@@ -3,7 +3,9 @@ name: Add issues to project board
 # Adds issues #62–#109 to the IngeniousForge project board and sets
 # Status, Phase, Priority and Size fields on each item.
 on:
-  workflow_dispatch:
+  push:
+    branches: ['docs/initial-product-roadmap']
+    paths: ['.github/workflows/add-to-project.yml']
 
 permissions:
   contents: write
