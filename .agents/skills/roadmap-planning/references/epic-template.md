@@ -24,6 +24,12 @@ the browser. "Stories" and "Decisions" are added by this skill only.
 <One or two sentences: what a user can do when this epic is done, in the
 PRD's words.>
 
+### Why
+
+<One or two sentences: what problem this solves for the user and why it
+matters at this phase. This is the motivation an implementer needs to
+make good trade-off decisions.>
+
 ### PRD references
 
 PRD §<x.y> <feature>, PRD §<x.y> <feature>
@@ -94,6 +100,11 @@ Decision: YYYY-MM-DD — <what changed and why> -->
 
 A user runs `npx ingenious-forge` and the Forge home page opens in their
 browser, served by the local server.
+
+### Why
+
+Forge's zero-install promise depends on one command doing everything.
+Without a working launcher and server, no other feature is reachable.
 
 ### PRD references
 

@@ -26,6 +26,11 @@ the browser.
 
 <One sentence: what the user can see or do after this story.>
 
+### Why
+
+<One sentence: why this outcome matters to the user right now — the
+motivation that guides implementation decisions.>
+
 ### Acceptance criteria
 
 - [ ] <Testable condition>
