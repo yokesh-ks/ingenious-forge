@@ -217,9 +217,10 @@ working.
 For any meaningful engineering request, start with front-door triage:
 
 - **Change work**: Use `workspace-setup` first to get a branch or worktree
-  and a baseline. Then use `agent-sop` (`codebase-summary`, `pdd`,
-  `code-task-generator`, or `code-assist`) for the build. After building,
-  run `verify-before-done`, then `change-review`, then `branch-finishing`.
+  and a baseline (worktree creation needs maintainer consent). Then use
+  `agent-sop` (`codebase-summary`, `pdd`, `code-task-generator`, or
+  `code-assist`) for the build. After building, run `verify-before-done`,
+  then `change-review`, then `branch-finishing`.
 - **Roadmap**: Use `roadmap-planning` to decide what to build first or
   next, break the PRD or an epic into issues on the project board, replan
   after a PRD change, or report progress. It picks the feature; `pdd`
