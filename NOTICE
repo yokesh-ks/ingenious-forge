@@ -56,6 +56,11 @@ own license:
   Code, LLC, under the MIT License. See
   .agents/skills/retrospective/LICENSE.
 
+- .agents/skills/release-launch/ is derived from
+  https://github.com/addyosmani/agent-skills, Copyright (c) 2025 Addy
+  Osmani, under the MIT License. See
+  .agents/skills/release-launch/LICENSE.
+
 - docs/reference/<project>/ holds reference documentation describing other
   open-source projects, including excerpts of their source. Each project's
   material remains under that project's license, kept in its folder as

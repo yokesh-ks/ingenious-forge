@@ -189,6 +189,15 @@ working.
     principles, skills and agent memory, adapted from
     https://github.com/bmad-code-org/BMAD-METHOD (MIT, see its
     `LICENSE`).
+  - `release-launch/`: prepares and runs a Forge npm release — readiness
+    check, version derivation from conventional commits, Forge-specific
+    pre-launch checklist (OS binaries, `npx` smoke test from the packed
+    tarball, localhost-only binding, package contents, licences), staged
+    rollout through npm dist-tags (`next` then `latest`), GitHub tag and
+    release, post-launch verification, and a written rollback plan;
+    every publish, dist-tag change or release creation needs explicit
+    maintainer approval, adapted from
+    https://github.com/addyosmani/agent-skills (MIT, see its `LICENSE`).
 
   To add, adapt or vendor a skill, use `skill-intake`. It places the skill
   in `.agents/skills/<name>/`, links it with
@@ -236,6 +245,12 @@ For any meaningful engineering request, start with front-door triage:
   and the team wants to learn from it. It gathers evidence, analyses
   delivery, quality, spec alignment and process, gives an acceptance
   verdict and proposes action items. Nothing is applied without approval.
+- **Release**: Use `release-launch` before any `npm publish`. It walks
+  through the readiness check, version confirmation, the Forge-specific
+  pre-launch checklist, staged npm rollout, GitHub tag and release,
+  post-launch check and rollback plan. Every publish needs maintainer
+  approval. Do not invoke it until the npm launcher and cross-platform
+  binaries exist (PRD Phase 0).
 - **All other requests**: Use normal conversational or investigative behavior
   without forcing an SOP workflow.
 
