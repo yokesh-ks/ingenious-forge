@@ -181,6 +181,7 @@ output of `npx license-checker --summary` is sufficient evidence.
 Write the release notes from the merged PRs since the last tag:
 
 ```bash
+LAST_TAG_DATE=$(git log -1 --format=%aI "$LAST_TAG" 2>/dev/null || echo "1970-01-01T00:00:00Z")
 gh pr list --state merged --base main \
   --search "merged:>${LAST_TAG_DATE}" \
   --json number,title,mergedAt | jq -r '.[] | "- #\(.number) \(.title)"'
@@ -272,11 +273,12 @@ gh release create "v${VERSION}" \
 **5c. Close the milestone**
 
 ```bash
-gh api repos/yokesh-ks/ingenious-forge/milestones \
+REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+gh api "repos/${REPO}/milestones" \
   --jq '.[] | select(.title=="<milestone>") | .number'
 # then:
 gh api --method PATCH \
-  repos/yokesh-ks/ingenious-forge/milestones/<n> \
+  "repos/${REPO}/milestones/<n>" \
   -f state=closed
 ```
 
@@ -296,8 +298,10 @@ results in `output/planning/release-v${VERSION}/post-launch.md`.
 2. **New issues.** Check for issues opened after the release:
 
    ```bash
+   SINCE=$(date -u -v-48H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || \
+           date -u --date '48 hours ago' +%Y-%m-%dT%H:%M:%SZ)
    gh issue list --state open \
-     --search "created:>$(date -u +%Y-%m-%dT%H:%M:%SZ --date '48 hours ago')" \
+     --search "created:>${SINCE}" \
      --json number,title,labels
    ```
 

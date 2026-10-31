@@ -76,7 +76,6 @@ Run from the packed tarball (`npm pack`, then `npx ./ingenious-forge-<v>.tgz`).
 | Release notes written from merged PRs (no AI attribution) | | |
 | Release notes grouped by commit type | | |
 | Breaking changes section present (if applicable) | | |
-| Changelog updated | | |
 
 ## Performance
 

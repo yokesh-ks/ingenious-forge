@@ -72,7 +72,7 @@ deprecation warning.
 
 Edit the GitHub release for `v<VERSION>` to add a notice at the top:
 
-> ⚠️ This release has a known issue: \<reason\>. Please use
+> ⚠️ This release has a known issue: `<reason>`. Please use
 > `npx ingenious-forge@<PREV_VERSION>` until a fix is published.
 
 ```bash
