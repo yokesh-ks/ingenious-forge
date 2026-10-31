@@ -156,6 +156,11 @@ working.
     without fresh command output, compared with the `workspace-setup`
     baseline and the acceptance criteria, adapted from
     https://github.com/obra/superpowers (MIT, see its `LICENSE`).
+  - `change-review/`: two-sided review skill — request mode dispatches an
+    independent reviewer subagent with a clean context; receive mode
+    evaluates and responds to incoming feedback with technical rigor,
+    adapted from https://github.com/obra/superpowers (MIT, see its
+    `LICENSE`).
 
   To add, adapt or vendor a skill, use `skill-intake`. It places the skill
   in `.agents/skills/<name>/`, links it with
@@ -193,8 +198,10 @@ For any meaningful engineering request, start with front-door triage:
 - **Completion claims**: Use `verify-before-done` before saying work is
   done, fixed or passing, before committing, opening a PR or closing an
   issue, and before calling a failure pre-existing.
-- **Review work**: Start review-first; prioritize consistency with
-  `docs/PRD.md` and missing validation.
+- **Review work**: Use `change-review` to request an independent review of
+  a change (request mode) or to respond to incoming feedback (receive mode).
+  Prioritize consistency with `docs/PRD.md` and Principles before
+  correctness; human approval on the PR is the final gate (Principle IV).
 - **All other requests**: Use normal conversational or investigative behavior
   without forcing an SOP workflow.
 
