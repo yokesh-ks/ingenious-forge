@@ -40,7 +40,7 @@ if [ -n "$hits" ]; then
 fi
 
 if ! printf '%s\n' "$body" |
-	grep -Eiq '(close[sd]?|fix(e[sd])?|resolve[sd]?|refs?) +([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+'; then
+	grep -Eiq '(closes?|closed|fixes?|fixed|resolves?|resolved|refs?) +([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+'; then
 	case $labels:$title in
 	*,chore,*:chore:* | *,chore,*:chore\(* | *,chore,*:docs:* | *,chore,*:docs\(*) ;;
 	*)

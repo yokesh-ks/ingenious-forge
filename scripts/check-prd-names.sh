@@ -12,8 +12,11 @@ names=$root/.github/prd-banned-names.txt
 patterns=$(grep -v -e '^#' -e '^[[:space:]]*$' "$names")
 rc=0
 for f in "$@"; do
-	# Case-insensitive, fixed-string, whole-word matches.
-	hits=$(printf '%s\n' "$patterns" | grep -niwF -f - "$f")
+	# Case-insensitive, fixed-string matches. We do not use -w (whole-word)
+	# because grep treats hyphens as non-word characters, which breaks
+	# multi-word and hyphenated patterns (e.g. "roo-code"). The banned list
+	# uses forms specific enough to avoid false positives on ordinary prose.
+	hits=$(printf '%s\n' "$patterns" | grep -niF -f - "$f")
 	if [ -n "$hits" ]; then
 		printf 'FAIL  %s names a competing product:\n' "$f"
 		printf '%s\n' "$hits" | sed 's/^/        /'
