@@ -117,9 +117,11 @@ set_field() {  # set_field <field id> <option id>
 
 # Status: Backlog for an epic before refinement and for a story with an
 # open blocker; Todo for a refined story with none.
+type=$(gh issue view <n> -R $R --json labels \
+  --jq 'if any(.labels[]; .name=="story") then "story" else "epic" end')
 open_blockers=$(gh api repos/$R/issues/<n>/dependencies/blocked_by \
   --jq '[.[] | select(.state=="open")] | length')
-if [ "<epic or story>" = story ] && [ "$open_blockers" = 0 ]; then
+if [ "$type" = story ] && [ "$open_blockers" = 0 ]; then
   set_field PVTSSF_lAHOBAdtHM4BpdXczhn47Y8 f75ad846   # Todo
 else
   set_field PVTSSF_lAHOBAdtHM4BpdXczhn47Y8 fdb23e39   # Backlog
