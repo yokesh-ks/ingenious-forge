@@ -57,25 +57,30 @@ Classify:
 | `BRANCH` is non-empty, `GIT_DIR` differs from `GIT_COMMON` | Worktree on a branch |
 | `BRANCH` is empty | Detached HEAD (managed externally) |
 
-Record `WORKTREE_PATH` now; you will need it for cleanup.
+Record `WORKTREE_PATH` now; you will need it for cleanup. Also record
+`MAIN_CHECKOUT=$(dirname "$GIT_COMMON")`, the main checkout's working tree
+(the parent of the common git dir); you will need it in step 9b.
 
 ### 3. Determine the base branch
 
 ```bash
 git fetch origin main
+BASE_BRANCH=main
 BASE=$(git merge-base HEAD origin/main)
+BASE_TIP=$(git rev-parse origin/main)
 ```
 
-The base is `main` unless the branch was cut from something else. To
-check: `git log --oneline origin/main..$BASE` should be empty. If not,
-the branch may have been based on another feature branch; warn the user
-and ask which base to use.
+The base branch is `main` unless the branch was cut from something else. To
+check: compare `$BASE` (merge-base of HEAD and `origin/main`) with `$BASE_TIP`
+(the tip of `origin/main`). If they differ, the branch may have been based on
+another feature branch; warn the user, ask which base branch to use, and set
+`$BASE_BRANCH` accordingly.
 
 ### 4. Present the options
 
 **Normal checkout or worktree (branch exists):**
 
-> The branch `<branch>` has N commit(s) over `main` (base `<short SHA>`).
+> The branch `<branch>` has N commit(s) over `$BASE_BRANCH` (base `<short SHA>`).
 >
 > 1. **Merge locally** — merge into `main` in this checkout, rerun checks,
 >    do not push.
@@ -87,7 +92,7 @@ and ask which base to use.
 
 **Detached HEAD:**
 
-> HEAD is detached at `<short SHA>` with N commit(s) over `main`.
+> HEAD is detached at `<short SHA>` with N commit(s) over `$BASE_BRANCH`.
 > A branch is needed before a PR or merge. Options:
 >
 > 1. **Push and open a PR** — create a branch from HEAD, push and open a
@@ -106,7 +111,7 @@ Before any push or merge, scan every commit message on the branch for AI
 attribution:
 
 ```bash
-git log --format='%H %s' origin/main..HEAD
+git log --format='%H %s' "$BASE"..HEAD
 ```
 
 For each commit, check the full message:
@@ -186,8 +191,15 @@ gh pr create --base main --title "<conventional title>" --body-file <tmp>
 
 #### 6e. Add the PR to the project board
 
+Project board values (`PROJECT_NUMBER`, `PROJECT_OWNER`, `PROJECT_ID`,
+`PROJECT_FIELD_ID`, `PROJECT_OPTION_ID`) are GitHub Project v2 internals
+specific to one repository. They are documented here with defaults for this
+repo; override them as environment variables for another repository.
+
 ```bash
-gh project item-add 34 --owner yokesh-ks \
+PROJECT_NUMBER=${PROJECT_NUMBER:-34}
+PROJECT_OWNER=${PROJECT_OWNER:-yokesh-ks}
+gh project item-add "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" \
   --url <pr-url> --format json --jq .id
 ```
 
@@ -196,11 +208,14 @@ The linked issue's status should already be **In Review** via the board's
 issue (no `Closes #N`), manually set the issue to **In Review**:
 
 ```bash
-item=$(gh project item-list 34 --owner yokesh-ks --format json --limit 500 \
+PROJECT_ID=${PROJECT_ID:-PVT_kwHOBAdtHM4BpdXc}
+PROJECT_FIELD_ID=${PROJECT_FIELD_ID:-PVTSSF_lAHOBAdtHM4BpdXczhn47Y8}
+PROJECT_OPTION_ID=${PROJECT_OPTION_ID:-011a42ee}
+item=$(gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --format json --limit 500 \
   --jq '.items[] | select(.content.number==<n>) | .id')
-gh project item-edit --project-id PVT_kwHOBAdtHM4BpdXc --id "$item" \
-  --field-id PVTSSF_lAHOBAdtHM4BpdXczhn47Y8 \
-  --single-select-option-id 011a42ee
+gh project item-edit --project-id "$PROJECT_ID" --id "$item" \
+  --field-id "$PROJECT_FIELD_ID" \
+  --single-select-option-id "$PROJECT_OPTION_ID"
 ```
 
 #### 6f. Report
@@ -212,8 +227,8 @@ Print the PR URL and confirm the issue link and board status.
 #### 7a. Merge
 
 ```bash
-git switch main
-git pull origin main
+git switch "$BASE_BRANCH"
+git pull origin "$BASE_BRANCH"
 git merge --no-ff <branch>
 ```
 
@@ -221,8 +236,8 @@ If the merge fails, stop and report. Do not force it.
 
 #### 7b. Rerun checks
 
-Run the validation commands from `AGENTS.md` → **Development and
-validation** on the merged result. If any fail, warn the user: the merge
+Run `scripts/check-all.sh` (every CI check from `AGENTS.md` →
+**Development and validation**) on the merged result. If any fail, warn the user: the merge
 introduced a problem. Do not push.
 
 #### 7c. Report
@@ -260,8 +275,8 @@ Only if the current directory is a linked worktree (step 2: `GIT_DIR`
 differs from `GIT_COMMON`):
 
 ```bash
-cd <main checkout>
-git worktree remove <WORKTREE_PATH>
+cd "$MAIN_CHECKOUT"
+git worktree remove "$WORKTREE_PATH"
 ```
 
 If removal fails (uncommitted files, in use), report and leave it.
@@ -287,6 +302,10 @@ saying so. Even if the PR is open, the branch stays.
 ### 10. Close the loop
 
 #### 10a. Comment on the issue
+
+Determine the issue number `<n>` from one of: the branch-name suffix
+(e.g. `feat/slug-123` → `123`), the `Closes #N` line in the PR body, or
+the linked issue on the project board.
 
 If a PR was opened:
 

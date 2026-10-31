@@ -1,3 +1,7 @@
+# Pull request template
+
+---
+
 ## Summary
 
 <!-- One to three sentences: what this change does and why. -->
