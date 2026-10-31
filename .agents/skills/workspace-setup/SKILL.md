@@ -172,7 +172,13 @@ If baseline checks fail, ask whether to proceed or investigate first.
 
 ### 8. Hand off
 
-Continue with the change work (`agent-sop` `code-assist` or the task
+When the work comes from an issue, claim it on the project board: assign
+the issue to the git user (`gh issue edit <n> --add-assignee @me`) and set
+its Status to **In Progress**, with the commands in
+`docs/process/project-board.md`. If `gh` is not authenticated, say that the
+issue is not claimed.
+
+Then continue with the change work (`agent-sop` `code-assist` or the task
 itself). A worktree created here is removed with `git worktree remove` once
 its branch is merged or abandoned, and only with the user's agreement.
 
