@@ -84,7 +84,17 @@ function main() {
 
   const { noOpen, serverArgs } = parseArgs(process.argv);
 
-  const server = spawn(bin, serverArgs, { stdio: ["inherit", "inherit", "pipe"] });
+  // The built web SPA ships inside this package, next to the platform
+  // binaries, not in the user's current directory. Pass its absolute path
+  // so the server finds it regardless of where `npx` was run from, unless
+  // the user already passed their own --static-dir (the server rejects
+  // the flag twice).
+  const staticDir = path.join(__dirname, "web");
+  const args = serverArgs.includes("--static-dir")
+    ? serverArgs
+    : ["--static-dir", staticDir, ...serverArgs];
+
+  const server = spawn(bin, args, { stdio: ["inherit", "inherit", "pipe"] });
 
   let browserOpened = false;
   let stderrBuf = "";
