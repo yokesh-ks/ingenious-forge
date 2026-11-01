@@ -13,3 +13,8 @@ output/
 # Rust build artifacts
 /target/
 server/target/
+
+# Web SPA build artifacts
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
