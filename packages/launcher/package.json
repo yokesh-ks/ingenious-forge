@@ -1,0 +1,19 @@
+{
+  "name": "ingenious-forge",
+  "version": "0.1.0",
+  "description": "Web-native coding harness — start with npx ingenious-forge",
+  "license": "Apache-2.0",
+  "bin": {
+    "ingenious-forge": "./bin/ingenious-forge.js"
+  },
+  "files": [
+    "bin/"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yokesh-ks/ingenious-forge.git"
+  }
+}
