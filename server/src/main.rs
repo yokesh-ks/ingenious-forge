@@ -64,11 +64,22 @@ async fn main() {
 
     let app = Router::new().route("/", get(home));
 
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .unwrap_or_else(|e| panic!("failed to bind {addr}: {e}"));
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("error: failed to bind {addr}: {e}");
+            std::process::exit(1);
+        }
+    };
 
     info!("forge server listening on http://{addr}");
 
-    axum::serve(listener, app).await.unwrap();
+    let serve = axum::serve(listener, app).with_graceful_shutdown(async {
+        tokio::signal::ctrl_c().await.ok();
+    });
+
+    if let Err(e) = serve.await {
+        eprintln!("error: server error: {e}");
+        std::process::exit(1);
+    }
 }
