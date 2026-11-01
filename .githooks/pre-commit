@@ -2,6 +2,9 @@
 # Block commits on main, staged secrets and large files, and new skills
 # without their .claude/skills/ symlink. See AGENTS.md.
 FORGE_HOOKS_DIR=$(cd "$(dirname "$0")" && pwd)
+# Clear git env-var overrides so hooks run in the CWD's git context (e.g.
+# Claude Desktop sets GIT_DIR to the main repo when running in a worktree).
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE 2>/dev/null || true
 # shellcheck source-path=SCRIPTDIR source=lib/checks.sh
 . "$FORGE_HOOKS_DIR/lib/checks.sh"
 
