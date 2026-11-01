@@ -15,7 +15,6 @@ const PLATFORM_BINARIES = {
 const SUPPORTED_ARCHES = ["arm64", "x64"];
 
 const SERVER_READY_RE = /forge server listening on (https?:\/\/\S+)/i;
-const DEFAULT_PORT = 3000;
 
 function platformKey() {
   const arch = process.arch;
@@ -30,25 +29,20 @@ function platformKey() {
 function parseArgs(argv) {
   const args = argv.slice(2);
   let noOpen = false;
-  let port = DEFAULT_PORT;
   const serverArgs = [];
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--no-open") {
       noOpen = true;
     } else if (args[i] === "--port" && i + 1 < args.length) {
-      port = parseInt(args[i + 1], 10) || DEFAULT_PORT;
       serverArgs.push(args[i], args[i + 1]);
       i++;
-    } else if (args[i].startsWith("--port=")) {
-      port = parseInt(args[i].slice("--port=".length), 10) || DEFAULT_PORT;
-      serverArgs.push(args[i]);
     } else {
       serverArgs.push(args[i]);
     }
   }
 
-  return { noOpen, port, serverArgs };
+  return { noOpen, serverArgs };
 }
 
 function openBrowser(url) {
@@ -88,7 +82,7 @@ function main() {
     process.exit(1);
   }
 
-  const { noOpen, port, serverArgs } = parseArgs(process.argv);
+  const { noOpen, serverArgs } = parseArgs(process.argv);
 
   const server = spawn(bin, serverArgs, { stdio: ["inherit", "inherit", "pipe"] });
 
