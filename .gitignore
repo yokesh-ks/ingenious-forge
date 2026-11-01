@@ -9,3 +9,7 @@ output/
 
 # Personal Claude Code settings (shared ones are in .claude/settings.json)
 .claude/settings.local.json
+
+# Rust build artifacts
+/target/
+server/target/
