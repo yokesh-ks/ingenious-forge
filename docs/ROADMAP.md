@@ -1,7 +1,7 @@
 # Roadmap
 
 Index of product work on the [Ingenious Forge board](https://github.com/users/yokesh-ks/projects/34).
-Scope comes from [docs/PRD.md](PRD.md); detail lives in the linked issues.
+Scope comes from [PRD.md](PRD.md); detail lives in the linked issues.
 
 Last synced: 2026-10-31
 
