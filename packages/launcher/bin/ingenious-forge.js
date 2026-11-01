@@ -3,7 +3,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { spawnSync } = require("child_process");
+const { spawn, execFile } = require("child_process");
 
 const PLATFORM_BINARIES = {
   "darwin-arm64": path.join(__dirname, "platforms", "darwin-arm64", "forge-server"),
@@ -14,6 +14,9 @@ const PLATFORM_BINARIES = {
 
 const SUPPORTED_ARCHES = ["arm64", "x64"];
 
+const SERVER_READY_RE = /forge server listening on (https?:\/\/\S+)/i;
+const DEFAULT_PORT = 3000;
+
 function platformKey() {
   const arch = process.arch;
   if (!SUPPORTED_ARCHES.includes(arch)) {
@@ -22,6 +25,44 @@ function platformKey() {
     process.exit(1);
   }
   return `${process.platform}-${arch}`;
+}
+
+function parseArgs(argv) {
+  const args = argv.slice(2);
+  let noOpen = false;
+  let port = DEFAULT_PORT;
+  const serverArgs = [];
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--no-open") {
+      noOpen = true;
+    } else if (args[i] === "--port" && i + 1 < args.length) {
+      port = parseInt(args[i + 1], 10) || DEFAULT_PORT;
+      serverArgs.push(args[i], args[i + 1]);
+      i++;
+    } else if (args[i].startsWith("--port=")) {
+      port = parseInt(args[i].slice("--port=".length), 10) || DEFAULT_PORT;
+      serverArgs.push(args[i]);
+    } else {
+      serverArgs.push(args[i]);
+    }
+  }
+
+  return { noOpen, port, serverArgs };
+}
+
+function openBrowser(url) {
+  const opener =
+    process.platform === "darwin" ? "open" :
+    process.platform === "win32"  ? "start" :
+    "xdg-open";
+
+  const args = process.platform === "win32" ? ["", url] : [url];
+  execFile(opener, args, { shell: process.platform === "win32" }, (err) => {
+    if (err) {
+      console.error(`warning: could not open browser: ${err.message}`);
+    }
+  });
 }
 
 function main() {
@@ -47,19 +88,50 @@ function main() {
     process.exit(1);
   }
 
-  // Pass all args through; forge-server accepts --port <n>
-  const result = spawnSync(bin, process.argv.slice(2), { stdio: "inherit" });
+  const { noOpen, port, serverArgs } = parseArgs(process.argv);
 
-  if (result.error) {
-    console.error(`error: failed to start server: ${result.error.message}`);
+  const server = spawn(bin, serverArgs, { stdio: ["inherit", "inherit", "pipe"] });
+
+  let browserOpened = false;
+  let stderrBuf = "";
+
+  server.stderr.on("data", (chunk) => {
+    const text = chunk.toString();
+    process.stderr.write(text);
+
+    if (!browserOpened) {
+      stderrBuf += text;
+      const match = SERVER_READY_RE.exec(stderrBuf);
+      if (match) {
+        browserOpened = true;
+        const url = match[1];
+        if (!noOpen) {
+          openBrowser(url);
+        }
+        stderrBuf = "";
+      } else if (stderrBuf.length > 4096) {
+        // Prevent unbounded growth if the ready line never appears
+        stderrBuf = stderrBuf.slice(-512);
+      }
+    }
+  });
+
+  server.on("error", (err) => {
+    console.error(`error: failed to start server: ${err.message}`);
     process.exit(1);
-  }
+  });
 
-  if (result.signal) {
-    process.exit(1);
-  }
+  server.on("close", (code, signal) => {
+    if (signal) {
+      process.exit(1);
+    }
+    process.exit(code ?? 0);
+  });
 
-  process.exit(result.status ?? 0);
+  // Forward signals so Ctrl-C cleanly shuts down the child
+  for (const sig of ["SIGINT", "SIGTERM"]) {
+    process.on(sig, () => server.kill(sig));
+  }
 }
 
 main();
