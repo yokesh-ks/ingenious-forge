@@ -13,6 +13,7 @@ use std::{
 
 use api_types::SessionEvent;
 use services::EventService;
+use tokio::sync::watch;
 
 use model::{ChatMessage, ContentBlock, ModelClient, ModelEvent, ModelRequest};
 use tools::ToolBox;
@@ -21,18 +22,34 @@ use tools::ToolBox;
 /// that keeps calling tools cannot run forever.
 const MAX_STEPS: usize = 50;
 
+const INTERRUPTED_TOOL: &str = "Interrupted by the user before this tool ran.";
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AgentError {
     #[error("message is empty")]
     EmptyMessage,
-    #[error("a turn is already running in this session")]
-    TurnInProgress,
 }
 
 #[derive(Default)]
 struct SessionState {
     history: Vec<ChatMessage>,
     running: bool,
+    /// Messages sent while a turn runs; the turn reads them at its next step.
+    pending: Vec<String>,
+    /// Set to true to stop the running turn.
+    cancel: Option<watch::Sender<bool>>,
+}
+
+/// How a turn that did not fail came to an end.
+enum Ending {
+    Done,
+    Interrupted,
+}
+
+/// One model reply; `interrupted` means it was cut off by the user.
+struct Reply {
+    content: Vec<ContentBlock>,
+    interrupted: bool,
 }
 
 #[derive(Clone)]
@@ -54,65 +71,116 @@ impl Agent {
     }
 
     /// Starts a turn for `text` in `session_id` and returns at once; the
-    /// reply arrives as session events. One turn runs per session at a time.
+    /// reply arrives as session events. While a turn runs, the message
+    /// steers it instead: the agent reads it at its next step.
     pub fn send_message(&self, session_id: &str, text: &str) -> Result<(), AgentError> {
         let text = text.trim();
         if text.is_empty() {
             return Err(AgentError::EmptyMessage);
         }
-        let conversation = {
-            let mut sessions = self.sessions.lock().unwrap();
-            let session = sessions.entry(session_id.to_string()).or_default();
-            if session.running {
-                return Err(AgentError::TurnInProgress);
-            }
-            session.running = true;
-            let mut messages = session.history.clone();
-            messages.push(ChatMessage::user_text(text));
-            messages
-        };
-        let agent = self.clone();
-        let session_id = session_id.to_string();
-        tokio::spawn(async move { agent.run_turn(session_id, conversation).await });
+        let mut sessions = self.sessions.lock().unwrap();
+        let session = sessions.entry(session_id.to_string()).or_default();
+        if session.running {
+            session.pending.push(text.to_string());
+            return Ok(());
+        }
+        let mut conversation = session.history.clone();
+        conversation.push(ChatMessage::user_text(text));
+        self.start_turn(session, session_id.to_string(), conversation);
         Ok(())
     }
 
-    async fn run_turn(self, session_id: String, mut conversation: Vec<ChatMessage>) {
+    /// Stops the running turn in `session_id` at its next step. Returns
+    /// false when no turn is running.
+    pub fn interrupt(&self, session_id: &str) -> bool {
+        let sessions = self.sessions.lock().unwrap();
+        match sessions.get(session_id) {
+            Some(SessionState {
+                running: true,
+                cancel: Some(cancel),
+                ..
+            }) => {
+                cancel.send_replace(true);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn start_turn(
+        &self,
+        session: &mut SessionState,
+        session_id: String,
+        conversation: Vec<ChatMessage>,
+    ) {
+        let (cancel, cancelled) = watch::channel(false);
+        session.running = true;
+        session.cancel = Some(cancel);
+        let agent = self.clone();
+        tokio::spawn(async move { agent.run_turn(session_id, conversation, cancelled).await });
+    }
+
+    async fn run_turn(
+        self,
+        session_id: String,
+        mut conversation: Vec<ChatMessage>,
+        cancelled: watch::Receiver<bool>,
+    ) {
         self.events.publish(SessionEvent::TurnStarted {
             session_id: session_id.clone(),
         });
-        let result = self.run_steps(&session_id, &mut conversation).await;
+        let result = self
+            .run_steps(&session_id, &mut conversation, cancelled)
+            .await;
 
-        {
-            let mut sessions = self.sessions.lock().unwrap();
-            let session = sessions.entry(session_id.clone()).or_default();
-            session.running = false;
-            // Only a completed exchange joins the history, so a retry after
-            // a failure does not replay the failed prompt.
-            if result.is_ok() {
-                session.history = conversation;
-            }
+        let mut sessions = self.sessions.lock().unwrap();
+        let session = sessions.entry(session_id.clone()).or_default();
+        session.running = false;
+        session.cancel = None;
+        // A failed exchange does not join the history, so a retry does not
+        // replay the failed prompt. An interrupted one does: every tool call
+        // in it has a result, so the conversation stays valid.
+        if result.is_ok() {
+            session.history = conversation;
         }
+        // A message that arrived after the last step starts the next turn.
+        let leftover = std::mem::take(&mut session.pending);
 
         self.events.publish(match result {
-            Ok(()) => SessionEvent::Done { session_id },
+            Ok(Ending::Done) => SessionEvent::Done {
+                session_id: session_id.clone(),
+            },
+            Ok(Ending::Interrupted) => SessionEvent::Interrupted {
+                session_id: session_id.clone(),
+            },
             Err(message) => SessionEvent::Error {
-                session_id,
+                session_id: session_id.clone(),
                 message,
             },
         });
+
+        if !leftover.is_empty() {
+            let mut next = session.history.clone();
+            next.push(ChatMessage::user(text_blocks(leftover)));
+            self.start_turn(session, session_id, next);
+        }
     }
 
     /// Calls the model, runs the tools it asks for and feeds their results
-    /// back until it replies without a tool call.
+    /// (and any steering messages) back until it replies without a tool
+    /// call and no message is waiting.
     async fn run_steps(
         &self,
         session_id: &str,
         conversation: &mut Vec<ChatMessage>,
-    ) -> Result<(), String> {
+        mut cancelled: watch::Receiver<bool>,
+    ) -> Result<Ending, String> {
         for _ in 0..MAX_STEPS {
-            let reply = self.model_step(session_id, conversation).await?;
+            let reply = self
+                .model_step(session_id, conversation, &mut cancelled)
+                .await?;
             let calls: Vec<_> = reply
+                .content
                 .iter()
                 .filter_map(|block| match block {
                     ContentBlock::ToolUse { id, name, input } => {
@@ -121,21 +189,49 @@ impl Agent {
                     _ => None,
                 })
                 .collect();
-            if !reply.is_empty() {
-                conversation.push(ChatMessage::assistant(reply));
+            if !reply.content.is_empty() {
+                conversation.push(ChatMessage::assistant(reply.content));
             }
-            if calls.is_empty() {
-                return Ok(());
+            if reply.interrupted {
+                return Ok(Ending::Interrupted);
             }
-            let mut results = Vec::with_capacity(calls.len());
+
+            let mut next = Vec::with_capacity(calls.len());
             for (call_id, name, input) in calls {
-                results.push(self.run_tool(session_id, call_id, name, input).await);
+                next.push(if *cancelled.borrow() {
+                    ContentBlock::ToolResult {
+                        tool_use_id: call_id,
+                        content: INTERRUPTED_TOOL.into(),
+                        is_error: true,
+                    }
+                } else {
+                    self.run_tool(session_id, call_id, name, input).await
+                });
             }
-            conversation.push(ChatMessage::user(results));
+            next.extend(text_blocks(self.take_pending(session_id)));
+            if *cancelled.borrow() {
+                if !next.is_empty() {
+                    conversation.push(ChatMessage::user(next));
+                }
+                return Ok(Ending::Interrupted);
+            }
+            // No tool to answer and no message waiting: the reply is final.
+            if next.is_empty() {
+                return Ok(Ending::Done);
+            }
+            conversation.push(ChatMessage::user(next));
         }
         Err(format!(
             "stopped after {MAX_STEPS} model steps without finishing"
         ))
+    }
+
+    fn take_pending(&self, session_id: &str) -> Vec<String> {
+        let mut sessions = self.sessions.lock().unwrap();
+        sessions
+            .get_mut(session_id)
+            .map(|s| std::mem::take(&mut s.pending))
+            .unwrap_or_default()
     }
 
     /// Streams one model reply, publishing text as it arrives, and returns
@@ -144,14 +240,28 @@ impl Agent {
         &self,
         session_id: &str,
         conversation: &[ChatMessage],
-    ) -> Result<Vec<ContentBlock>, String> {
+        cancelled: &mut watch::Receiver<bool>,
+    ) -> Result<Reply, String> {
         let mut rx = self.model.stream(ModelRequest {
             messages: conversation.to_vec(),
             tools: self.tools.specs(),
         });
         let mut text = String::new();
         let mut message = None;
-        while let Some(item) = rx.recv().await {
+        loop {
+            let item = tokio::select! {
+                item = rx.recv() => item,
+                _ = cancelled.wait_for(|stop| *stop) => {
+                    // Keep what was shown so far; drop the rest of the reply.
+                    let content = if text.is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![ContentBlock::Text { text }]
+                    };
+                    return Ok(Reply { content, interrupted: true });
+                }
+            };
+            let Some(item) = item else { break };
             match item.map_err(|err| err.to_string())? {
                 ModelEvent::TextDelta(chunk) => {
                     text.push_str(&chunk);
@@ -163,13 +273,17 @@ impl Agent {
                 ModelEvent::Message(content) => message = Some(content),
             }
         }
-        Ok(message.unwrap_or_else(|| {
+        let content = message.unwrap_or_else(|| {
             if text.is_empty() {
                 Vec::new()
             } else {
                 vec![ContentBlock::Text { text }]
             }
-        }))
+        });
+        Ok(Reply {
+            content,
+            interrupted: false,
+        })
     }
 
     async fn run_tool(
@@ -204,4 +318,11 @@ impl Agent {
             is_error: outcome.is_error,
         }
     }
+}
+
+fn text_blocks(texts: Vec<String>) -> Vec<ContentBlock> {
+    texts
+        .into_iter()
+        .map(|text| ContentBlock::Text { text })
+        .collect()
 }

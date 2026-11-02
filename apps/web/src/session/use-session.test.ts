@@ -80,9 +80,10 @@ describe("useSession", () => {
       socket.emit({ type: "output", session_id: "s1", chunk: "Hi!" });
       socket.emit({ type: "done", session_id: "s1" });
     });
-    expect(result.current.state.messages.map((m) => (m.role === "tool" ? m.name : m.text))).toEqual(
-      ["hi", "Hi!"],
-    );
+    expect(result.current.state.messages.map((m) => ("text" in m ? m.text : m.name))).toEqual([
+      "hi",
+      "Hi!",
+    ]);
     expect(result.current.state.running).toBe(false);
   });
 
@@ -109,6 +110,22 @@ describe("useSession", () => {
     expect(result.current.connected).toBe(false);
     expect(result.current.state.running).toBe(false);
     expect(result.current.state.error).toMatch(/connection/i);
+  });
+
+  it("sends an interrupt for its session when stopped", () => {
+    const { result } = setup();
+    act(() => FakeSocket.latest().open());
+    act(() => result.current.stop());
+    expect(JSON.parse(FakeSocket.latest().sent[0])).toEqual({
+      type: "interrupt",
+      session_id: "s1",
+    });
+  });
+
+  it("does nothing when stopped while disconnected", () => {
+    const { result } = setup();
+    act(() => result.current.stop());
+    expect(FakeSocket.latest().sent).toEqual([]);
   });
 
   it("closes the socket on unmount", () => {

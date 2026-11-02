@@ -81,6 +81,11 @@ fn handle_client_message(state: &AppState, text: &str) {
                 });
             }
         }
+        ClientMessage::Interrupt { session_id } => {
+            if !state.agent.interrupt(&session_id) {
+                tracing::debug!(%session_id, "interrupt with no running turn");
+            }
+        }
     }
 }
 
@@ -259,22 +264,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn message_while_a_turn_runs_returns_an_error_event() {
-        let (url, _) = start(vec![vec!["slow"]], Duration::from_millis(300)).await;
+    async fn interrupt_stops_the_running_turn() {
+        let (url, _) = start(vec![vec!["a", "never"]], Duration::from_millis(300)).await;
         let mut ws = connect(&url).await;
 
-        send(&mut ws, send_message("s1", "first")).await;
+        send(&mut ws, send_message("s1", "go")).await;
         assert_eq!(next_event(&mut ws).await["type"], "turn_started");
-        send(&mut ws, send_message("s1", "second")).await;
+        send(&mut ws, json!({ "type": "interrupt", "session_id": "s1" })).await;
 
         assert_eq!(
             next_event(&mut ws).await,
-            json!({
-                "type":"error",
-                "session_id":"s1",
-                "message":"a turn is already running in this session"
-            })
+            json!({ "type": "interrupted", "session_id": "s1" })
         );
+    }
+
+    #[tokio::test]
+    async fn interrupt_without_a_running_turn_sends_nothing() {
+        let (url, _) = start(vec![vec!["ok"]], Duration::ZERO).await;
+        let mut ws = connect(&url).await;
+
+        send(&mut ws, json!({ "type": "interrupt", "session_id": "s1" })).await;
+        send(&mut ws, send_message("s1", "hi")).await;
+
+        assert_eq!(next_event(&mut ws).await["type"], "turn_started");
     }
 
     #[tokio::test]

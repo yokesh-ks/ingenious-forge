@@ -9,7 +9,7 @@ export default function App() {
   // Sessions get server-side ids once the session list lands (PRD §6.2
   // Projects and session list); until then each page load is one session.
   const [sessionId] = useState(() => crypto.randomUUID());
-  const { state, connected, send } = useSession(sessionId);
+  const { state, connected, send, stop } = useSession(sessionId);
 
   return (
     <div className="flex h-screen flex-col">
@@ -28,7 +28,7 @@ export default function App() {
         <SessionView messages={state.messages} running={state.running} error={state.error} />
       </main>
       <footer className="px-4 pb-6">
-        <Composer onSend={send} busy={state.running} />
+        <Composer onSend={send} busy={state.running} onStop={stop} />
       </footer>
     </div>
   );

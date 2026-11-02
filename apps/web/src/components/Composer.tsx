@@ -1,4 +1,4 @@
-import { ArrowUpIcon } from "lucide-react";
+import { ArrowUpIcon, SquareIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import {
   InputGroup,
@@ -10,13 +10,15 @@ import {
 interface ComposerProps {
   /** Sends the trimmed text; returns false when it could not be sent. */
   onSend: (text: string) => boolean;
-  /** True while a turn runs; sending waits until it ends. */
+  /** True while a turn runs: a message sent now steers it. */
   busy?: boolean;
+  /** Stops the running turn. */
+  onStop?: () => void;
 }
 
-export default function Composer({ onSend, busy = false }: ComposerProps) {
+export default function Composer({ onSend, busy = false, onStop }: ComposerProps) {
   const [value, setValue] = useState("");
-  const canSend = !busy && value.trim() !== "";
+  const canSend = value.trim() !== "";
 
   function handleSubmit(event?: FormEvent) {
     event?.preventDefault();
@@ -40,12 +42,24 @@ export default function Composer({ onSend, busy = false }: ComposerProps) {
           }}
         />
         <InputGroupAddon align="block-end">
+          {busy && onStop && (
+            <InputGroupButton
+              type="button"
+              size="icon-sm"
+              variant="outline"
+              aria-label="Stop the agent"
+              className="ml-auto"
+              onClick={onStop}
+            >
+              <SquareIcon />
+            </InputGroupButton>
+          )}
           <InputGroupButton
             type="submit"
             size="icon-sm"
             variant="default"
             aria-label="Send message"
-            className="ml-auto"
+            className={busy && onStop ? undefined : "ml-auto"}
             disabled={!canSend}
           >
             <ArrowUpIcon />

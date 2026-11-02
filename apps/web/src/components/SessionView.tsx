@@ -60,6 +60,8 @@ export default function SessionView({ messages, running, error }: SessionViewPro
               >
                 {message.role === "tool" ? (
                   <ToolCallCard tool={message} />
+                ) : message.role === "notice" ? (
+                  <p className="text-center text-xs text-muted-foreground">{message.text}</p>
                 ) : (
                   <Message align={message.role === "user" ? "end" : "start"}>
                     <MessageContent>

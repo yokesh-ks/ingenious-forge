@@ -17,7 +17,14 @@ export interface ToolItem {
   output: string | null;
 }
 
-export type SessionItem = SessionMessage | ToolItem;
+/** A line about the session itself, such as an interrupted turn. */
+export interface SessionNotice {
+  id: string;
+  role: "notice";
+  text: string;
+}
+
+export type SessionItem = SessionMessage | ToolItem | SessionNotice;
 
 export interface SessionState {
   /** The session timeline: messages and tool calls in arrival order. */
@@ -45,6 +52,7 @@ const nextId = (state: SessionState) => `m${state.messages.length}`;
 export function sessionReducer(state: SessionState, action: SessionAction): SessionState {
   switch (action.kind) {
     case "send":
+      // During a turn this steers it; the reply continues in a new message.
       return {
         messages: [...state.messages, { id: nextId(state), role: "user", text: action.text }],
         running: true,
@@ -68,7 +76,7 @@ function applyEvent(state: SessionState, event: SessionEvent): SessionState {
         return {
           ...state,
           messages: state.messages.map((m) =>
-            m.id === id && m.role !== "tool" ? { ...m, text: m.text + event.chunk } : m,
+            m.id === id && m.role === "assistant" ? { ...m, text: m.text + event.chunk } : m,
           ),
         };
       }
@@ -111,6 +119,20 @@ function applyEvent(state: SessionState, event: SessionEvent): SessionState {
     }
     case "done":
       return { ...state, running: false, streamingId: null };
+    case "interrupted":
+      return {
+        ...state,
+        running: false,
+        streamingId: null,
+        messages: [
+          ...state.messages.map((m) =>
+            m.role === "tool" && m.status === "running"
+              ? { ...m, status: "error" as const, output: "Interrupted" }
+              : m,
+          ),
+          { id: nextId(state), role: "notice", text: "Turn interrupted" },
+        ],
+      };
     case "error":
       return { ...state, running: false, error: event.message, streamingId: null };
     default:

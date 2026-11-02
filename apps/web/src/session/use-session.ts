@@ -74,5 +74,12 @@ export function useSession(
     [sessionId],
   );
 
-  return { state, connected, send };
+  const stop = useCallback(() => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    const message: ClientMessage = { type: "interrupt", session_id: sessionId };
+    socket.send(JSON.stringify(message));
+  }, [sessionId]);
+
+  return { state, connected, send, stop };
 }

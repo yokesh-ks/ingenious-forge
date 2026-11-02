@@ -160,3 +160,27 @@ fn generated_typescript_matches_committed_file() {
         path.display()
     );
 }
+
+#[test]
+fn client_interrupt_parses() {
+    let msg: ClientMessage =
+        serde_json::from_value(json!({ "type": "interrupt", "session_id": "s1" })).unwrap();
+    assert_eq!(
+        msg,
+        ClientMessage::Interrupt {
+            session_id: "s1".into()
+        }
+    );
+}
+
+#[test]
+fn interrupted_event_serializes() {
+    let event = SessionEvent::Interrupted {
+        session_id: "s1".into(),
+    };
+    assert_eq!(event.session_id(), "s1");
+    assert_eq!(
+        serde_json::to_value(&event).unwrap(),
+        json!({ "type": "interrupted", "session_id": "s1" })
+    );
+}

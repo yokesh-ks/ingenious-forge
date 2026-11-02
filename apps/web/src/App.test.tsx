@@ -48,4 +48,23 @@ describe("App", () => {
     act(() => socket.emit({ type: "done", session_id }));
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
   });
+
+  it("stops a running turn and re-enables the composer", async () => {
+    render(<App />);
+    const socket = FakeSocket.latest();
+    act(() => socket.open());
+
+    await userEvent.type(screen.getByPlaceholderText(/ask forge/i), "long task{Enter}");
+    const { session_id } = JSON.parse(socket.sent[0]);
+    act(() => socket.emit({ type: "turn_started", session_id }));
+
+    await userEvent.click(screen.getByRole("button", { name: /stop/i }));
+    expect(JSON.parse(socket.sent[1])).toEqual({ type: "interrupt", session_id });
+
+    act(() => socket.emit({ type: "interrupted", session_id }));
+    expect(screen.getByText("Turn interrupted")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /stop/i })).not.toBeInTheDocument();
+    await userEvent.type(screen.getByPlaceholderText(/ask forge/i), "next");
+    expect(screen.getByRole("button", { name: /send message/i })).toBeEnabled();
+  });
 });
