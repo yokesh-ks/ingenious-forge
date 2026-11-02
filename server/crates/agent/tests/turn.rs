@@ -109,6 +109,7 @@ fn describe(events: &[SessionEvent]) -> Vec<String> {
             SessionEvent::Done { .. } => "done".to_string(),
             SessionEvent::Interrupted { .. } => "interrupted".to_string(),
             SessionEvent::FileChanged { path, .. } => format!("changed:{path}"),
+            SessionEvent::ChangesReverted { paths, .. } => format!("reverted:{paths:?}"),
         })
         .collect()
 }
@@ -766,4 +767,102 @@ async fn changes_are_tracked_per_session() {
 
     // s2 started after s1's edit, so its baseline is v1, not v0.
     assert!(changes[0].3.contains("-v1\n"), "{}", changes[0].3);
+}
+
+fn reverted(events: &[SessionEvent]) -> Option<Vec<String>> {
+    events.iter().find_map(|e| match e {
+        SessionEvent::ChangesReverted { paths, .. } => Some(paths.clone()),
+        _ => None,
+    })
+}
+
+async fn next_for(rx: &mut broadcast::Receiver<SessionEvent>, session_id: &str) -> SessionEvent {
+    loop {
+        let event = next(rx).await;
+        if event.session_id() == session_id {
+            return event;
+        }
+    }
+}
+
+#[tokio::test]
+async fn revert_all_restores_edited_files_and_removes_created_ones() {
+    let root = project(&[("a.txt", "original")]);
+    let (agent, _, mut rx) = setup_in(
+        FakeModel::replying(vec![
+            vec![edit("e1", "a.txt", "original", "changed")],
+            vec![edit("e2", "new.txt", "", "created")],
+            vec![text("ok")],
+        ]),
+        root.clone(),
+    );
+    agent.send_message("s1", "edit").unwrap();
+    turn_events(&mut rx, "s1").await;
+
+    agent.revert_all("s1").await.unwrap();
+
+    let event = next_for(&mut rx, "s1").await;
+    assert_eq!(
+        reverted(&[event]),
+        Some(vec!["a.txt".to_string(), "new.txt".to_string()])
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("a.txt")).unwrap(),
+        "original"
+    );
+    assert!(!root.join("new.txt").exists());
+}
+
+#[tokio::test]
+async fn after_revert_the_next_turn_starts_a_fresh_baseline_and_tells_the_model() {
+    let root = project(&[("a.txt", "v0")]);
+    let (agent, model, mut rx) = setup_in(
+        FakeModel::replying(vec![
+            vec![edit("e1", "a.txt", "v0", "v1")],
+            vec![text("ok")],
+            vec![text("noted")],
+        ]),
+        root,
+    );
+    agent.send_message("s1", "edit").unwrap();
+    turn_events(&mut rx, "s1").await;
+    agent.revert_all("s1").await.unwrap();
+    next_for(&mut rx, "s1").await;
+
+    agent.send_message("s1", "what now?").unwrap();
+    turn_events(&mut rx, "s1").await;
+
+    let requests = model.requests.lock().unwrap();
+    let last = requests.last().unwrap().messages.last().unwrap();
+    assert_eq!(
+        last.content,
+        vec![
+            ContentBlock::Text {
+                text:
+                    "Note: the user reverted every file change you made in this session (a.txt). \
+                       Those files are back to how they were before your edits."
+                        .into()
+            },
+            ContentBlock::Text {
+                text: "what now?".into()
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn revert_all_is_refused_while_a_turn_runs() {
+    let (agent, _, mut rx) = setup(FakeModel::replying(vec![vec![text("a"), slow("b")]]));
+    agent.send_message("s1", "go").unwrap();
+    until(&mut rx, "s1", is_output).await;
+
+    assert_eq!(agent.revert_all("s1").await, Err(AgentError::TurnRunning));
+    turn_events(&mut rx, "s1").await;
+}
+
+#[tokio::test]
+async fn revert_all_with_no_changes_reports_an_empty_list() {
+    let (agent, _, mut rx) = setup(FakeModel::default());
+    agent.revert_all("s1").await.unwrap();
+    assert_eq!(reverted(&[next_for(&mut rx, "s1").await]), Some(vec![]));
 }

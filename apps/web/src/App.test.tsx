@@ -79,4 +79,31 @@ describe("App", () => {
     await userEvent.type(screen.getByPlaceholderText(/ask forge/i), "next");
     expect(screen.getByRole("button", { name: /send message/i })).toBeEnabled();
   });
+
+  it("reverts all changes from the panel", async () => {
+    render(<App />);
+    const socket = FakeSocket.latest();
+    act(() => socket.open());
+    await userEvent.type(screen.getByPlaceholderText(/ask forge/i), "edit{Enter}");
+    const { session_id } = JSON.parse(socket.sent[0]);
+    act(() => {
+      socket.emit({
+        type: "file_changed",
+        session_id,
+        path: "a.txt",
+        diff: "@@ -1 +1 @@\n-a\n+b\n",
+        additions: 1,
+        deletions: 1,
+      });
+      socket.emit({ type: "done", session_id });
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Revert all" }));
+    await userEvent.click(screen.getByRole("button", { name: /confirm revert/i }));
+    expect(JSON.parse(socket.sent[1])).toEqual({ type: "revert_all", session_id });
+
+    act(() => socket.emit({ type: "changes_reverted", session_id, paths: ["a.txt"] }));
+    expect(screen.getByText("Reverted 1 file")).toBeInTheDocument();
+    expect(screen.getByText(/no changes yet/i)).toBeInTheDocument();
+  });
 });

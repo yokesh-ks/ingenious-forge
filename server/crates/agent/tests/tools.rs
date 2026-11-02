@@ -290,3 +290,19 @@ fn read_text_distinguishes_missing_files() {
     assert_eq!(tools.read_text("missing.txt"), Ok(None));
     assert!(tools.read_text("../x").is_err());
 }
+
+#[test]
+fn restore_writes_or_removes_a_file() {
+    let project = Project::new();
+    project.write("a.txt", "changed");
+    project.write("new/b.txt", "created");
+    let tools = project.tools();
+
+    tools.restore("a.txt", Some("original")).unwrap();
+    tools.restore("new/b.txt", None).unwrap();
+    tools.restore("never-existed.txt", None).unwrap();
+
+    assert_eq!(project.read("a.txt"), "original");
+    assert!(!project.path().join("new/b.txt").exists());
+    assert!(tools.restore("../x", None).is_err());
+}

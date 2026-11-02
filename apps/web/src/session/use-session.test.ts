@@ -128,6 +128,16 @@ describe("useSession", () => {
     expect(FakeSocket.latest().sent).toEqual([]);
   });
 
+  it("sends revert_all for its session", () => {
+    const { result } = setup();
+    act(() => FakeSocket.latest().open());
+    act(() => result.current.revertAll());
+    expect(JSON.parse(FakeSocket.latest().sent[0])).toEqual({
+      type: "revert_all",
+      session_id: "s1",
+    });
+  });
+
   it("closes the socket on unmount", () => {
     const { unmount } = setup();
     const socket = FakeSocket.latest();

@@ -207,3 +207,24 @@ fn file_changed_event_carries_the_diff() {
         })
     );
 }
+
+#[test]
+fn revert_all_and_changes_reverted_round_trip() {
+    let msg: ClientMessage =
+        serde_json::from_value(json!({ "type": "revert_all", "session_id": "s1" })).unwrap();
+    assert_eq!(
+        msg,
+        ClientMessage::RevertAll {
+            session_id: "s1".into()
+        }
+    );
+    let event = SessionEvent::ChangesReverted {
+        session_id: "s1".into(),
+        paths: vec!["a.txt".into()],
+    };
+    assert_eq!(event.session_id(), "s1");
+    assert_eq!(
+        serde_json::to_value(&event).unwrap(),
+        json!({ "type": "changes_reverted", "session_id": "s1", "paths": ["a.txt"] })
+    );
+}

@@ -29,6 +29,8 @@ const INTERRUPTED_TOOL: &str = "Interrupted by the user before this tool ran.";
 pub enum AgentError {
     #[error("message is empty")]
     EmptyMessage,
+    #[error("stop the running turn before reverting changes")]
+    TurnRunning,
 }
 
 #[derive(Default)]
@@ -42,6 +44,8 @@ struct SessionState {
     /// Each file the agent edited, with its content before the first edit
     /// (`None` when the agent created it).
     originals: BTreeMap<String, Option<String>>,
+    /// Notes for the model, sent with the user's next message.
+    notes: Vec<String>,
 }
 
 /// How a turn that did not fail came to an end.
@@ -89,8 +93,70 @@ impl Agent {
             return Ok(());
         }
         let mut conversation = session.history.clone();
-        conversation.push(ChatMessage::user_text(text));
+        let mut content = text_blocks(std::mem::take(&mut session.notes));
+        content.push(ContentBlock::Text { text: text.into() });
+        conversation.push(ChatMessage::user(content));
         self.start_turn(session, session_id.to_string(), conversation);
+        Ok(())
+    }
+
+    /// Restores every file the agent changed in `session_id` to its content
+    /// before the agent's first edit, and removes files it created.
+    pub async fn revert_all(&self, session_id: &str) -> Result<(), AgentError> {
+        let originals = {
+            let mut sessions = self.sessions.lock().unwrap();
+            let session = sessions.entry(session_id.to_string()).or_default();
+            if session.running {
+                return Err(AgentError::TurnRunning);
+            }
+            std::mem::take(&mut session.originals)
+        };
+
+        let tools = self.tools.clone();
+        let (restored, failed) = tokio::task::spawn_blocking(move || {
+            let mut restored = Vec::new();
+            let mut failed = BTreeMap::new();
+            for (path, original) in originals {
+                match tools.restore(&path, original.as_deref()) {
+                    Ok(()) => restored.push(path),
+                    Err(err) => {
+                        failed.insert(path, (original, err));
+                    }
+                }
+            }
+            (restored, failed)
+        })
+        .await
+        .unwrap_or_default();
+
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            let session = sessions.entry(session_id.to_string()).or_default();
+            if !restored.is_empty() {
+                session.notes.push(format!(
+                    "Note: the user reverted every file change you made in this session ({}). \
+                     Those files are back to how they were before your edits.",
+                    restored.join(", ")
+                ));
+            }
+            // A file that could not be restored stays tracked so the user
+            // can try again.
+            for (path, (original, _)) in &failed {
+                session.originals.insert(path.clone(), original.clone());
+            }
+        }
+
+        self.events.publish(SessionEvent::ChangesReverted {
+            session_id: session_id.to_string(),
+            paths: restored,
+        });
+        if !failed.is_empty() {
+            let reasons: Vec<_> = failed.values().map(|(_, err)| err.as_str()).collect();
+            self.events.publish(SessionEvent::Error {
+                session_id: session_id.to_string(),
+                message: reasons.join("; "),
+            });
+        }
         Ok(())
     }
 

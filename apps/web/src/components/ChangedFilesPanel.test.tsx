@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { FileChange } from "@/session/session-reducer";
 import ChangedFilesPanel from "./ChangedFilesPanel";
 
@@ -57,5 +57,29 @@ describe("ChangedFilesPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: /new\.md/ }));
     rerender(<ChangedFilesPanel files={[files[0]]} />);
     expect(screen.queryByTestId("diff-line")).not.toBeInTheDocument();
+  });
+
+  it("asks for confirmation before reverting all changes", async () => {
+    const onRevertAll = vi.fn();
+    render(<ChangedFilesPanel files={files} onRevertAll={onRevertAll} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Revert all" }));
+    expect(onRevertAll).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("button", { name: /confirm/i })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Revert all" }));
+    await userEvent.click(screen.getByRole("button", { name: /confirm revert/i }));
+    expect(onRevertAll).toHaveBeenCalledOnce();
+  });
+
+  it("disables reverting while the agent is working", () => {
+    render(<ChangedFilesPanel files={files} onRevertAll={vi.fn()} busy />);
+    expect(screen.getByRole("button", { name: "Revert all" })).toBeDisabled();
+  });
+
+  it("offers no revert when nothing changed", () => {
+    render(<ChangedFilesPanel files={[]} onRevertAll={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Revert all" })).not.toBeInTheDocument();
   });
 });

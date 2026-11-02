@@ -10,7 +10,7 @@ export default function App() {
   // Sessions get server-side ids once the session list lands (PRD §6.2
   // Projects and session list); until then each page load is one session.
   const [sessionId] = useState(() => crypto.randomUUID());
-  const { state, connected, send, stop } = useSession(sessionId);
+  const { state, connected, send, stop, revertAll } = useSession(sessionId);
 
   return (
     <div className="flex h-screen flex-col">
@@ -35,7 +35,11 @@ export default function App() {
           </footer>
         </div>
         <aside className="hidden w-96 shrink-0 overflow-y-auto border-l pl-4 lg:flex lg:flex-col">
-          <ChangedFilesPanel files={state.changedFiles} />
+          <ChangedFilesPanel
+            files={state.changedFiles}
+            onRevertAll={revertAll}
+            busy={state.running}
+          />
         </aside>
       </div>
     </div>

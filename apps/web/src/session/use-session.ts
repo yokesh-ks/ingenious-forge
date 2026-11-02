@@ -74,12 +74,23 @@ export function useSession(
     [sessionId],
   );
 
-  const stop = useCallback(() => {
+  /** Sends a message that needs no local bookkeeping; false if offline. */
+  const post = useCallback((message: ClientMessage): boolean => {
     const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    const message: ClientMessage = { type: "interrupt", session_id: sessionId };
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     socket.send(JSON.stringify(message));
-  }, [sessionId]);
+    return true;
+  }, []);
 
-  return { state, connected, send, stop };
+  const stop = useCallback(() => {
+    post({ type: "interrupt", session_id: sessionId });
+  }, [post, sessionId]);
+
+  const revertAll = useCallback(() => {
+    if (!post({ type: "revert_all", session_id: sessionId })) {
+      dispatch({ kind: "local_error", message: "Not connected to the Forge server." });
+    }
+  }, [post, sessionId]);
+
+  return { state, connected, send, stop, revertAll };
 }

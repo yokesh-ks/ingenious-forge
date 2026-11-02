@@ -81,6 +81,18 @@ fn handle_client_message(state: &AppState, text: &str) {
                 });
             }
         }
+        ClientMessage::RevertAll { session_id } => {
+            let agent = state.agent.clone();
+            let events = state.events.clone();
+            tokio::spawn(async move {
+                if let Err(err) = agent.revert_all(&session_id).await {
+                    events.publish(SessionEvent::Error {
+                        session_id,
+                        message: err.to_string(),
+                    });
+                }
+            });
+        }
         ClientMessage::Interrupt { session_id } => {
             if !state.agent.interrupt(&session_id) {
                 tracing::debug!(%session_id, "interrupt with no running turn");
@@ -287,6 +299,38 @@ mod tests {
         send(&mut ws, send_message("s1", "hi")).await;
 
         assert_eq!(next_event(&mut ws).await["type"], "turn_started");
+    }
+
+    #[tokio::test]
+    async fn revert_all_reports_the_reverted_files() {
+        let (url, _) = start(vec![], Duration::ZERO).await;
+        let mut ws = connect(&url).await;
+
+        send(&mut ws, json!({ "type": "revert_all", "session_id": "s1" })).await;
+
+        assert_eq!(
+            next_event(&mut ws).await,
+            json!({ "type": "changes_reverted", "session_id": "s1", "paths": [] })
+        );
+    }
+
+    #[tokio::test]
+    async fn revert_all_during_a_turn_returns_an_error_event() {
+        let (url, _) = start(vec![vec!["a", "b"]], Duration::from_millis(300)).await;
+        let mut ws = connect(&url).await;
+
+        send(&mut ws, send_message("s1", "go")).await;
+        assert_eq!(next_event(&mut ws).await["type"], "turn_started");
+        send(&mut ws, json!({ "type": "revert_all", "session_id": "s1" })).await;
+
+        assert_eq!(
+            next_event(&mut ws).await,
+            json!({
+                "type": "error",
+                "session_id": "s1",
+                "message": "stop the running turn before reverting changes"
+            })
+        );
     }
 
     #[tokio::test]
