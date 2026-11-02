@@ -90,7 +90,10 @@ function main() {
   // the user already passed their own --static-dir (the server rejects
   // the flag twice).
   const staticDir = path.join(__dirname, "web");
-  const args = serverArgs.includes("--static-dir")
+  const hasStaticDir = serverArgs.some(
+    (a) => a === "--static-dir" || a.startsWith("--static-dir="),
+  );
+  const args = hasStaticDir
     ? serverArgs
     : ["--static-dir", staticDir, ...serverArgs];
 
