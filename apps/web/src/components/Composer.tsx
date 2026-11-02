@@ -7,16 +7,21 @@ import {
   InputGroupTextarea,
 } from "@/components/ui/input-group";
 
-export default function Composer() {
+interface ComposerProps {
+  /** Sends the trimmed text; returns false when it could not be sent. */
+  onSend: (text: string) => boolean;
+  /** True while a turn runs; sending waits until it ends. */
+  busy?: boolean;
+}
+
+export default function Composer({ onSend, busy = false }: ComposerProps) {
   const [value, setValue] = useState("");
+  const canSend = !busy && value.trim() !== "";
 
   function handleSubmit(event?: FormEvent) {
     event?.preventDefault();
-    const text = value.trim();
-    if (!text) return;
-    // Sending to the agent is wired up in a later story; this story only
-    // needs the composer to render and accept input.
-    setValue("");
+    if (!canSend) return;
+    if (onSend(value.trim())) setValue("");
   }
 
   return (
@@ -41,7 +46,7 @@ export default function Composer() {
             variant="default"
             aria-label="Send message"
             className="ml-auto"
-            disabled={!value.trim()}
+            disabled={!canSend}
           >
             <ArrowUpIcon />
           </InputGroupButton>

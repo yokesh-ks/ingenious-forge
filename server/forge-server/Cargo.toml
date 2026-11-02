@@ -23,3 +23,8 @@ services.workspace = true
 api-types.workspace = true
 sqlx.workspace = true
 serde_json.workspace = true
+agent.workspace = true
+
+[dev-dependencies]
+tokio-tungstenite.workspace = true
+futures-util.workspace = true

@@ -2,7 +2,7 @@
   "name": "@ingenious-forge/web",
   "version": "0.1.0",
   "private": true,
-  "description": "Forge web UI — React SPA served by the local server",
+  "description": "Forge web UI \u2014 React SPA served by the local server",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
@@ -11,7 +11,9 @@
     "preview": "vite preview",
     "lint": "biome lint .",
     "format": "biome format --write .",
-    "format:check": "biome format ."
+    "format:check": "biome format .",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
@@ -27,12 +29,17 @@
   "devDependencies": {
     "@biomejs/biome": "^2.6.4",
     "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.2.1",
+    "jsdom": "^30.1.3",
     "shadcn": "^4.23.0",
     "tailwindcss": "^4.3.3",
     "typescript": "7.0.2",
-    "vite": "8.3.5"
+    "vite": "8.3.5",
+    "vitest": "^5.1.0"
   }
 }
