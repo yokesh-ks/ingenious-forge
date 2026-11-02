@@ -1,9 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import type { SessionMessage } from "@/session/session-reducer";
+import type { SessionItem } from "@/session/session-reducer";
 import SessionView from "./SessionView";
 
-const conversation: SessionMessage[] = [
+const conversation: SessionItem[] = [
   { id: "m0", role: "user", text: "hi" },
   { id: "m1", role: "assistant", text: "Hello there" },
 ];
@@ -28,6 +28,51 @@ describe("SessionView", () => {
   it("hides the thinking indicator once the reply is streaming", () => {
     render(<SessionView messages={conversation} running error={null} />);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("renders tool calls inline between messages", () => {
+    render(
+      <SessionView
+        messages={[
+          ...conversation,
+          {
+            id: "m2",
+            role: "tool",
+            callId: "t1",
+            name: "read_file",
+            args: { path: "README.md" },
+            status: "done",
+            output: "# Forge",
+          },
+        ]}
+        running={false}
+        error={null}
+      />,
+    );
+    expect(screen.getByText("README.md")).toBeInTheDocument();
+    expect(screen.getByTestId("tool-output")).toHaveTextContent("# Forge");
+  });
+
+  it("shows the thinking indicator after a tool finishes mid-turn", () => {
+    render(
+      <SessionView
+        messages={[
+          conversation[0],
+          {
+            id: "m1",
+            role: "tool",
+            callId: "t1",
+            name: "list_directory",
+            args: {},
+            status: "done",
+            output: "a",
+          },
+        ]}
+        running
+        error={null}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(/thinking/i);
   });
 
   it("shows an error alert", () => {

@@ -4,7 +4,7 @@
 use std::sync::{Arc, Mutex};
 
 use agent::anthropic::AnthropicClient;
-use agent::model::{ChatMessage, ModelClient, ModelError, ModelEvent, ModelRequest, Role};
+use agent::model::{ChatMessage, ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest};
 use axum::{
     body::Body,
     http::{HeaderMap, StatusCode},
@@ -45,10 +45,8 @@ async fn serve(status: StatusCode, body: &'static str) -> (String, Seen) {
 
 fn request() -> ModelRequest {
     ModelRequest {
-        messages: vec![ChatMessage {
-            role: Role::User,
-            content: "Say hi".into(),
-        }],
+        messages: vec![ChatMessage::user_text("Say hi")],
+        tools: vec![],
     }
 }
 
@@ -62,6 +60,7 @@ async fn collect(client: &AnthropicClient) -> Vec<Result<ModelEvent, ModelError>
 }
 
 const STREAM: &str = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{}}\n\n\
+event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n\
 event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hi \"}}\n\n\
 event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"there\"}}\n\n\
 event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
@@ -78,13 +77,16 @@ async fn streams_text_deltas_in_order() {
         vec![
             Ok(ModelEvent::TextDelta("Hi ".into())),
             Ok(ModelEvent::TextDelta("there".into())),
+            Ok(ModelEvent::Message(vec![ContentBlock::Text {
+                text: "Hi there".into()
+            }])),
         ]
     );
     let headers = seen.headers.lock().unwrap().clone().unwrap();
     assert_eq!(headers["x-api-key"], "test-key");
     assert_eq!(headers["anthropic-version"], "2026-10-21");
     let body = seen.body.lock().unwrap().clone().unwrap();
-    assert_eq!(body["messages"][0]["content"], "Say hi");
+    assert_eq!(body["messages"][0]["content"][0]["text"], "Say hi");
 }
 
 #[tokio::test]

@@ -8,10 +8,11 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
-import type { SessionMessage } from "@/session/session-reducer";
+import type { SessionItem } from "@/session/session-reducer";
+import ToolCallCard from "./ToolCallCard";
 
 interface SessionViewProps {
-  messages: SessionMessage[];
+  messages: SessionItem[];
   running: boolean;
   error: string | null;
 }
@@ -42,7 +43,9 @@ export default function SessionView({ messages, running, error }: SessionViewPro
     );
   }
 
-  const waitingForReply = running && messages[messages.length - 1]?.role === "user";
+  const last = messages[messages.length - 1];
+  const waitingForReply =
+    running && (last?.role === "user" || (last?.role === "tool" && last.status !== "running"));
 
   return (
     <MessageScrollerProvider autoScroll>
@@ -55,15 +58,19 @@ export default function SessionView({ messages, running, error }: SessionViewPro
                 messageId={message.id}
                 scrollAnchor={message.role === "user"}
               >
-                <Message align={message.role === "user" ? "end" : "start"}>
-                  <MessageContent>
-                    <Bubble align={message.role === "user" ? "end" : "start"} variant="muted">
-                      <BubbleContent className="whitespace-pre-wrap" data-testid="message-text">
-                        {message.text}
-                      </BubbleContent>
-                    </Bubble>
-                  </MessageContent>
-                </Message>
+                {message.role === "tool" ? (
+                  <ToolCallCard tool={message} />
+                ) : (
+                  <Message align={message.role === "user" ? "end" : "start"}>
+                    <MessageContent>
+                      <Bubble align={message.role === "user" ? "end" : "start"} variant="muted">
+                        <BubbleContent className="whitespace-pre-wrap" data-testid="message-text">
+                          {message.text}
+                        </BubbleContent>
+                      </Bubble>
+                    </MessageContent>
+                  </Message>
+                )}
               </MessageScrollerItem>
             ))}
             {waitingForReply && (
