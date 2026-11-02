@@ -336,6 +336,11 @@ code. Change checks and patterns there only.
 - `cd apps/web && npm run build` — type-check and build the web SPA.
 - `cd apps/web && npx biome check .` — lint and format-check the web SPA
   (`npx biome check --write .` to apply fixes).
+- `cd apps/web && npm test` — run the web SPA's unit tests (Vitest).
+- `cd server && UPDATE_API_TYPES=1 cargo test -p api-types` — regenerate
+  `apps/web/src/api/types.ts` after changing `api-types`.
+- `scripts/check-server.sh` and `scripts/check-web.sh` — the `build` CI
+  workflow's checks, runnable locally.
 - `cd server && cargo build --workspace` — build the Rust backend
   workspace.
 - `cd server && cargo clippy --workspace --all-targets` — lint the Rust
@@ -384,6 +389,12 @@ status check with a stable name, and each runs one script, so
 | `notice` | `scripts/check-notice.sh` | a `docs/reference/<project>/` has no `LICENSE` or is not listed in `docs/reference/README.md` |
 | `links` | `node scripts/check-links.mjs` | a relative link in `AGENTS.md`, `README.md`, `docs/**` (except `docs/reference/`) or `.agents/skills/**` points at a missing file |
 | `prd-names` | `scripts/check-prd-names.sh` | `docs/PRD.md` contains a name from `.github/prd-banned-names.txt` |
+
+`.github/workflows/build.yml` runs `scripts/check-server.sh` (job
+`server`: `cargo fmt --check`, clippy with warnings denied, tests; the
+`api-types` tests fail when `apps/web/src/api/types.ts` drifts from the
+Rust types) and `scripts/check-web.sh` (job `web`: biome, Vitest, type
+check and build) on every pull request and push to `main`.
 
 `validate-sop.sh` rejects any file not named `*.sop.md`, but the agent-sop
 references follow the same structure, so `check-sop.sh` validates each

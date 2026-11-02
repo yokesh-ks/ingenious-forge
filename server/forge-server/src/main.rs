@@ -3,7 +3,7 @@ mod state;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
-use axum::Router;
+use agent::{anthropic::AnthropicClient, Agent};
 use clap::Parser;
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::info;
@@ -44,15 +44,17 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let pool = db::connect(&args.db_path).await?;
+    let events = services::EventService::new();
+    // Provider keys move to Settings in a later story (PRD §6.2 Settings).
+    let model = AnthropicClient::new(std::env::var("ANTHROPIC_API_KEY").ok());
     let state = Arc::new(AppState {
         db: pool,
-        events: services::EventService::new(),
+        agent: Agent::new(Arc::new(model), events.clone()),
+        events,
     });
 
     let serve_dir = ServeDir::new(&args.static_dir).fallback(ServeFile::new(&index_html));
-    let app = Router::new()
-        .nest("/api", routes::api_router())
-        .route("/ws", axum::routing::get(routes::ws_handler))
+    let app = routes::router()
         .fallback_service(serve_dir)
         .with_state(state);
 

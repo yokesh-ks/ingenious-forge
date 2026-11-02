@@ -8,28 +8,41 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
+import type { SessionMessage } from "@/session/session-reducer";
 
-interface SessionMessage {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
+interface SessionViewProps {
+  messages: SessionMessage[];
+  running: boolean;
+  error: string | null;
 }
 
-export default function SessionView() {
-  // Streaming real session events over the server's WebSocket is wired up
-  // in a later story; this story only needs the scroller/message/bubble
-  // shell to render correctly once messages exist.
-  const messages: SessionMessage[] = [];
+function ErrorAlert({ message }: { message: string }) {
+  return (
+    <p
+      role="alert"
+      className="mx-auto w-full max-w-3xl rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+    >
+      {message}
+    </p>
+  );
+}
 
+export default function SessionView({ messages, running, error }: SessionViewProps) {
   if (messages.length === 0) {
     return (
-      <section className="flex flex-1 items-center justify-center" aria-label="Session">
+      <section
+        className="flex flex-1 flex-col items-center justify-center gap-4"
+        aria-label="Session"
+      >
         <p className="text-sm text-muted-foreground">
           No messages yet. Send a task to get started.
         </p>
+        {error && <ErrorAlert message={error} />}
       </section>
     );
   }
+
+  const waitingForReply = running && messages[messages.length - 1]?.role === "user";
 
   return (
     <MessageScrollerProvider autoScroll>
@@ -45,12 +58,20 @@ export default function SessionView() {
                 <Message align={message.role === "user" ? "end" : "start"}>
                   <MessageContent>
                     <Bubble align={message.role === "user" ? "end" : "start"} variant="muted">
-                      <BubbleContent>{message.text}</BubbleContent>
+                      <BubbleContent className="whitespace-pre-wrap" data-testid="message-text">
+                        {message.text}
+                      </BubbleContent>
                     </Bubble>
                   </MessageContent>
                 </Message>
               </MessageScrollerItem>
             ))}
+            {waitingForReply && (
+              <p role="status" className="text-sm text-muted-foreground">
+                Forge is thinking…
+              </p>
+            )}
+            {error && <ErrorAlert message={error} />}
           </MessageScrollerContent>
         </MessageScrollerViewport>
         <MessageScrollerButton />

@@ -1,0 +1,32 @@
+# Build checks for the shipped code: the Rust server and the web SPA.
+# All logic lives in scripts/check-server.sh and scripts/check-web.sh.
+# Uses the Rust and Node toolchains preinstalled on the runner.
+#
+# Third-party actions are pinned to a full commit SHA.
+
+name: build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    name: server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: scripts/check-server.sh
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: npm ci
+        working-directory: apps/web
+      - run: scripts/check-web.sh

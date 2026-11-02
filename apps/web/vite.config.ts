@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
@@ -9,7 +10,19 @@ export default defineConfig({
   resolve: {
     alias: { "@": path.resolve(import.meta.dirname, "./src") },
   },
+  server: {
+    // The Rust server owns the API and the session WebSocket in development.
+    proxy: {
+      "/api": "http://127.0.0.1:3000",
+      "/ws": { target: "ws://127.0.0.1:3000", ws: true },
+    },
+  },
   build: {
     outDir: "dist",
+  },
+  test: {
+    environment: "jsdom",
+    setupFiles: ["./src/test/setup.ts"],
+    restoreMocks: true,
   },
 });
