@@ -477,6 +477,7 @@ version = "0.1.0"
 dependencies = [
  "sqlx",
  "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
@@ -616,6 +617,8 @@ dependencies = [
  "clap",
  "db",
  "futures-util",
+ "reqwest",
+ "serde",
  "serde_json",
  "services",
  "sqlx",
@@ -1969,6 +1972,9 @@ name = "services"
 version = "0.1.0"
 dependencies = [
  "api-types",
+ "db",
+ "sqlx",
+ "thiserror 1.0.69",
  "tokio",
  "tracing",
 ]

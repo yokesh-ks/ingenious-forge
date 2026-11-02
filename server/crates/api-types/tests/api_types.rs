@@ -228,3 +228,41 @@ fn revert_all_and_changes_reverted_round_trip() {
         json!({ "type": "changes_reverted", "session_id": "s1", "paths": ["a.txt"] })
     );
 }
+
+#[test]
+fn project_and_listing_types_serialize_as_the_frontend_expects() {
+    use api_types::{DirEntry, DirListing, Project};
+    let project = Project {
+        id: "p1".into(),
+        name: "forge".into(),
+        path: "/code/forge".into(),
+        last_opened_at: 1_700_000_000_000,
+    };
+    assert_eq!(
+        serde_json::to_value(&project).unwrap(),
+        json!({ "id": "p1", "name": "forge", "path": "/code/forge", "last_opened_at": 1_700_000_000_000_i64 })
+    );
+    let listing = DirListing {
+        path: "/code".into(),
+        parent: Some("/".into()),
+        is_git_repo: false,
+        entries: vec![DirEntry {
+            name: "forge".into(),
+            path: "/code/forge".into(),
+            is_git_repo: true,
+        }],
+    };
+    assert_eq!(
+        serde_json::to_value(&listing).unwrap(),
+        json!({
+            "path": "/code",
+            "parent": "/",
+            "is_git_repo": false,
+            "entries": [{ "name": "forge", "path": "/code/forge", "is_git_repo": true }]
+        })
+    );
+    let ts = typescript_bindings();
+    assert!(ts.contains("last_opened_at: number"), "{ts}");
+    assert!(ts.contains("export type OpenProjectRequest"));
+    assert!(ts.contains("export type ApiError"));
+}

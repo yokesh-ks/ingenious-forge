@@ -31,10 +31,14 @@ pub enum AgentError {
     EmptyMessage,
     #[error("stop the running turn before reverting changes")]
     TurnRunning,
+    #[error("this session is not open")]
+    UnknownSession,
 }
 
 #[derive(Default)]
 struct SessionState {
+    /// The session's file tools, rooted at its project folder.
+    tools: Option<ToolBox>,
     history: Vec<ChatMessage>,
     running: bool,
     /// Messages sent while a turn runs; the turn reads them at its next step.
@@ -64,18 +68,29 @@ struct Reply {
 pub struct Agent {
     model: Arc<dyn ModelClient>,
     events: EventService,
-    tools: ToolBox,
     sessions: Arc<Mutex<HashMap<String, SessionState>>>,
 }
 
 impl Agent {
-    pub fn new(model: Arc<dyn ModelClient>, events: EventService, tools: ToolBox) -> Self {
+    pub fn new(model: Arc<dyn ModelClient>, events: EventService) -> Self {
         Self {
             model,
             events,
-            tools,
             sessions: Arc::default(),
         }
+    }
+
+    /// Makes `session_id` ready for messages, working in the folder `tools`
+    /// is rooted at. Opening a session that is already open changes nothing.
+    pub fn open_session(&self, session_id: &str, tools: ToolBox) {
+        let mut sessions = self.sessions.lock().unwrap();
+        let session = sessions.entry(session_id.to_string()).or_default();
+        session.tools.get_or_insert(tools);
+    }
+
+    pub fn is_open(&self, session_id: &str) -> bool {
+        let sessions = self.sessions.lock().unwrap();
+        sessions.get(session_id).is_some_and(|s| s.tools.is_some())
     }
 
     /// Starts a turn for `text` in `session_id` and returns at once; the
@@ -87,7 +102,10 @@ impl Agent {
             return Err(AgentError::EmptyMessage);
         }
         let mut sessions = self.sessions.lock().unwrap();
-        let session = sessions.entry(session_id.to_string()).or_default();
+        let session = sessions
+            .get_mut(session_id)
+            .filter(|s| s.tools.is_some())
+            .ok_or(AgentError::UnknownSession)?;
         if session.running {
             session.pending.push(text.to_string());
             return Ok(());
@@ -103,16 +121,18 @@ impl Agent {
     /// Restores every file the agent changed in `session_id` to its content
     /// before the agent's first edit, and removes files it created.
     pub async fn revert_all(&self, session_id: &str) -> Result<(), AgentError> {
-        let originals = {
+        let (originals, tools) = {
             let mut sessions = self.sessions.lock().unwrap();
-            let session = sessions.entry(session_id.to_string()).or_default();
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or(AgentError::UnknownSession)?;
+            let tools = session.tools.clone().ok_or(AgentError::UnknownSession)?;
             if session.running {
                 return Err(AgentError::TurnRunning);
             }
-            std::mem::take(&mut session.originals)
+            (std::mem::take(&mut session.originals), tools)
         };
 
-        let tools = self.tools.clone();
         let (restored, failed) = tokio::task::spawn_blocking(move || {
             let mut restored = Vec::new();
             let mut failed = BTreeMap::new();
@@ -183,11 +203,18 @@ impl Agent {
         session_id: String,
         conversation: Vec<ChatMessage>,
     ) {
+        let Some(tools) = session.tools.clone() else {
+            return;
+        };
         let (cancel, cancelled) = watch::channel(false);
         session.running = true;
         session.cancel = Some(cancel);
         let agent = self.clone();
-        tokio::spawn(async move { agent.run_turn(session_id, conversation, cancelled).await });
+        tokio::spawn(async move {
+            agent
+                .run_turn(session_id, conversation, cancelled, tools)
+                .await
+        });
     }
 
     async fn run_turn(
@@ -195,12 +222,13 @@ impl Agent {
         session_id: String,
         mut conversation: Vec<ChatMessage>,
         cancelled: watch::Receiver<bool>,
+        tools: ToolBox,
     ) {
         self.events.publish(SessionEvent::TurnStarted {
             session_id: session_id.clone(),
         });
         let result = self
-            .run_steps(&session_id, &mut conversation, cancelled)
+            .run_steps(&session_id, &mut conversation, cancelled, &tools)
             .await;
 
         let mut sessions = self.sessions.lock().unwrap();
@@ -244,10 +272,11 @@ impl Agent {
         session_id: &str,
         conversation: &mut Vec<ChatMessage>,
         mut cancelled: watch::Receiver<bool>,
+        tools: &ToolBox,
     ) -> Result<Ending, String> {
         for _ in 0..MAX_STEPS {
             let reply = self
-                .model_step(session_id, conversation, &mut cancelled)
+                .model_step(session_id, conversation, &mut cancelled, tools)
                 .await?;
             let calls: Vec<_> = reply
                 .content
@@ -275,7 +304,7 @@ impl Agent {
                         is_error: true,
                     }
                 } else {
-                    self.run_tool(session_id, call_id, name, input).await
+                    self.run_tool(session_id, tools, call_id, name, input).await
                 });
             }
             next.extend(text_blocks(self.take_pending(session_id)));
@@ -311,10 +340,11 @@ impl Agent {
         session_id: &str,
         conversation: &[ChatMessage],
         cancelled: &mut watch::Receiver<bool>,
+        tools: &ToolBox,
     ) -> Result<Reply, String> {
         let mut rx = self.model.stream(ModelRequest {
             messages: conversation.to_vec(),
-            tools: self.tools.specs(),
+            tools: tools.specs(),
         });
         let mut text = String::new();
         let mut message = None;
@@ -359,6 +389,7 @@ impl Agent {
     async fn run_tool(
         &self,
         session_id: &str,
+        tools: &ToolBox,
         call_id: String,
         name: String,
         input: serde_json::Value,
@@ -374,7 +405,7 @@ impl Agent {
         let edited = (name == tools::EDIT_FILE)
             .then(|| input["path"].as_str())
             .flatten()
-            .and_then(|path| self.tools.project_path(path).ok());
+            .and_then(|path| tools.project_path(path).ok());
         let needs_baseline = edited.as_ref().is_some_and(|path| {
             let sessions = self.sessions.lock().unwrap();
             !sessions
@@ -382,7 +413,7 @@ impl Agent {
                 .is_some_and(|s| s.originals.contains_key(path))
         });
 
-        let tools = self.tools.clone();
+        let tools = tools.clone();
         let tracked = edited.clone();
         let (outcome, baseline, current) = tokio::task::spawn_blocking(move || {
             let baseline = tracked

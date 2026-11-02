@@ -1,3 +1,6 @@
+pub mod folders;
+pub mod projects;
+
 use api_types::SessionEvent;
 use tokio::sync::broadcast;
 

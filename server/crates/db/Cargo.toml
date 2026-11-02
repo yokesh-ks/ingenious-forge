@@ -8,3 +8,6 @@ description = "SQLite access and migrations for the Forge backend"
 [dependencies]
 sqlx.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
