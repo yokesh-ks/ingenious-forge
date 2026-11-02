@@ -17,6 +17,9 @@ pub enum ClientMessage {
     SendMessage { session_id: String, text: String },
     /// Stop the running turn in `session_id` at its next step.
     Interrupt { session_id: String },
+    /// Restore every file the agent changed in `session_id` to how it was
+    /// before the agent's first edit.
+    RevertAll { session_id: String },
 }
 
 /// Events the server streams to the browser while a session runs.
@@ -52,6 +55,11 @@ pub enum SessionEvent {
         additions: u32,
         deletions: u32,
     },
+    /// The agent's file changes were undone; `paths` are the files restored.
+    ChangesReverted {
+        session_id: String,
+        paths: Vec<String>,
+    },
     Error {
         session_id: String,
         message: String,
@@ -73,6 +81,7 @@ impl SessionEvent {
             | Self::ToolCall { session_id, .. }
             | Self::ToolResult { session_id, .. }
             | Self::FileChanged { session_id, .. }
+            | Self::ChangesReverted { session_id, .. }
             | Self::Error { session_id, .. }
             | Self::Done { session_id }
             | Self::Interrupted { session_id } => session_id,

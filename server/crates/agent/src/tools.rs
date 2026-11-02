@@ -132,6 +132,26 @@ impl ToolBox {
         }
     }
 
+    /// Puts a project file back to `content`, or removes it when `content`
+    /// is `None` (the file did not exist before).
+    pub fn restore(&self, rel: &str, content: Option<&str>) -> Result<(), String> {
+        let path = self.resolve(rel)?;
+        match content {
+            Some(text) => {
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).map_err(|e| format!("cannot restore {rel}: {e}"))?;
+                }
+                fs::write(&path, text).map_err(|e| format!("cannot restore {rel}: {e}"))
+            }
+            None => match fs::remove_file(&path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    Err(format!("cannot remove {rel}: {e}"))
+                }
+                _ => Ok(()),
+            },
+        }
+    }
+
     fn read_file(&self, input: &Value) -> Result<String, String> {
         let rel = str_arg(input, "path")?;
         let path = self.resolve(rel)?;

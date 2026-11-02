@@ -211,6 +211,26 @@ describe("sessionReducer", () => {
     expect(state.changedFiles).toEqual([]);
   });
 
+  it("empties the changed files and confirms in the session after a revert", () => {
+    const state = apply(
+      sent("edit"),
+      { type: "file_changed", session_id: S, path: "a", diff: "d", additions: 1, deletions: 0 },
+      { type: "file_changed", session_id: S, path: "b", diff: "d", additions: 1, deletions: 0 },
+      { type: "done", session_id: S },
+      { type: "changes_reverted", session_id: S, paths: ["a", "b"] },
+    );
+    expect(state.changedFiles).toEqual([]);
+    expect(state.messages[state.messages.length - 1]).toMatchObject({
+      role: "notice",
+      text: "Reverted 2 files",
+    });
+  });
+
+  it("uses the singular for one reverted file", () => {
+    const state = apply(sent("x"), { type: "changes_reverted", session_id: S, paths: ["a"] });
+    expect(state.messages[state.messages.length - 1]).toMatchObject({ text: "Reverted 1 file" });
+  });
+
   it("can record a local error without a server event", () => {
     const state = sessionReducer(sent("hi"), { kind: "local_error", message: "offline" });
     expect(state.error).toBe("offline");

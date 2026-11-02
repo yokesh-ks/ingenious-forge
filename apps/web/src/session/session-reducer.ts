@@ -129,6 +129,21 @@ function applyEvent(state: SessionState, event: SessionEvent): SessionState {
         ),
       };
     }
+    case "changes_reverted": {
+      const count = event.paths.length;
+      return {
+        ...state,
+        changedFiles: [],
+        messages: [
+          ...state.messages,
+          {
+            id: nextId(state),
+            role: "notice",
+            text: `Reverted ${count} ${count === 1 ? "file" : "files"}`,
+          },
+        ],
+      };
+    }
     case "file_changed":
       return { ...state, changedFiles: upsertChange(state.changedFiles, event) };
     case "done":
