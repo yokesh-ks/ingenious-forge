@@ -23,6 +23,7 @@ ts-rs = { version = "12", features = ["serde-json-impl"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 tokio-tungstenite = "0.30"
 futures-util = "0.3"
+similar = "3"
 
 api-types = { path = "crates/api-types" }
 db = { path = "crates/db" }

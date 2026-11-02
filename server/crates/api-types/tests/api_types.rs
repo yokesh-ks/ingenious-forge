@@ -184,3 +184,26 @@ fn interrupted_event_serializes() {
         json!({ "type": "interrupted", "session_id": "s1" })
     );
 }
+
+#[test]
+fn file_changed_event_carries_the_diff() {
+    let event = SessionEvent::FileChanged {
+        session_id: "s1".into(),
+        path: "a.txt".into(),
+        diff: "--- a/a.txt\n".into(),
+        additions: 2,
+        deletions: 1,
+    };
+    assert_eq!(event.session_id(), "s1");
+    assert_eq!(
+        serde_json::to_value(&event).unwrap(),
+        json!({
+            "type": "file_changed",
+            "session_id": "s1",
+            "path": "a.txt",
+            "diff": "--- a/a.txt\n",
+            "additions": 2,
+            "deletions": 1
+        })
+    );
+}

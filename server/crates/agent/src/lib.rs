@@ -2,12 +2,13 @@
 //! what happens as session events (PRD §6.1 Agent loop).
 
 pub mod anthropic;
+pub mod changes;
 pub mod model;
 mod sse;
 pub mod tools;
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     sync::{Arc, Mutex},
 };
 
@@ -38,6 +39,9 @@ struct SessionState {
     pending: Vec<String>,
     /// Set to true to stop the running turn.
     cancel: Option<watch::Sender<bool>>,
+    /// Each file the agent edited, with its content before the first edit
+    /// (`None` when the agent created it).
+    originals: BTreeMap<String, Option<String>>,
 }
 
 /// How a turn that did not fail came to an end.
@@ -299,19 +303,68 @@ impl Agent {
             name: name.clone(),
             args: input.clone(),
         });
+        // An edit is diffed against the file as it was before the agent's
+        // first edit to it in this session.
+        let edited = (name == tools::EDIT_FILE)
+            .then(|| input["path"].as_str())
+            .flatten()
+            .and_then(|path| self.tools.project_path(path).ok());
+        let needs_baseline = edited.as_ref().is_some_and(|path| {
+            let sessions = self.sessions.lock().unwrap();
+            !sessions
+                .get(session_id)
+                .is_some_and(|s| s.originals.contains_key(path))
+        });
+
         let tools = self.tools.clone();
-        let outcome = tokio::task::spawn_blocking(move || tools.run(&name, &input))
-            .await
-            .unwrap_or_else(|err| tools::ToolOutcome {
+        let tracked = edited.clone();
+        let (outcome, baseline, current) = tokio::task::spawn_blocking(move || {
+            let baseline = tracked
+                .as_deref()
+                .filter(|_| needs_baseline)
+                .and_then(|path| tools.read_text(path).ok());
+            let outcome = tools.run(&name, &input);
+            let current = tracked
+                .as_deref()
+                .filter(|_| !outcome.is_error)
+                .and_then(|path| tools.read_text(path).ok());
+            (outcome, baseline, current)
+        })
+        .await
+        .unwrap_or_else(|err| {
+            let outcome = tools::ToolOutcome {
                 output: format!("tool failed: {err}"),
                 is_error: true,
-            });
+            };
+            (outcome, None, None)
+        });
         self.events.publish(SessionEvent::ToolResult {
             session_id: session_id.to_string(),
             call_id: call_id.clone(),
             output: outcome.output.clone(),
             is_error: outcome.is_error,
         });
+
+        if let (Some(path), Some(current)) = (edited, current) {
+            let original = {
+                let mut sessions = self.sessions.lock().unwrap();
+                let session = sessions.entry(session_id.to_string()).or_default();
+                if let Some(baseline) = baseline {
+                    session.originals.entry(path.clone()).or_insert(baseline);
+                }
+                session.originals.get(&path).cloned()
+            };
+            if let Some(original) = original {
+                let change = changes::unified_diff(&path, original.as_deref(), current.as_deref());
+                self.events.publish(SessionEvent::FileChanged {
+                    session_id: session_id.to_string(),
+                    path: change.path,
+                    diff: change.diff,
+                    additions: change.additions,
+                    deletions: change.deletions,
+                });
+            }
+        }
         ContentBlock::ToolResult {
             tool_use_id: call_id,
             content: outcome.output,

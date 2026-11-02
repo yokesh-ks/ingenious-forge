@@ -45,6 +45,18 @@ describe("App", () => {
     });
     expect(screen.getByText("List")).toBeInTheDocument();
     expect(screen.getByRole("listitem")).toHaveTextContent("main.tsx");
+    act(() =>
+      socket.emit({
+        type: "file_changed",
+        session_id,
+        path: "src/main.tsx",
+        diff: "@@ -1 +1 @@\n-a\n+b\n",
+        additions: 1,
+        deletions: 1,
+      }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /src\/main\.tsx/ }));
+    expect(screen.getAllByTestId("diff-line").map((l) => l.textContent)).toContain("+b");
     act(() => socket.emit({ type: "done", session_id }));
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
   });

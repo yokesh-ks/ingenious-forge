@@ -19,6 +19,7 @@ describe("sessionReducer", () => {
       running: false,
       error: null,
       streamingId: null,
+      changedFiles: [],
     });
   });
 
@@ -184,6 +185,30 @@ describe("sessionReducer", () => {
       { type: "interrupted", session_id: S },
     );
     expect(state.messages[1]).toMatchObject({ status: "error", output: "Interrupted" });
+  });
+
+  it("lists changed files in first-edit order and keeps the latest diff", () => {
+    const change = (path: string, diff: string, additions: number) =>
+      ({ type: "file_changed", session_id: S, path, diff, additions, deletions: 0 }) as const;
+    const state = apply(
+      sent("edit"),
+      change("b.txt", "d1", 1),
+      change("a.txt", "d2", 1),
+      change("b.txt", "d3", 4),
+    );
+    expect(state.changedFiles).toEqual([
+      { path: "b.txt", diff: "d3", additions: 4, deletions: 0 },
+      { path: "a.txt", diff: "d2", additions: 1, deletions: 0 },
+    ]);
+  });
+
+  it("drops a file whose changes were undone", () => {
+    const state = apply(
+      sent("edit"),
+      { type: "file_changed", session_id: S, path: "a", diff: "d", additions: 1, deletions: 0 },
+      { type: "file_changed", session_id: S, path: "a", diff: "", additions: 0, deletions: 0 },
+    );
+    expect(state.changedFiles).toEqual([]);
   });
 
   it("can record a local error without a server event", () => {

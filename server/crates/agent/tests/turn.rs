@@ -108,6 +108,7 @@ fn describe(events: &[SessionEvent]) -> Vec<String> {
             SessionEvent::Error { message, .. } => format!("error:{message}"),
             SessionEvent::Done { .. } => "done".to_string(),
             SessionEvent::Interrupted { .. } => "interrupted".to_string(),
+            SessionEvent::FileChanged { path, .. } => format!("changed:{path}"),
         })
         .collect()
 }
@@ -639,4 +640,130 @@ async fn an_empty_reply_ends_the_turn() {
         ["started", "done"]
     );
     assert_eq!(model.requests.lock().unwrap().len(), 1);
+}
+
+fn edit(id: &str, path: &str, old: &str, new: &str) -> Step {
+    tool_use(
+        id,
+        "edit_file",
+        json!({ "path": path, "old_string": old, "new_string": new }),
+    )
+}
+
+fn changes(events: &[SessionEvent]) -> Vec<(String, u32, u32, String)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            SessionEvent::FileChanged {
+                path,
+                additions,
+                deletions,
+                diff,
+                ..
+            } => Some((path.clone(), *additions, *deletions, diff.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn each_edit_publishes_the_cumulative_diff_of_the_file() {
+    let root = project(&[("a.txt", "one\ntwo\n")]);
+    let (agent, _, mut rx) = setup_in(
+        FakeModel::replying(vec![
+            vec![edit("e1", "a.txt", "one", "1")],
+            vec![edit("e2", "./a.txt", "two", "2")],
+            vec![text("done")],
+        ]),
+        root,
+    );
+
+    agent.send_message("s1", "edit").unwrap();
+    let events = turn_events(&mut rx, "s1").await;
+    let changes = changes(&events);
+
+    assert_eq!(changes.len(), 2);
+    assert_eq!(
+        (changes[0].0.as_str(), changes[0].1, changes[0].2),
+        ("a.txt", 1, 1)
+    );
+    // The second diff is still against the file as it was before the session.
+    assert_eq!(
+        (changes[1].0.as_str(), changes[1].1, changes[1].2),
+        ("a.txt", 2, 2)
+    );
+    assert!(
+        changes[1].3.contains("-one\n-two\n+1\n+2\n"),
+        "{}",
+        changes[1].3
+    );
+    // The change event follows the tool result it belongs to.
+    let kinds = describe(&events);
+    let result_at = kinds
+        .iter()
+        .position(|k| k.starts_with("result:e1"))
+        .unwrap();
+    assert!(matches!(
+        events[result_at + 1],
+        SessionEvent::FileChanged { .. }
+    ));
+}
+
+#[tokio::test]
+async fn a_created_file_is_diffed_against_nothing() {
+    let (agent, _, mut rx) = setup_in(
+        FakeModel::replying(vec![
+            vec![edit("e1", "new.txt", "", "hi\n")],
+            vec![text("ok")],
+        ]),
+        project(&[]),
+    );
+
+    agent.send_message("s1", "create").unwrap();
+    let changes = changes(&turn_events(&mut rx, "s1").await);
+
+    assert_eq!(changes.len(), 1);
+    assert_eq!((changes[0].1, changes[0].2), (1, 0));
+    assert!(
+        changes[0].3.starts_with("--- /dev/null"),
+        "{}",
+        changes[0].3
+    );
+}
+
+#[tokio::test]
+async fn failed_edits_and_reads_publish_no_change() {
+    let (agent, _, mut rx) = setup_in(
+        FakeModel::replying(vec![
+            vec![edit("e1", "a.txt", "missing", "x")],
+            vec![tool_use("r1", "read_file", json!({ "path": "a.txt" }))],
+            vec![text("ok")],
+        ]),
+        project(&[("a.txt", "body")]),
+    );
+
+    agent.send_message("s1", "try").unwrap();
+    assert!(changes(&turn_events(&mut rx, "s1").await).is_empty());
+}
+
+#[tokio::test]
+async fn changes_are_tracked_per_session() {
+    let root = project(&[("a.txt", "v0")]);
+    let (agent, _, mut rx) = setup_in(
+        FakeModel::replying(vec![
+            vec![edit("e1", "a.txt", "v0", "v1")],
+            vec![text("ok")],
+            vec![edit("e2", "a.txt", "v1", "v2")],
+            vec![text("ok")],
+        ]),
+        root,
+    );
+
+    agent.send_message("s1", "first").unwrap();
+    turn_events(&mut rx, "s1").await;
+    agent.send_message("s2", "second").unwrap();
+    let changes = changes(&turn_events(&mut rx, "s2").await);
+
+    // s2 started after s1's edit, so its baseline is v1, not v0.
+    assert!(changes[0].3.contains("-v1\n"), "{}", changes[0].3);
 }
