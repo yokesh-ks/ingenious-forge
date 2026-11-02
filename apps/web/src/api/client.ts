@@ -1,0 +1,50 @@
+import type { ApiError, DirListing, OpenProjectRequest, Project, Session } from "./types";
+
+/** A failed API call, carrying the server's message for the user. */
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(path, init);
+  } catch {
+    throw new ApiRequestError("Cannot reach the Forge server.", 0);
+  }
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as ApiError | null;
+    throw new ApiRequestError(
+      body?.error ?? `Request failed (${response.status})`,
+      response.status,
+    );
+  }
+  return (await response.json()) as T;
+}
+
+function post<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export const api = {
+  recentProjects: () => request<Project[]>("/api/projects"),
+  openProject: (path: string) =>
+    post<Project>("/api/projects", { path } satisfies OpenProjectRequest),
+  getProject: (id: string) => request<Project>(`/api/projects/${encodeURIComponent(id)}`),
+  createSession: (projectId: string) =>
+    post<Session>(`/api/projects/${encodeURIComponent(projectId)}/sessions`, {}),
+  listDirs: (path?: string) =>
+    request<DirListing>(
+      path === undefined ? "/api/fs/dirs" : `/api/fs/dirs?${new URLSearchParams({ path })}`,
+    ),
+};

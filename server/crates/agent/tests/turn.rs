@@ -125,11 +125,10 @@ fn setup_in(
     let model = Arc::new(model);
     let events = EventService::new();
     let rx = events.subscribe();
-    (
-        Agent::new(model.clone(), events, ToolBox::new(root)),
-        model,
-        rx,
-    )
+    let agent = Agent::new(model.clone(), events);
+    agent.open_session("s1", ToolBox::new(&root));
+    agent.open_session("s2", ToolBox::new(&root));
+    (agent, model, rx)
 }
 
 /// A fresh project folder holding `files`.
@@ -865,4 +864,42 @@ async fn revert_all_with_no_changes_reports_an_empty_list() {
     let (agent, _, mut rx) = setup(FakeModel::default());
     agent.revert_all("s1").await.unwrap();
     assert_eq!(reverted(&[next_for(&mut rx, "s1").await]), Some(vec![]));
+}
+
+#[tokio::test]
+async fn sessions_that_were_not_opened_are_refused() {
+    let (agent, model, _rx) = setup(FakeModel::default());
+    assert_eq!(
+        agent.send_message("unknown", "hi"),
+        Err(AgentError::UnknownSession)
+    );
+    assert_eq!(
+        agent.revert_all("unknown").await,
+        Err(AgentError::UnknownSession)
+    );
+    assert!(model.requests.lock().unwrap().is_empty());
+    assert!(agent.is_open("s1"));
+    assert!(!agent.is_open("unknown"));
+}
+
+#[tokio::test]
+async fn each_session_works_in_its_own_project_folder() {
+    let (agent, _, mut rx) = setup(FakeModel::replying(vec![
+        vec![tool_use("l1", "list_directory", json!({}))],
+        vec![text("ok")],
+        vec![tool_use("l2", "list_directory", json!({}))],
+        vec![text("ok")],
+    ]));
+    agent.open_session("a", ToolBox::new(project(&[("in-a.txt", "")])));
+    agent.open_session("b", ToolBox::new(project(&[("in-b.txt", "")])));
+    // Opening again keeps the session's folder.
+    agent.open_session("a", ToolBox::new(project(&[("other.txt", "")])));
+
+    agent.send_message("a", "list").unwrap();
+    let a = describe(&turn_events(&mut rx, "a").await);
+    agent.send_message("b", "list").unwrap();
+    let b = describe(&turn_events(&mut rx, "b").await);
+
+    assert!(a.contains(&"result:l1:false:in-a.txt".to_string()), "{a:?}");
+    assert!(b.contains(&"result:l2:false:in-b.txt".to_string()), "{b:?}");
 }

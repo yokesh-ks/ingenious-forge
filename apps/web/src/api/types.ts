@@ -3,7 +3,17 @@
 
 export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
 
-export type Session = { id: string, project_id: string, created_at: string, };
+export type Project = { id: string, name: string, path: string, last_opened_at: number, };
+
+export type Session = { id: string, project_id: string, title: string, created_at: number, updated_at: number, };
+
+export type OpenProjectRequest = { path: string, };
+
+export type DirEntry = { name: string, path: string, is_git_repo: boolean, };
+
+export type DirListing = { path: string, parent: string | null, is_git_repo: boolean, entries: Array<DirEntry>, };
+
+export type ApiError = { error: string, };
 
 export type ClientMessage = { "type": "send_message", session_id: string, text: string, } | { "type": "interrupt", session_id: string, } | { "type": "revert_all", session_id: string, };
 

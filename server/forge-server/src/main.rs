@@ -1,9 +1,10 @@
+mod projects;
 mod routes;
 mod state;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
-use agent::{anthropic::AnthropicClient, tools::ToolBox, Agent};
+use agent::{anthropic::AnthropicClient, Agent};
 use clap::Parser;
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::info;
@@ -21,9 +22,9 @@ struct Args {
     #[arg(long, default_value = "apps/web/dist")]
     static_dir: PathBuf,
 
-    /// Project folder the agent's file tools work in
-    #[arg(long, default_value = ".")]
-    project_dir: PathBuf,
+    /// A git repository to add to the recent projects at startup
+    #[arg(long)]
+    project_dir: Option<PathBuf>,
 
     /// Path to the SQLite database file
     #[arg(long, default_value = "forge.db")]
@@ -47,24 +48,23 @@ async fn main() -> anyhow::Result<()> {
         std::process::exit(1);
     }
 
-    let project_dir = match args.project_dir.canonicalize() {
-        Ok(dir) if dir.is_dir() => dir,
-        _ => {
-            eprintln!(
-                "error: --project-dir {} is not a folder",
-                args.project_dir.display()
-            );
-            std::process::exit(1);
-        }
-    };
-
     let pool = db::connect(&args.db_path).await?;
+    if let Some(dir) = &args.project_dir {
+        let path = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+        match services::projects::open_project(&pool, &path.to_string_lossy()).await {
+            Ok(project) => info!(project = %project.path, "added project"),
+            Err(err) => {
+                eprintln!("error: --project-dir {}: {err}", dir.display());
+                std::process::exit(1);
+            }
+        }
+    }
     let events = services::EventService::new();
     // Provider keys move to Settings in a later story (PRD §6.2 Settings).
     let model = AnthropicClient::new(std::env::var("ANTHROPIC_API_KEY").ok());
     let state = Arc::new(AppState {
         db: pool,
-        agent: Agent::new(Arc::new(model), events.clone(), ToolBox::new(&project_dir)),
+        agent: Agent::new(Arc::new(model), events.clone()),
         events,
     });
 
@@ -82,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    info!(project = %project_dir.display(), "forge server listening on http://{addr}");
+    info!("forge server listening on http://{addr}");
 
     let serve = axum::serve(listener, app).with_graceful_shutdown(async {
         tokio::signal::ctrl_c().await.ok();

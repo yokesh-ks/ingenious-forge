@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use agent::tools::ToolBox;
 use api_types::{ClientMessage, SessionEvent};
 use axum::{
     extract::{
@@ -8,9 +9,8 @@ use axum::{
     },
     response::Response,
     routing::get,
-    Json, Router,
+    Router,
 };
-use serde_json::json;
 use tokio::sync::broadcast;
 
 use crate::state::AppState;
@@ -18,16 +18,8 @@ use crate::state::AppState;
 /// The API and WebSocket routes, without the static SPA fallback.
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
-        .nest("/api", api_router())
+        .nest("/api", crate::projects::router())
         .route("/ws", get(ws_handler))
-}
-
-fn api_router() -> Router<Arc<AppState>> {
-    Router::new().route("/sessions", get(list_sessions))
-}
-
-async fn list_sessions(State(_state): State<Arc<AppState>>) -> Json<serde_json::Value> {
-    Json(json!([]))
 }
 
 pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
@@ -40,7 +32,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     loop {
         tokio::select! {
             incoming = socket.recv() => match incoming {
-                Some(Ok(Message::Text(text))) => handle_client_message(&state, &text),
+                Some(Ok(Message::Text(text))) => handle_client_message(&state, &text).await,
                 Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
                 Some(Ok(_)) => {}
             },
@@ -64,7 +56,20 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
     tracing::info!("WebSocket disconnected");
 }
 
-fn handle_client_message(state: &AppState, text: &str) {
+/// Opens a session the agent has not seen since the server started, such as
+/// one created before a restart.
+async fn ensure_open(state: &AppState, session_id: &str) {
+    if state.agent.is_open(session_id) {
+        return;
+    }
+    match services::projects::session_folder(&state.db, session_id).await {
+        Ok(Some(folder)) => state.agent.open_session(session_id, ToolBox::new(folder)),
+        Ok(None) => {}
+        Err(err) => tracing::warn!(%err, %session_id, "cannot look up session"),
+    }
+}
+
+async fn handle_client_message(state: &AppState, text: &str) {
     let message = match serde_json::from_str::<ClientMessage>(text) {
         Ok(message) => message,
         Err(err) => {
@@ -74,6 +79,7 @@ fn handle_client_message(state: &AppState, text: &str) {
     };
     match message {
         ClientMessage::SendMessage { session_id, text } => {
+            ensure_open(state, &session_id).await;
             if let Err(err) = state.agent.send_message(&session_id, &text) {
                 state.events.publish(SessionEvent::Error {
                     session_id,
@@ -82,6 +88,7 @@ fn handle_client_message(state: &AppState, text: &str) {
             }
         }
         ClientMessage::RevertAll { session_id } => {
+            ensure_open(state, &session_id).await;
             let agent = state.agent.clone();
             let events = state.events.clone();
             tokio::spawn(async move {
@@ -111,7 +118,6 @@ mod tests {
 
     use agent::{
         model::{ModelClient, ModelError, ModelEvent, ModelRequest},
-        tools::ToolBox,
         Agent,
     };
     use futures_util::{SinkExt, StreamExt};
@@ -161,13 +167,11 @@ mod tests {
             emitted_at: emitted_at.clone(),
         };
         let events = EventService::new();
+        let agent = Agent::new(Arc::new(model), events.clone());
+        agent.open_session("s1", ToolBox::new(std::env::temp_dir()));
         let state = Arc::new(AppState {
             db: db::connect(":memory:").await.unwrap(),
-            agent: Agent::new(
-                Arc::new(model),
-                events.clone(),
-                ToolBox::new(std::env::temp_dir()),
-            ),
+            agent,
             events,
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -330,6 +334,19 @@ mod tests {
                 "session_id": "s1",
                 "message": "stop the running turn before reverting changes"
             })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_message_for_an_unknown_session_returns_an_error_event() {
+        let (url, _) = start(vec![], Duration::ZERO).await;
+        let mut ws = connect(&url).await;
+
+        send(&mut ws, send_message("ghost", "hi")).await;
+
+        assert_eq!(
+            next_event(&mut ws).await,
+            json!({ "type": "error", "session_id": "ghost", "message": "this session is not open" })
         );
     }
 

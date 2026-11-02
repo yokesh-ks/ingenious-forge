@@ -1,11 +1,55 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+/// A folder the user opened in Forge. Times are milliseconds since the
+/// Unix epoch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    #[ts(type = "number")]
+    pub last_opened_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct Session {
     pub id: String,
     pub project_id: String,
-    pub created_at: String,
+    pub title: String,
+    #[ts(type = "number")]
+    pub created_at: i64,
+    #[ts(type = "number")]
+    pub updated_at: i64,
+}
+
+/// Body of `POST /api/projects`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct OpenProjectRequest {
+    pub path: String,
+}
+
+/// A sub-folder shown in the folder picker.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct DirEntry {
+    pub name: String,
+    pub path: String,
+    pub is_git_repo: bool,
+}
+
+/// One folder in the folder picker and its visible sub-folders.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct DirListing {
+    pub path: String,
+    pub parent: Option<String>,
+    pub is_git_repo: bool,
+    pub entries: Vec<DirEntry>,
+}
+
+/// The body of every failed API response.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ApiError {
+    pub error: String,
 }
 
 /// Messages the browser sends to the server over the session WebSocket.
@@ -95,7 +139,12 @@ pub fn typescript_bindings() -> String {
     let cfg = ts_rs::Config::default();
     let decls = [
         serde_json::Value::decl(&cfg),
+        Project::decl(&cfg),
         Session::decl(&cfg),
+        OpenProjectRequest::decl(&cfg),
+        DirEntry::decl(&cfg),
+        DirListing::decl(&cfg),
+        ApiError::decl(&cfg),
         ClientMessage::decl(&cfg),
         SessionEvent::decl(&cfg),
     ];

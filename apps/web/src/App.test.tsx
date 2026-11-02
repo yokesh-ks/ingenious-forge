@@ -1,109 +1,44 @@
-import { act, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fakeFetch } from "@/test/fake-fetch";
 import { FakeSocket } from "@/test/fake-socket";
 import App from "./App";
 
+beforeEach(() => {
+  FakeSocket.reset();
+  vi.stubGlobal("WebSocket", FakeSocket);
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+  window.history.replaceState(null, "", "/");
+});
+
 describe("App", () => {
-  beforeEach(() => {
-    FakeSocket.reset();
-    vi.stubGlobal("WebSocket", FakeSocket);
-  });
-  afterEach(() => vi.unstubAllGlobals());
-
-  it("sends a message and streams the reply into the session view", async () => {
+  it("shows the home page at /", async () => {
+    fakeFetch({ "GET /api/projects": [] });
     render(<App />);
-    const socket = FakeSocket.latest();
-    act(() => socket.open());
-
-    await userEvent.type(screen.getByPlaceholderText(/ask forge/i), "hello{Enter}");
-    const { session_id } = JSON.parse(socket.sent[0]);
-    expect(screen.getByText("hello")).toBeInTheDocument();
-
-    act(() => {
-      socket.emit({ type: "turn_started", session_id });
-      socket.emit({ type: "output", session_id, chunk: "Hi " });
-    });
-    expect(screen.getByText("Hi")).toBeInTheDocument();
-    act(() => socket.emit({ type: "output", session_id, chunk: "there" }));
-    expect(screen.getByText("Hi there")).toBeInTheDocument();
-    act(() => {
-      socket.emit({
-        type: "tool_call",
-        session_id,
-        call_id: "t1",
-        name: "list_directory",
-        args: { path: "src" },
-      });
-      socket.emit({
-        type: "tool_result",
-        session_id,
-        call_id: "t1",
-        output: "main.tsx",
-        is_error: false,
-      });
-    });
-    expect(screen.getByText("List")).toBeInTheDocument();
-    expect(screen.getByRole("listitem")).toHaveTextContent("main.tsx");
-    act(() =>
-      socket.emit({
-        type: "file_changed",
-        session_id,
-        path: "src/main.tsx",
-        diff: "@@ -1 +1 @@\n-a\n+b\n",
-        additions: 1,
-        deletions: 1,
-      }),
-    );
-    await userEvent.click(screen.getByRole("button", { name: /src\/main\.tsx/ }));
-    expect(screen.getAllByTestId("diff-line").map((l) => l.textContent)).toContain("+b");
-    act(() => socket.emit({ type: "done", session_id }));
-    expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
+    expect(await screen.findByRole("heading", { name: /recent projects/i })).toBeInTheDocument();
   });
 
-  it("stops a running turn and re-enables the composer", async () => {
+  it("shows a project page at /projects/:id", async () => {
+    window.history.replaceState(null, "", "/projects/p1");
+    fakeFetch({
+      "GET /api/projects/p1": { id: "p1", name: "forge", path: "/f", last_opened_at: 1 },
+      "POST /api/projects/p1/sessions": {
+        id: "s1",
+        project_id: "p1",
+        title: "New session",
+        created_at: 1,
+        updated_at: 1,
+      },
+    });
     render(<App />);
-    const socket = FakeSocket.latest();
-    act(() => socket.open());
-
-    await userEvent.type(screen.getByPlaceholderText(/ask forge/i), "long task{Enter}");
-    const { session_id } = JSON.parse(socket.sent[0]);
-    act(() => socket.emit({ type: "turn_started", session_id }));
-
-    await userEvent.click(screen.getByRole("button", { name: /stop/i }));
-    expect(JSON.parse(socket.sent[1])).toEqual({ type: "interrupt", session_id });
-
-    act(() => socket.emit({ type: "interrupted", session_id }));
-    expect(screen.getByText("Turn interrupted")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /stop/i })).not.toBeInTheDocument();
-    await userEvent.type(screen.getByPlaceholderText(/ask forge/i), "next");
-    expect(screen.getByRole("button", { name: /send message/i })).toBeEnabled();
+    expect(await screen.findByRole("heading", { name: "forge" })).toBeInTheDocument();
   });
 
-  it("reverts all changes from the panel", async () => {
+  it("shows not found for other paths", () => {
+    window.history.replaceState(null, "", "/nowhere");
     render(<App />);
-    const socket = FakeSocket.latest();
-    act(() => socket.open());
-    await userEvent.type(screen.getByPlaceholderText(/ask forge/i), "edit{Enter}");
-    const { session_id } = JSON.parse(socket.sent[0]);
-    act(() => {
-      socket.emit({
-        type: "file_changed",
-        session_id,
-        path: "a.txt",
-        diff: "@@ -1 +1 @@\n-a\n+b\n",
-        additions: 1,
-        deletions: 1,
-      });
-      socket.emit({ type: "done", session_id });
-    });
-
-    await userEvent.click(screen.getByRole("button", { name: "Revert all" }));
-    await userEvent.click(screen.getByRole("button", { name: /confirm revert/i }));
-    expect(JSON.parse(socket.sent[1])).toEqual({ type: "revert_all", session_id });
-
-    act(() => socket.emit({ type: "changes_reverted", session_id, paths: ["a.txt"] }));
-    expect(screen.getByText("Reverted 1 file")).toBeInTheDocument();
-    expect(screen.getByText(/no changes yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/page not found/i)).toBeInTheDocument();
   });
 });

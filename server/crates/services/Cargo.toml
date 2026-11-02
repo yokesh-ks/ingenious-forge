@@ -9,3 +9,9 @@ description = "Project, session and live-event services"
 api-types.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+thiserror.workspace = true
+db.workspace = true
+sqlx.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
