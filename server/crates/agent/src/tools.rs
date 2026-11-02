@@ -103,6 +103,35 @@ impl ToolBox {
         }
     }
 
+    /// `rel` normalised to a `/`-separated path relative to the project
+    /// root, so `./a.txt` and `a.txt` name the same file.
+    pub fn project_path(&self, rel: &str) -> Result<String, String> {
+        let path = self.resolve(rel)?;
+        let root = std::path::absolute(&self.root)
+            .map(|p| normalize(&p))
+            .map_err(|e| format!("project folder is not accessible: {e}"))?;
+        let relative = path
+            .strip_prefix(&root)
+            .map_err(|_| format!("{rel} is outside the project folder"))?;
+        Ok(relative
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/"))
+    }
+
+    /// The text of a project file, or `None` when it does not exist.
+    pub fn read_text(&self, rel: &str) -> Result<Option<String>, String> {
+        let path = self.resolve(rel)?;
+        match fs::read(&path) {
+            Ok(bytes) => String::from_utf8(bytes)
+                .map(Some)
+                .map_err(|_| format!("{rel} is not a UTF-8 text file")),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(format!("cannot read {rel}: {e}")),
+        }
+    }
+
     fn read_file(&self, input: &Value) -> Result<String, String> {
         let rel = str_arg(input, "path")?;
         let path = self.resolve(rel)?;

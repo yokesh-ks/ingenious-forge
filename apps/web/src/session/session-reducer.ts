@@ -24,6 +24,14 @@ export interface SessionNotice {
   text: string;
 }
 
+/** A file the agent changed this session and its diff from before. */
+export interface FileChange {
+  path: string;
+  diff: string;
+  additions: number;
+  deletions: number;
+}
+
 export type SessionItem = SessionMessage | ToolItem | SessionNotice;
 
 export interface SessionState {
@@ -33,6 +41,8 @@ export interface SessionState {
   error: string | null;
   /** Id of the assistant message the current turn is streaming into. */
   streamingId: string | null;
+  /** Files the agent changed, in the order it first edited them. */
+  changedFiles: FileChange[];
 }
 
 export type SessionAction =
@@ -45,6 +55,7 @@ export const initialSessionState: SessionState = {
   running: false,
   error: null,
   streamingId: null,
+  changedFiles: [],
 };
 
 const nextId = (state: SessionState) => `m${state.messages.length}`;
@@ -54,6 +65,7 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
     case "send":
       // During a turn this steers it; the reply continues in a new message.
       return {
+        ...state,
         messages: [...state.messages, { id: nextId(state), role: "user", text: action.text }],
         running: true,
         error: null,
@@ -117,6 +129,8 @@ function applyEvent(state: SessionState, event: SessionEvent): SessionState {
         ),
       };
     }
+    case "file_changed":
+      return { ...state, changedFiles: upsertChange(state.changedFiles, event) };
     case "done":
       return { ...state, running: false, streamingId: null };
     case "interrupted":
@@ -138,4 +152,18 @@ function applyEvent(state: SessionState, event: SessionEvent): SessionState {
     default:
       return state;
   }
+}
+
+function upsertChange(files: FileChange[], event: FileChange): FileChange[] {
+  const change = {
+    path: event.path,
+    diff: event.diff,
+    additions: event.additions,
+    deletions: event.deletions,
+  };
+  // An edit that restores the original content leaves nothing to review.
+  if (change.diff === "") return files.filter((f) => f.path !== change.path);
+  const index = files.findIndex((f) => f.path === change.path);
+  if (index === -1) return [...files, change];
+  return files.map((f, i) => (i === index ? change : f));
 }

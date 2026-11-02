@@ -268,3 +268,25 @@ fn a_relative_project_root_still_confines_paths() {
     assert!(out.is_error);
     assert!(out.output.contains("outside the project"), "{}", out.output);
 }
+
+#[test]
+fn project_paths_are_normalised_relative_to_the_root() {
+    let project = Project::new();
+    let tools = project.tools();
+    assert_eq!(
+        tools.project_path("./src/../a.txt"),
+        Ok("a.txt".to_string())
+    );
+    assert_eq!(tools.project_path("dir/b.txt"), Ok("dir/b.txt".to_string()));
+    assert!(tools.project_path("../x").is_err());
+}
+
+#[test]
+fn read_text_distinguishes_missing_files() {
+    let project = Project::new();
+    project.write("a.txt", "hi");
+    let tools = project.tools();
+    assert_eq!(tools.read_text("a.txt"), Ok(Some("hi".to_string())));
+    assert_eq!(tools.read_text("missing.txt"), Ok(None));
+    assert!(tools.read_text("../x").is_err());
+}

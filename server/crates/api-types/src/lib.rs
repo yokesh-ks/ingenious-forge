@@ -43,6 +43,15 @@ pub enum SessionEvent {
         output: String,
         is_error: bool,
     },
+    /// A file the agent changed this session, as a unified diff from its
+    /// content before the agent's first edit.
+    FileChanged {
+        session_id: String,
+        path: String,
+        diff: String,
+        additions: u32,
+        deletions: u32,
+    },
     Error {
         session_id: String,
         message: String,
@@ -63,6 +72,7 @@ impl SessionEvent {
             | Self::Output { session_id, .. }
             | Self::ToolCall { session_id, .. }
             | Self::ToolResult { session_id, .. }
+            | Self::FileChanged { session_id, .. }
             | Self::Error { session_id, .. }
             | Self::Done { session_id }
             | Self::Interrupted { session_id } => session_id,

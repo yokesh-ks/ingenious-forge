@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { useSession } from "@/session/use-session";
+import ChangedFilesPanel from "./components/ChangedFilesPanel";
 import Composer from "./components/Composer";
 import SessionView from "./components/SessionView";
 import { ThemeToggle } from "./components/theme-toggle";
@@ -24,12 +25,19 @@ export default function App() {
           Ingenious <span className="text-primary">Forge</span>
         </h1>
       </header>
-      <main className="flex min-h-0 flex-1 px-4">
-        <SessionView messages={state.messages} running={state.running} error={state.error} />
-      </main>
-      <footer className="px-4 pb-6">
-        <Composer onSend={send} busy={state.running} onStop={stop} />
-      </footer>
+      <div className="flex min-h-0 flex-1 gap-4 px-4 pb-6">
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
+          <main className="flex min-h-0 flex-1">
+            <SessionView messages={state.messages} running={state.running} error={state.error} />
+          </main>
+          <footer>
+            <Composer onSend={send} busy={state.running} onStop={stop} />
+          </footer>
+        </div>
+        <aside className="hidden w-96 shrink-0 overflow-y-auto border-l pl-4 lg:flex lg:flex-col">
+          <ChangedFilesPanel files={state.changedFiles} />
+        </aside>
+      </div>
     </div>
   );
 }
