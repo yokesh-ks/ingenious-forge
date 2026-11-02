@@ -21,8 +21,15 @@ scripts/setup-dev.sh
 shared git hooks for commit messages, attribution checks and branch guards.
 Run it once after cloning.
 
-There is no application build step yet. Once toolchains are introduced, the
-setup script will install them and this section will be updated.
+Application code needs two toolchains, installed separately for now (
+`setup-dev.sh` only wires up git hooks):
+
+- **Rust** (stable toolchain, e.g. via [rustup](https://rustup.rs)) to
+  build the backend: `cd server && cargo build --workspace`.
+- **Node.js 18+** to build the web UI: `cd apps/web && npm install && npm run build`.
+
+Run the server against the built UI with
+`cd server && cargo run --bin forge-server -- --static-dir ../apps/web/dist`.
 
 ## How work flows
 

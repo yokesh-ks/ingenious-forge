@@ -1,0 +1,80 @@
+mod routes;
+mod state;
+
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+
+use axum::Router;
+use clap::Parser;
+use tower_http::services::{ServeDir, ServeFile};
+use tracing::info;
+
+use state::AppState;
+
+#[derive(Parser, Debug)]
+#[command(name = "forge-server", about = "Ingenious Forge local server")]
+struct Args {
+    /// Port to listen on
+    #[arg(long, default_value_t = 3000)]
+    port: u16,
+
+    /// Directory holding the built web SPA (index.html and assets)
+    #[arg(long, default_value = "apps/web/dist")]
+    static_dir: PathBuf,
+
+    /// Path to the SQLite database file
+    #[arg(long, default_value = "forge.db")]
+    db_path: String,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
+
+    let args = Args::parse();
+
+    let index_html = args.static_dir.join("index.html");
+    if !index_html.is_file() {
+        eprintln!(
+            "error: no index.html found at {} (--static-dir {})",
+            index_html.display(),
+            args.static_dir.display()
+        );
+        eprintln!("Pass --static-dir pointing at the built web SPA, or run from the directory that contains it.");
+        std::process::exit(1);
+    }
+
+    let pool = db::connect(&args.db_path).await?;
+    let state = Arc::new(AppState {
+        db: pool,
+        events: services::EventService::new(),
+    });
+
+    let serve_dir = ServeDir::new(&args.static_dir).fallback(ServeFile::new(&index_html));
+    let app = Router::new()
+        .nest("/api", routes::api_router())
+        .route("/ws", axum::routing::get(routes::ws_handler))
+        .fallback_service(serve_dir)
+        .with_state(state);
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("error: failed to bind {addr}: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    info!("forge server listening on http://{addr}");
+
+    let serve = axum::serve(listener, app).with_graceful_shutdown(async {
+        tokio::signal::ctrl_c().await.ok();
+    });
+
+    if let Err(e) = serve.await {
+        eprintln!("error: server error: {e}");
+        std::process::exit(1);
+    }
+
+    Ok(())
+}

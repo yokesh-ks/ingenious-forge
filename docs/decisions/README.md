@@ -9,3 +9,5 @@ new ADR that supersedes the old one. See
 | # | Title | Status | Date |
 | --- | --- | --- | --- |
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted | 2026-10-31 |
+| [0002](0002-shadcn-tailwind-web-ui.md) | Adopt Tailwind CSS and Shadcn UI for the web frontend | Proposed | 2026-11-02 |
+| [0003](0003-server-cargo-workspace.md) | Split the Rust server into a Cargo workspace by PRD module | Proposed | 2026-11-02 |
