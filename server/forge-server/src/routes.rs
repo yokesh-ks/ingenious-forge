@@ -94,6 +94,7 @@ mod tests {
 
     use agent::{
         model::{ModelClient, ModelError, ModelEvent, ModelRequest},
+        tools::ToolBox,
         Agent,
     };
     use futures_util::{SinkExt, StreamExt};
@@ -145,7 +146,11 @@ mod tests {
         let events = EventService::new();
         let state = Arc::new(AppState {
             db: db::connect(":memory:").await.unwrap(),
-            agent: Agent::new(Arc::new(model), events.clone()),
+            agent: Agent::new(
+                Arc::new(model),
+                events.clone(),
+                ToolBox::new(std::env::temp_dir()),
+            ),
             events,
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

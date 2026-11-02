@@ -55,7 +55,7 @@ describe("sessionReducer", () => {
       { type: "turn_started", session_id: S },
       { type: "output", session_id: S, chunk: "B" },
     );
-    expect(state.messages.map((m) => [m.role, m.text])).toEqual([
+    expect(state.messages.map((m) => [m.role, m.role === "tool" ? m.name : m.text])).toEqual([
       ["user", "one"],
       ["assistant", "A"],
       ["user", "two"],
@@ -72,7 +72,7 @@ describe("sessionReducer", () => {
     );
     expect(state.error).toBe("no key");
     expect(state.running).toBe(false);
-    expect(state.messages[state.messages.length - 1]?.text).toBe("par");
+    expect(state.messages[state.messages.length - 1]).toMatchObject({ text: "par" });
   });
 
   it("clears a previous error when the next message is sent", () => {
@@ -84,11 +84,68 @@ describe("sessionReducer", () => {
     expect(apply(initialSessionState, { type: "turn_started", session_id: S }).running).toBe(true);
   });
 
-  it("ignores events it does not render yet", () => {
-    const state = sent("hi");
-    expect(apply(state, { type: "tool_call", session_id: S, name: "read", args: {} })).toEqual(
-      state,
+  it("adds a running tool card on tool_call", () => {
+    const state = apply(sent("read it"), {
+      type: "tool_call",
+      session_id: S,
+      call_id: "t1",
+      name: "read_file",
+      args: { path: "a.txt" },
+    });
+    expect(state.messages[1]).toEqual({
+      id: "m1",
+      role: "tool",
+      callId: "t1",
+      name: "read_file",
+      args: { path: "a.txt" },
+      status: "running",
+      output: null,
+    });
+  });
+
+  it("fills in the result of the matching tool call", () => {
+    const state = apply(
+      sent("go"),
+      { type: "tool_call", session_id: S, call_id: "t1", name: "read_file", args: {} },
+      { type: "tool_call", session_id: S, call_id: "t2", name: "list_directory", args: {} },
+      { type: "tool_result", session_id: S, call_id: "t2", output: "a.txt", is_error: false },
+      { type: "tool_result", session_id: S, call_id: "t1", output: "nope", is_error: true },
     );
+    expect(state.messages.slice(1)).toMatchObject([
+      { callId: "t1", status: "error", output: "nope" },
+      { callId: "t2", status: "done", output: "a.txt" },
+    ]);
+  });
+
+  it("ignores a result for an unknown tool call", () => {
+    const state = sent("go");
+    expect(
+      apply(state, {
+        type: "tool_result",
+        session_id: S,
+        call_id: "zz",
+        output: "x",
+        is_error: false,
+      }),
+    ).toEqual(state);
+  });
+
+  it("starts a new assistant message for text after a tool call", () => {
+    const state = apply(
+      sent("go"),
+      { type: "output", session_id: S, chunk: "Looking. " },
+      { type: "tool_call", session_id: S, call_id: "t1", name: "read_file", args: {} },
+      { type: "tool_result", session_id: S, call_id: "t1", output: "x", is_error: false },
+      { type: "output", session_id: S, chunk: "Found it." },
+    );
+    expect(state.messages.map((m) => m.role)).toEqual(["user", "assistant", "tool", "assistant"]);
+    expect(state.messages[3]).toMatchObject({ text: "Found it." });
+  });
+
+  it("ignores event types it does not know", () => {
+    const state = sent("hi");
+    const unknown = { type: "future_event", session_id: S } as unknown as SessionEvent;
+    expect(apply(state, unknown)).toEqual(state);
   });
 
   it("can record a local error without a server event", () => {

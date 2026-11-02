@@ -27,6 +27,24 @@ describe("App", () => {
     expect(screen.getByText("Hi")).toBeInTheDocument();
     act(() => socket.emit({ type: "output", session_id, chunk: "there" }));
     expect(screen.getByText("Hi there")).toBeInTheDocument();
+    act(() => {
+      socket.emit({
+        type: "tool_call",
+        session_id,
+        call_id: "t1",
+        name: "list_directory",
+        args: { path: "src" },
+      });
+      socket.emit({
+        type: "tool_result",
+        session_id,
+        call_id: "t1",
+        output: "main.tsx",
+        is_error: false,
+      });
+    });
+    expect(screen.getByText("List")).toBeInTheDocument();
+    expect(screen.getByRole("listitem")).toHaveTextContent("main.tsx");
     act(() => socket.emit({ type: "done", session_id }));
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
   });

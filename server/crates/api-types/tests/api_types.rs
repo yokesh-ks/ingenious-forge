@@ -65,6 +65,18 @@ fn event_session_id_accessor_covers_every_variant() {
             session_id: "a".into(),
             message: String::new(),
         },
+        SessionEvent::ToolCall {
+            session_id: "a".into(),
+            call_id: "c".into(),
+            name: "read_file".into(),
+            args: json!({}),
+        },
+        SessionEvent::ToolResult {
+            session_id: "a".into(),
+            call_id: "c".into(),
+            output: String::new(),
+            is_error: false,
+        },
         SessionEvent::Done {
             session_id: "a".into(),
         },
@@ -72,6 +84,42 @@ fn event_session_id_accessor_covers_every_variant() {
     for event in events {
         assert_eq!(event.session_id(), "a");
     }
+}
+
+#[test]
+fn tool_call_and_result_share_a_call_id() {
+    let call = SessionEvent::ToolCall {
+        session_id: "s1".into(),
+        call_id: "toolu_1".into(),
+        name: "read_file".into(),
+        args: json!({ "path": "README.md" }),
+    };
+    let result = SessionEvent::ToolResult {
+        session_id: "s1".into(),
+        call_id: "toolu_1".into(),
+        output: "# Forge".into(),
+        is_error: false,
+    };
+    assert_eq!(
+        serde_json::to_value(&call).unwrap(),
+        json!({
+            "type": "tool_call",
+            "session_id": "s1",
+            "call_id": "toolu_1",
+            "name": "read_file",
+            "args": { "path": "README.md" }
+        })
+    );
+    assert_eq!(
+        serde_json::to_value(&result).unwrap(),
+        json!({
+            "type": "tool_result",
+            "session_id": "s1",
+            "call_id": "toolu_1",
+            "output": "# Forge",
+            "is_error": false
+        })
+    );
 }
 
 #[test]

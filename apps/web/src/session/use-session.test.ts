@@ -80,7 +80,9 @@ describe("useSession", () => {
       socket.emit({ type: "output", session_id: "s1", chunk: "Hi!" });
       socket.emit({ type: "done", session_id: "s1" });
     });
-    expect(result.current.state.messages.map((m) => m.text)).toEqual(["hi", "Hi!"]);
+    expect(result.current.state.messages.map((m) => (m.role === "tool" ? m.name : m.text))).toEqual(
+      ["hi", "Hi!"],
+    );
     expect(result.current.state.running).toBe(false);
   });
 

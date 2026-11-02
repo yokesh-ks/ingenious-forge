@@ -27,10 +27,18 @@ pub enum SessionEvent {
         session_id: String,
         chunk: String,
     },
+    /// The agent called a tool; `call_id` pairs it with its result.
     ToolCall {
         session_id: String,
+        call_id: String,
         name: String,
         args: serde_json::Value,
+    },
+    ToolResult {
+        session_id: String,
+        call_id: String,
+        output: String,
+        is_error: bool,
     },
     Error {
         session_id: String,
@@ -47,6 +55,7 @@ impl SessionEvent {
             Self::TurnStarted { session_id }
             | Self::Output { session_id, .. }
             | Self::ToolCall { session_id, .. }
+            | Self::ToolResult { session_id, .. }
             | Self::Error { session_id, .. }
             | Self::Done { session_id } => session_id,
         }

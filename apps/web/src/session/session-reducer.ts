@@ -1,4 +1,4 @@
-import type { SessionEvent } from "@/api/types";
+import type { JsonValue, SessionEvent } from "@/api/types";
 
 export interface SessionMessage {
   id: string;
@@ -6,8 +6,22 @@ export interface SessionMessage {
   text: string;
 }
 
+/** A tool call the agent made, with its result once it arrives. */
+export interface ToolItem {
+  id: string;
+  role: "tool";
+  callId: string;
+  name: string;
+  args: JsonValue;
+  status: "running" | "done" | "error";
+  output: string | null;
+}
+
+export type SessionItem = SessionMessage | ToolItem;
+
 export interface SessionState {
-  messages: SessionMessage[];
+  /** The session timeline: messages and tool calls in arrival order. */
+  messages: SessionItem[];
   running: boolean;
   error: string | null;
   /** Id of the assistant message the current turn is streaming into. */
@@ -54,7 +68,7 @@ function applyEvent(state: SessionState, event: SessionEvent): SessionState {
         return {
           ...state,
           messages: state.messages.map((m) =>
-            m.id === id ? { ...m, text: m.text + event.chunk } : m,
+            m.id === id && m.role !== "tool" ? { ...m, text: m.text + event.chunk } : m,
           ),
         };
       }
@@ -63,6 +77,36 @@ function applyEvent(state: SessionState, event: SessionEvent): SessionState {
         ...state,
         streamingId: id,
         messages: [...state.messages, { id, role: "assistant", text: event.chunk }],
+      };
+    }
+    case "tool_call":
+      return {
+        ...state,
+        // Text after a tool call belongs to a new assistant message.
+        streamingId: null,
+        messages: [
+          ...state.messages,
+          {
+            id: nextId(state),
+            role: "tool",
+            callId: event.call_id,
+            name: event.name,
+            args: event.args,
+            status: "running",
+            output: null,
+          },
+        ],
+      };
+    case "tool_result": {
+      const found = state.messages.some((m) => m.role === "tool" && m.callId === event.call_id);
+      if (!found) return state;
+      return {
+        ...state,
+        messages: state.messages.map((m) =>
+          m.role === "tool" && m.callId === event.call_id
+            ? { ...m, status: event.is_error ? "error" : "done", output: event.output }
+            : m,
+        ),
       };
     }
     case "done":
