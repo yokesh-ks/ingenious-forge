@@ -12,8 +12,11 @@ pub struct Session {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
-    /// Start a turn in `session_id` with `text` as the user's message.
+    /// Start a turn in `session_id` with `text` as the user's message, or
+    /// steer the running turn: the agent reads it at its next step.
     SendMessage { session_id: String, text: String },
+    /// Stop the running turn in `session_id` at its next step.
+    Interrupt { session_id: String },
 }
 
 /// Events the server streams to the browser while a session runs.
@@ -47,6 +50,10 @@ pub enum SessionEvent {
     Done {
         session_id: String,
     },
+    /// The user stopped the turn before it finished.
+    Interrupted {
+        session_id: String,
+    },
 }
 
 impl SessionEvent {
@@ -57,7 +64,8 @@ impl SessionEvent {
             | Self::ToolCall { session_id, .. }
             | Self::ToolResult { session_id, .. }
             | Self::Error { session_id, .. }
-            | Self::Done { session_id } => session_id,
+            | Self::Done { session_id }
+            | Self::Interrupted { session_id } => session_id,
         }
     }
 }

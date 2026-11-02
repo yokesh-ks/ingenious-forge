@@ -75,6 +75,17 @@ describe("SessionView", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/thinking/i);
   });
 
+  it("shows notices such as an interrupted turn", () => {
+    render(
+      <SessionView
+        messages={[...conversation, { id: "m2", role: "notice", text: "Turn interrupted" }]}
+        running={false}
+        error={null}
+      />,
+    );
+    expect(screen.getByText("Turn interrupted")).toBeInTheDocument();
+  });
+
   it("shows an error alert", () => {
     render(<SessionView messages={conversation} running={false} error="no key" />);
     expect(screen.getByRole("alert")).toHaveTextContent("no key");

@@ -51,11 +51,22 @@ describe("Composer", () => {
     expect(input).toHaveValue("keep me");
   });
 
-  it("does not send while a turn is running", async () => {
-    const { input, button, onSend } = setup({ busy: true });
-    await userEvent.type(input, "wait{Enter}");
-    expect(onSend).not.toHaveBeenCalled();
-    expect(button).toBeDisabled();
-    expect(input).toHaveValue("wait");
+  it("sends a steering message while a turn is running", async () => {
+    const { input, onSend } = setup({ busy: true, onStop: vi.fn() });
+    await userEvent.type(input, "use tests instead{Enter}");
+    expect(onSend).toHaveBeenCalledWith("use tests instead");
+    expect(input).toHaveValue("");
+  });
+
+  it("shows a Stop button while a turn is running", async () => {
+    const onStop = vi.fn();
+    setup({ busy: true, onStop });
+    await userEvent.click(screen.getByRole("button", { name: /stop/i }));
+    expect(onStop).toHaveBeenCalledOnce();
+  });
+
+  it("hides the Stop button when idle", () => {
+    setup({ onStop: vi.fn() });
+    expect(screen.queryByRole("button", { name: /stop/i })).not.toBeInTheDocument();
   });
 });

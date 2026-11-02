@@ -5,6 +5,6 @@ export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in
 
 export type Session = { id: string, project_id: string, created_at: string, };
 
-export type ClientMessage = { "type": "send_message", session_id: string, text: string, };
+export type ClientMessage = { "type": "send_message", session_id: string, text: string, } | { "type": "interrupt", session_id: string, };
 
-export type SessionEvent = { "type": "turn_started", session_id: string, } | { "type": "output", session_id: string, chunk: string, } | { "type": "tool_call", session_id: string, call_id: string, name: string, args: JsonValue, } | { "type": "tool_result", session_id: string, call_id: string, output: string, is_error: boolean, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, };
+export type SessionEvent = { "type": "turn_started", session_id: string, } | { "type": "output", session_id: string, chunk: string, } | { "type": "tool_call", session_id: string, call_id: string, name: string, args: JsonValue, } | { "type": "tool_result", session_id: string, call_id: string, output: string, is_error: boolean, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, };

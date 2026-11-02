@@ -81,7 +81,9 @@ async fn turn_events(
         }
         let end = matches!(
             event,
-            SessionEvent::Done { .. } | SessionEvent::Error { .. }
+            SessionEvent::Done { .. }
+                | SessionEvent::Error { .. }
+                | SessionEvent::Interrupted { .. }
         );
         out.push(event);
         if end {
@@ -105,6 +107,7 @@ fn describe(events: &[SessionEvent]) -> Vec<String> {
             } => format!("result:{call_id}:{is_error}:{output}"),
             SessionEvent::Error { message, .. } => format!("error:{message}"),
             SessionEvent::Done { .. } => "done".to_string(),
+            SessionEvent::Interrupted { .. } => "interrupted".to_string(),
         })
         .collect()
 }
@@ -215,24 +218,195 @@ async fn empty_message_is_rejected_without_starting_a_turn() {
 }
 
 #[tokio::test]
-async fn second_message_during_a_running_turn_is_rejected() {
+async fn a_busy_session_does_not_block_other_sessions() {
     let hold = Arc::new(Semaphore::new(0));
     let model = FakeModel {
         hold: Some(hold.clone()),
-        ..FakeModel::replying(vec![vec![text("slow")]])
+        ..FakeModel::replying(vec![vec![text("slow")], vec![text("fast")]])
     };
     let (agent, _, mut rx) = setup(model);
 
     agent.send_message("s1", "first").unwrap();
-    assert_eq!(
-        agent.send_message("s1", "second"),
-        Err(AgentError::TurnInProgress)
-    );
-    // Another session is not blocked by s1's turn.
     agent.send_message("s2", "other").unwrap();
 
     hold.add_permits(2);
     turn_events(&mut rx, "s1").await;
+}
+
+/// Waits for the next event of `session_id` matching `pred`, returning the
+/// events seen on the way.
+async fn until(
+    rx: &mut broadcast::Receiver<SessionEvent>,
+    session_id: &str,
+    pred: impl Fn(&SessionEvent) -> bool,
+) -> Vec<SessionEvent> {
+    let mut seen = Vec::new();
+    loop {
+        let event = next(rx).await;
+        if event.session_id() != session_id {
+            continue;
+        }
+        let hit = pred(&event);
+        seen.push(event);
+        if hit {
+            return seen;
+        }
+    }
+}
+
+fn is_output(e: &SessionEvent) -> bool {
+    matches!(e, SessionEvent::Output { .. })
+}
+
+fn slow(s: &str) -> Step {
+    (
+        Duration::from_millis(400),
+        Ok(ModelEvent::TextDelta(s.into())),
+    )
+}
+
+#[tokio::test]
+async fn a_message_during_a_reply_steers_the_turn_at_its_next_step() {
+    let (agent, model, mut rx) = setup(FakeModel::replying(vec![
+        vec![text("Working"), slow(" on it")],
+        vec![text("Switching to tests")],
+    ]));
+
+    agent.send_message("s1", "build it").unwrap();
+    until(&mut rx, "s1", is_output).await;
+    agent
+        .send_message("s1", "  actually, write tests  ")
+        .unwrap();
+    let events = describe(&turn_events(&mut rx, "s1").await);
+
+    // One turn: the steer did not start a second one.
+    assert_eq!(events.iter().filter(|e| *e == "started").count(), 0);
+    assert_eq!(events.last().unwrap(), "done");
+    let requests = model.requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[1].messages,
+        vec![
+            ChatMessage::user_text("build it"),
+            ChatMessage::assistant_text("Working on it"),
+            ChatMessage::user_text("actually, write tests"),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_message_during_tool_use_joins_the_tool_results() {
+    let root = project(&[]);
+    let (agent, model, mut rx) = setup_in(
+        FakeModel::replying(vec![
+            vec![slow("Listing"), {
+                let (_, call) = tool_use("t1", "list_directory", json!({}));
+                (Duration::from_millis(200), call)
+            }],
+            vec![text("ok")],
+        ]),
+        root,
+    );
+
+    agent.send_message("s1", "go").unwrap();
+    until(&mut rx, "s1", is_output).await;
+    agent.send_message("s1", "skip hidden files").unwrap();
+    turn_events(&mut rx, "s1").await;
+
+    let requests = model.requests.lock().unwrap();
+    let last = requests[1].messages.last().unwrap();
+    assert_eq!(
+        last.content,
+        vec![
+            ContentBlock::ToolResult {
+                tool_use_id: "t1".into(),
+                content: "(empty directory)".into(),
+                is_error: false,
+            },
+            ContentBlock::Text {
+                text: "skip hidden files".into()
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn interrupt_stops_a_streaming_reply_and_frees_the_session() {
+    let (agent, model, mut rx) = setup(FakeModel::replying(vec![
+        vec![text("par"), slow("tial")],
+        vec![text("next")],
+    ]));
+
+    agent.send_message("s1", "go").unwrap();
+    until(&mut rx, "s1", is_output).await;
+    assert!(agent.interrupt("s1"));
+    let events = describe(&turn_events(&mut rx, "s1").await);
+
+    assert_eq!(events, ["interrupted"]);
+
+    // The session accepts a new turn, and the partial reply is kept so the
+    // conversation stays in order.
+    agent.send_message("s1", "again").unwrap();
+    assert_eq!(
+        describe(&turn_events(&mut rx, "s1").await).last().unwrap(),
+        "done"
+    );
+    let requests = model.requests.lock().unwrap();
+    assert_eq!(
+        requests[1].messages,
+        vec![
+            ChatMessage::user_text("go"),
+            ChatMessage::assistant_text("par"),
+            ChatMessage::user_text("again"),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn interrupt_between_steps_leaves_every_tool_call_answered() {
+    let (agent, model, mut rx) = setup_in(
+        FakeModel::replying(vec![
+            vec![tool_use("t1", "list_directory", json!({}))],
+            vec![slow("never")],
+            vec![text("fresh")],
+        ]),
+        project(&[]),
+    );
+
+    agent.send_message("s1", "go").unwrap();
+    until(&mut rx, "s1", |e| {
+        matches!(e, SessionEvent::ToolResult { .. })
+    })
+    .await;
+    assert!(agent.interrupt("s1"));
+    assert_eq!(
+        describe(&turn_events(&mut rx, "s1").await).last().unwrap(),
+        "interrupted"
+    );
+
+    agent.send_message("s1", "again").unwrap();
+    turn_events(&mut rx, "s1").await;
+    let requests = model.requests.lock().unwrap();
+    let history = &requests.last().unwrap().messages;
+    // assistant tool_use is followed by its tool_result, then the new prompt.
+    assert!(matches!(
+        history[1].content[0],
+        ContentBlock::ToolUse { .. }
+    ));
+    assert!(matches!(
+        history[2].content[0],
+        ContentBlock::ToolResult { .. }
+    ));
+    assert_eq!(history.last().unwrap(), &ChatMessage::user_text("again"));
+}
+
+#[tokio::test]
+async fn interrupt_with_no_running_turn_does_nothing() {
+    let (agent, _, mut rx) = setup(FakeModel::default());
+    assert!(!agent.interrupt("s1"));
+    assert!(tokio::time::timeout(Duration::from_millis(100), rx.recv())
+        .await
+        .is_err());
 }
 
 #[tokio::test]
@@ -449,4 +623,20 @@ async fn a_turn_that_never_stops_calling_tools_is_ended() {
         events.last()
     );
     assert_eq!(model.requests.lock().unwrap().len(), 50);
+}
+
+#[tokio::test]
+async fn an_empty_reply_ends_the_turn() {
+    let (agent, model, mut rx) = setup(FakeModel::replying(vec![vec![(
+        Duration::ZERO,
+        Ok(ModelEvent::Message(vec![])),
+    )]]));
+
+    agent.send_message("s1", "hi").unwrap();
+
+    assert_eq!(
+        describe(&turn_events(&mut rx, "s1").await),
+        ["started", "done"]
+    );
+    assert_eq!(model.requests.lock().unwrap().len(), 1);
 }

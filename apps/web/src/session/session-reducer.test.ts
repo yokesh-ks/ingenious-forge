@@ -55,7 +55,7 @@ describe("sessionReducer", () => {
       { type: "turn_started", session_id: S },
       { type: "output", session_id: S, chunk: "B" },
     );
-    expect(state.messages.map((m) => [m.role, m.role === "tool" ? m.name : m.text])).toEqual([
+    expect(state.messages.map((m) => [m.role, "text" in m ? m.text : m.name])).toEqual([
       ["user", "one"],
       ["assistant", "A"],
       ["user", "two"],
@@ -146,6 +146,44 @@ describe("sessionReducer", () => {
     const state = sent("hi");
     const unknown = { type: "future_event", session_id: S } as unknown as SessionEvent;
     expect(apply(state, unknown)).toEqual(state);
+  });
+
+  it("keeps the turn running when a steering message is sent mid-turn", () => {
+    const state = sent(
+      "use tests",
+      apply(sent("build"), { type: "output", session_id: S, chunk: "Building" }),
+    );
+    expect(state.running).toBe(true);
+    const next = apply(state, { type: "output", session_id: S, chunk: "Testing" });
+    expect(next.messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
+  });
+
+  it("ends the turn and adds a notice when interrupted", () => {
+    const state = apply(
+      sent("go"),
+      { type: "output", session_id: S, chunk: "par" },
+      { type: "interrupted", session_id: S },
+    );
+    expect(state.running).toBe(false);
+    expect(state.messages[state.messages.length - 1]).toEqual({
+      id: "m2",
+      role: "notice",
+      text: "Turn interrupted",
+    });
+    const next = apply(state, { type: "output", session_id: S, chunk: "new" });
+    expect(next.messages[next.messages.length - 1]).toMatchObject({
+      role: "assistant",
+      text: "new",
+    });
+  });
+
+  it("marks tool calls still running as interrupted", () => {
+    const state = apply(
+      sent("go"),
+      { type: "tool_call", session_id: S, call_id: "t1", name: "read_file", args: {} },
+      { type: "interrupted", session_id: S },
+    );
+    expect(state.messages[1]).toMatchObject({ status: "error", output: "Interrupted" });
   });
 
   it("can record a local error without a server event", () => {
