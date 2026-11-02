@@ -1,18 +1,28 @@
-[package]
-name = "ingenious-forge-server"
+[workspace]
+resolver = "2"
+members = ["forge-server", "crates/*"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
-description = "Forge local HTTP server"
 license = "Apache-2.0"
 
-[[bin]]
-name = "forge-server"
-path = "src/main.rs"
-
-[dependencies]
-axum = "0.8"
+[workspace.dependencies]
+axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+tower-http = { version = "0.6", features = ["fs"] }
 clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tower-http = { version = "0.6", features = ["fs"] }
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "migrate"] }
+
+api-types = { path = "crates/api-types" }
+db = { path = "crates/db" }
+services = { path = "crates/services" }
+agent = { path = "crates/agent" }
+git = { path = "crates/git" }
+utils = { path = "crates/utils" }

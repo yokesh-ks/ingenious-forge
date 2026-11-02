@@ -107,6 +107,14 @@ working.
 
 ## Repository layout
 
+- `apps/web/`: the React + TypeScript SPA (Vite, Tailwind CSS, Shadcn UI
+  conventions, Biome for lint/format). Builds to `apps/web/dist`, served by
+  the Rust server.
+- `server/`: the Rust backend as a Cargo workspace — `forge-server` (the
+  binary, wiring only) and `crates/{api-types,db,services,agent,git,utils}`
+  mapping to the PRD §8 module list. `agent` and `git` are stubs until a
+  PRD P0 feature needs them (see ADR
+  [0003](docs/decisions/0003-server-cargo-workspace.md)).
 - `docs/PRD.md`: product requirements document — the source of truth for
   scope and features.
 - `docs/reference/<project>/`: generated reference documentation for studied
@@ -297,9 +305,10 @@ human gates is in [`docs/feature-delivery.md`](docs/feature-delivery.md).
 
 ## Development and validation
 
-There is no build or lint setup yet; the only tests are the git hook
-tests and the repo-hygiene checks below. Do not claim a test suite ran
-unless one is introduced or an explicit test command is supplied.
+`apps/web` (Biome, TypeScript, Vite) and `server` (Cargo) have their own
+build, lint and test commands, listed below alongside the git hook tests
+and repo-hygiene checks. Do not claim a check ran unless its exact command
+was run after the last edit.
 
 Run `scripts/setup-dev.sh` once after cloning. It enables the shared git
 hooks in `.githooks/` (`git config core.hooksPath .githooks`), which apply
@@ -324,6 +333,14 @@ code. Change checks and patterns there only.
 
 - `scripts/check-all.sh` — run every CI check locally (see "Continuous
   integration"). Run it before reporting work as done.
+- `cd apps/web && npm run build` — type-check and build the web SPA.
+- `cd apps/web && npx biome check .` — lint and format-check the web SPA
+  (`npx biome check --write .` to apply fixes).
+- `cd server && cargo build --workspace` — build the Rust backend
+  workspace.
+- `cd server && cargo clippy --workspace --all-targets` — lint the Rust
+  backend workspace.
+- `cd server && cargo test --workspace` — run the Rust backend's tests.
 - `scripts/test-hooks.sh` — test the git hooks against sample commit
   messages and commits in a throwaway repository.
 - `node scripts/generate-docs.mjs` — regenerate a reference doc set from

@@ -66,3 +66,12 @@ own license:
   material remains under that project's license, kept in its folder as
   LICENSE (and NOTICE where the project provides one). See
   docs/reference/README.md for the list.
+
+- apps/web/src/components/ui/{message-scroller,message,bubble,input-group,
+  textarea}.tsx, and the variant/size sets in button.tsx, are derived from
+  https://github.com/shadcn-ui/chatbot-template, Copyright (c) 2026
+  shadcn, under the MIT License. See
+  apps/web/src/components/ui/LICENSE.chatbot-template. Copied by hand
+  because the shadcn CLI registry did not yet serve these items (ADR
+  0002); trimmed of the template's Next.js/Vercel-AI-SDK wiring, which
+  Forge does not use.
