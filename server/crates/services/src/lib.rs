@@ -19,7 +19,9 @@ impl EventService {
     }
 
     pub fn publish(&self, event: SessionEvent) {
-        let _ = self.tx.send(event);
+        if let Err(err) = self.tx.send(event) {
+            tracing::debug!(?err, "no subscribers for session event");
+        }
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<SessionEvent> {
