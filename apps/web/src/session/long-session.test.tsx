@@ -1,7 +1,18 @@
 import { render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SessionEvent } from "@/api/types";
 import SessionView from "@/components/SessionView";
+
+// Counts tool card renders, so the test can check which entries re-render
+// without relying on wall-clock time.
+const toolCardRenders = vi.hoisted(() => ({ count: 0 }));
+vi.mock("@/components/ToolCallCard", () => ({
+  default: () => {
+    toolCardRenders.count++;
+    return null;
+  },
+}));
+
 import { initialSessionState, sessionReducer } from "./session-reducer";
 
 const S = "s1";
@@ -49,13 +60,30 @@ describe("long sessions", () => {
     expect(batched).toEqual(oneByOne(events));
   });
 
-  it("loads a 1,000-step backlog quickly", () => {
-    const events = longSession(1_000);
+  it("loads a 4,000-step backlog in linear time", () => {
+    // Linear work takes about 0.1 s here; copying the timeline per event
+    // (quadratic) took several seconds. The limit leaves room for a busy
+    // machine on both sides.
+    const events = longSession(4_000);
     const start = performance.now();
     const state = sessionReducer(initialSessionState, { kind: "events", events });
     const elapsed = performance.now() - start;
-    expect(state.messages).toHaveLength(1 + 2 * 1_000);
-    expect(elapsed).toBeLessThan(150);
+    expect(state.messages).toHaveLength(1 + 2 * 4_000);
+    expect(elapsed).toBeLessThan(1_500);
+  });
+
+  it("keeps unchanged entries' identity so the view can skip them", () => {
+    const base = sessionReducer(initialSessionState, {
+      kind: "events",
+      events: longSession(50, 1),
+    });
+    const next = sessionReducer(base, {
+      kind: "event",
+      event: { type: "output", session_id: S, chunk: "more" },
+    });
+    const last = next.messages.length - 1;
+    expect(next.messages.slice(0, last).every((m, i) => m === base.messages[i])).toBe(true);
+    expect(next.messages[last]).not.toBe(base.messages[last]);
   });
 
   it("streams into a long session without copying the whole timeline per chunk", () => {
@@ -82,14 +110,16 @@ describe("long sessions", () => {
     const { rerender, container } = render(
       <SessionView messages={base.messages} running error={null} />,
     );
+    expect(toolCardRenders.count).toBe(1_000);
+
     const next = sessionReducer(base, {
       kind: "event",
       event: { type: "output", session_id: S, chunk: "more" },
     });
-    const start = performance.now();
+    toolCardRenders.count = 0;
     rerender(<SessionView messages={next.messages} running error={null} />);
-    const elapsed = performance.now() - start;
+
     expect(container.textContent).toContain("more");
-    expect(elapsed).toBeLessThan(60);
+    expect(toolCardRenders.count).toBe(0);
   });
 });
