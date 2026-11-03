@@ -21,6 +21,8 @@ pub struct Session {
     pub created_at: i64,
     #[ts(type = "number")]
     pub updated_at: i64,
+    /// True while the agent is working in this session.
+    pub running: bool,
 }
 
 /// Body of `POST /api/projects`.

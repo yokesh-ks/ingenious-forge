@@ -5,7 +5,11 @@ export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in
 
 export type Project = { id: string, name: string, path: string, last_opened_at: number, };
 
-export type Session = { id: string, project_id: string, title: string, created_at: number, updated_at: number, };
+export type Session = { id: string, project_id: string, title: string, created_at: number, updated_at: number, 
+/**
+ * True while the agent is working in this session.
+ */
+running: boolean, };
 
 export type OpenProjectRequest = { path: string, };
 

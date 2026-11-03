@@ -41,6 +41,8 @@ export const api = {
   openProject: (path: string) =>
     post<Project>("/api/projects", { path } satisfies OpenProjectRequest),
   getProject: (id: string) => request<Project>(`/api/projects/${encodeURIComponent(id)}`),
+  listSessions: (projectId: string) =>
+    request<Session[]>(`/api/projects/${encodeURIComponent(projectId)}/sessions`),
   createSession: (projectId: string) =>
     post<Session>(`/api/projects/${encodeURIComponent(projectId)}/sessions`, {}),
   listDirs: (path?: string) =>

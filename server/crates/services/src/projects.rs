@@ -11,6 +11,7 @@ use crate::folders::{inspect_folder, FolderError};
 
 const RECENT_LIMIT: i64 = 20;
 const NEW_SESSION_TITLE: &str = "New session";
+const MAX_TITLE_CHARS: usize = 60;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -46,6 +47,8 @@ fn session(row: SessionRow) -> Session {
         title: row.title,
         created_at: row.created_at,
         updated_at: row.updated_at,
+        // Only the agent knows; the API layer fills it in.
+        running: false,
     }
 }
 
@@ -91,4 +94,40 @@ pub async fn session_folder(
     };
     let project = get_project(pool, &session.project_id).await?;
     Ok(Some(PathBuf::from(project.path)))
+}
+
+/// The sessions of a project, most recently active first.
+pub async fn list_sessions(
+    pool: &SqlitePool,
+    project_id: &str,
+) -> Result<Vec<Session>, ProjectError> {
+    get_project(pool, project_id).await?;
+    let rows = db::list_sessions(pool, project_id).await?;
+    Ok(rows.into_iter().map(session).collect())
+}
+
+/// A session title from the first line of a message.
+pub fn title_from_message(text: &str) -> String {
+    let line = text.trim().lines().next().unwrap_or_default().trim();
+    if line.chars().count() <= MAX_TITLE_CHARS {
+        return line.to_string();
+    }
+    let cut: String = line.chars().take(MAX_TITLE_CHARS - 1).collect();
+    format!("{}…", cut.trim_end())
+}
+
+/// Records that the user sent `text` in a session: the first message names
+/// an untitled session, and every message updates its last activity.
+pub async fn record_message(
+    pool: &SqlitePool,
+    session_id: &str,
+    text: &str,
+) -> Result<(), ProjectError> {
+    let Some(row) = db::get_session(pool, session_id).await? else {
+        return Ok(());
+    };
+    let title = (row.title == NEW_SESSION_TITLE && !text.trim().is_empty())
+        .then(|| title_from_message(text));
+    db::touch_session(pool, session_id, title.as_deref(), now_ms()).await?;
+    Ok(())
 }

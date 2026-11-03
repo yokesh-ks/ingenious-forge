@@ -142,3 +142,35 @@ pub async fn get_session(pool: &SqlitePool, id: &str) -> Result<Option<SessionRo
     .await?;
     Ok(row.map(session))
 }
+
+/// The sessions of a project, most recently active first.
+pub async fn list_sessions(
+    pool: &SqlitePool,
+    project_id: &str,
+) -> Result<Vec<SessionRow>, DbError> {
+    let rows: Vec<SessionTuple> = sqlx::query_as(
+        "SELECT id, project_id, title, created_at, updated_at FROM sessions
+         WHERE project_id = ?1 ORDER BY updated_at DESC, created_at DESC",
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(session).collect())
+}
+
+/// Records activity in a session at `now`, renaming it when `title` is
+/// given.
+pub async fn touch_session(
+    pool: &SqlitePool,
+    id: &str,
+    title: Option<&str>,
+    now: i64,
+) -> Result<(), DbError> {
+    sqlx::query("UPDATE sessions SET updated_at = ?2, title = coalesce(?3, title) WHERE id = ?1")
+        .bind(id)
+        .bind(now)
+        .bind(title)
+        .execute(pool)
+        .await?;
+    Ok(())
+}

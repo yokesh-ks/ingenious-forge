@@ -20,20 +20,27 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /recent projects/i })).toBeInTheDocument();
   });
 
-  it("shows a project page at /projects/:id", async () => {
-    window.history.replaceState(null, "", "/projects/p1");
+  it("shows a project's session at /projects/:id/sessions/:sid", async () => {
+    window.history.replaceState(null, "", "/projects/p1/sessions/s1");
     fakeFetch({
       "GET /api/projects/p1": { id: "p1", name: "forge", path: "/f", last_opened_at: 1 },
-      "POST /api/projects/p1/sessions": {
-        id: "s1",
-        project_id: "p1",
-        title: "New session",
-        created_at: 1,
-        updated_at: 1,
-      },
+      "GET /api/projects/p1/sessions": [
+        {
+          id: "s1",
+          project_id: "p1",
+          title: "Fix it",
+          created_at: 1,
+          updated_at: 1,
+          running: false,
+        },
+      ],
     });
     render(<App />);
     expect(await screen.findByRole("heading", { name: "forge" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /fix it/i })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   it("shows not found for other paths", () => {

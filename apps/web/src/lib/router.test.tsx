@@ -33,6 +33,14 @@ describe("usePath and navigate", () => {
     expect(result.current).toBe("/");
   });
 
+  it("can replace the current history entry", () => {
+    const before = window.history.length;
+    navigate("/a");
+    navigate("/b", { replace: true });
+    expect(window.location.pathname).toBe("/b");
+    expect(window.history.length).toBe(before + 1);
+  });
+
   it("Link navigates without a page load", async () => {
     render(<Link to="/projects/p2">Open</Link>);
     await userEvent.click(screen.getByRole("link", { name: "Open" }));

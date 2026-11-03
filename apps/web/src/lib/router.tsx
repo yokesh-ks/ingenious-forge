@@ -18,9 +18,10 @@ export function usePath(): string {
   return useSyncExternalStore(subscribe, () => window.location.pathname);
 }
 
-export function navigate(to: string) {
+export function navigate(to: string, { replace = false } = {}) {
   if (to === window.location.pathname) return;
-  window.history.pushState(null, "", to);
+  if (replace) window.history.replaceState(null, "", to);
+  else window.history.pushState(null, "", to);
   window.dispatchEvent(new Event(NAVIGATE));
 }
 

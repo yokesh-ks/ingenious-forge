@@ -8,7 +8,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::get,
     Json, Router,
 };
 use serde::Deserialize;
@@ -23,7 +23,10 @@ pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/projects", get(recent_projects).post(open_project))
         .route("/projects/{id}", get(get_project))
-        .route("/projects/{id}/sessions", post(create_session))
+        .route(
+            "/projects/{id}/sessions",
+            get(list_sessions).post(create_session),
+        )
         .route("/fs/dirs", get(list_dirs))
 }
 
@@ -77,6 +80,17 @@ async fn create_session(
     let (session, folder) = projects::create_session(&state.db, &id).await?;
     state.agent.open_session(&session.id, ToolBox::new(folder));
     Ok(Json(session))
+}
+
+async fn list_sessions(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<Vec<Session>> {
+    let mut sessions = projects::list_sessions(&state.db, &id).await?;
+    for session in &mut sessions {
+        session.running = state.agent.is_running(&session.id);
+    }
+    Ok(Json(sessions))
 }
 
 #[derive(Deserialize)]
@@ -138,11 +152,27 @@ mod tests {
         dir.canonicalize().unwrap()
     }
 
+    /// Never finishes a reply, so a started turn keeps running.
+    #[derive(Default)]
+    struct HangModel(std::sync::Mutex<Vec<mpsc::Sender<Result<ModelEvent, ModelError>>>>);
+
+    impl ModelClient for HangModel {
+        fn stream(&self, _: ModelRequest) -> mpsc::Receiver<Result<ModelEvent, ModelError>> {
+            let (tx, rx) = mpsc::channel(1);
+            self.0.lock().unwrap().push(tx);
+            rx
+        }
+    }
+
     async fn start() -> (String, Arc<AppState>) {
+        start_with(Arc::new(NoModel)).await
+    }
+
+    async fn start_with(model: Arc<dyn ModelClient>) -> (String, Arc<AppState>) {
         let events = EventService::new();
         let state = Arc::new(AppState {
             db: db::connect(":memory:").await.unwrap(),
-            agent: Agent::new(Arc::new(NoModel), events.clone()),
+            agent: Agent::new(model, events.clone()),
             events,
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -271,5 +301,62 @@ mod tests {
         let (status, body) = get_json(url.as_str()).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(body["error"].as_str().unwrap().contains("cannot list"));
+    }
+
+    async fn project_with_sessions(api: &str, count: usize) -> (String, Vec<Value>) {
+        let repo = folders().join("repo");
+        let (_, project) = post_json(&format!("{api}/projects"), json!({ "path": repo })).await;
+        let id = project["id"].as_str().unwrap().to_string();
+        let mut sessions = Vec::new();
+        for _ in 0..count {
+            let (_, s) = post_json(&format!("{api}/projects/{id}/sessions"), json!({})).await;
+            sessions.push(s);
+        }
+        (id, sessions)
+    }
+
+    #[tokio::test]
+    async fn a_project_lists_its_sessions_with_their_status() {
+        let (api, state) = start_with(Arc::new(HangModel::default())).await;
+        let (project_id, sessions) = project_with_sessions(&api, 2).await;
+        let busy = sessions[0]["id"].as_str().unwrap();
+        state.agent.send_message(busy, "work").unwrap();
+
+        let (status, listed) = get_json(&format!("{api}/projects/{project_id}/sessions")).await;
+
+        assert_eq!(status, StatusCode::OK);
+        let listed = listed.as_array().unwrap();
+        assert_eq!(listed.len(), 2);
+        let running: Vec<_> = listed
+            .iter()
+            .map(|s| (s["id"].as_str().unwrap(), s["running"].as_bool().unwrap()))
+            .collect();
+        assert!(running.contains(&(busy, true)), "{running:?}");
+        assert_eq!(running.iter().filter(|(_, r)| *r).count(), 1);
+    }
+
+    #[tokio::test]
+    async fn sessions_of_an_unknown_project_are_not_found() {
+        let (api, _) = start().await;
+        let (status, _) = get_json(&format!("{api}/projects/nope/sessions")).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn the_first_message_over_the_socket_names_the_session() {
+        let (api, state) = start_with(Arc::new(HangModel::default())).await;
+        let (project_id, sessions) = project_with_sessions(&api, 1).await;
+        let id = sessions[0]["id"].as_str().unwrap();
+
+        crate::routes::handle_client_message(
+            &state,
+            &json!({ "type": "send_message", "session_id": id, "text": "Add dark mode" })
+                .to_string(),
+        )
+        .await;
+
+        let (_, listed) = get_json(&format!("{api}/projects/{project_id}/sessions")).await;
+        assert_eq!(listed[0]["title"], "Add dark mode");
+        assert_eq!(listed[0]["running"], true);
     }
 }
