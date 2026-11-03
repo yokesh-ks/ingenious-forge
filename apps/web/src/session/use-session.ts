@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { api } from "@/api/client";
+import { ApiRequestError, api } from "@/api/client";
 import type { ClientMessage, SessionEnvelope } from "@/api/types";
 import { initialSessionState, sessionReducer } from "./session-reducer";
 
@@ -57,9 +57,12 @@ export function useSession(
       held = [];
       try {
         for (const envelope of await api.sessionEvents(sessionId, lastSeq)) apply(envelope);
-      } catch {
-        // No backlog (for example a session the server has not logged);
-        // live frames still apply.
+      } catch (err) {
+        // Live frames still apply, and the next reconnect retries. An
+        // unknown session simply has no backlog.
+        if (!(err instanceof ApiRequestError && err.status === 404)) {
+          console.warn("Could not load the session backlog", err);
+        }
       } finally {
         const pending = held ?? [];
         held = null;
