@@ -903,3 +903,14 @@ async fn each_session_works_in_its_own_project_folder() {
     assert!(a.contains(&"result:l1:false:in-a.txt".to_string()), "{a:?}");
     assert!(b.contains(&"result:l2:false:in-b.txt".to_string()), "{b:?}");
 }
+
+#[tokio::test]
+async fn is_running_follows_the_turn() {
+    let (agent, _, mut rx) = setup(FakeModel::replying(vec![vec![text("a"), slow("b")]]));
+    assert!(!agent.is_running("s1"));
+    agent.send_message("s1", "go").unwrap();
+    assert!(agent.is_running("s1"));
+    turn_events(&mut rx, "s1").await;
+    assert!(!agent.is_running("s1"));
+    assert!(!agent.is_running("unknown"));
+}

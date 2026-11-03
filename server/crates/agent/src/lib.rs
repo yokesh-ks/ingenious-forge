@@ -93,6 +93,11 @@ impl Agent {
         sessions.get(session_id).is_some_and(|s| s.tools.is_some())
     }
 
+    pub fn is_running(&self, session_id: &str) -> bool {
+        let sessions = self.sessions.lock().unwrap();
+        sessions.get(session_id).is_some_and(|s| s.running)
+    }
+
     /// Starts a turn for `text` in `session_id` and returns at once; the
     /// reply arrives as session events. While a turn runs, the message
     /// steers it instead: the agent reads it at its next step.

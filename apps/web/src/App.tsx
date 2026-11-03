@@ -5,8 +5,12 @@ import ProjectPage from "./pages/ProjectPage";
 
 function Page({ path }: { path: string }) {
   if (matchPath("/", path)) return <HomePage />;
+  const session = matchPath("/projects/:id/sessions/:sessionId", path);
+  if (session) {
+    return <ProjectPage key={session.id} projectId={session.id} sessionId={session.sessionId} />;
+  }
   const project = matchPath("/projects/:id", path);
-  if (project) return <ProjectPage key={project.id} projectId={project.id} />;
+  if (project) return <ProjectPage key={project.id} projectId={project.id} sessionId={null} />;
   return (
     <main className="px-4 py-6 text-sm text-muted-foreground">
       Page not found. <Link to="/">Go to your projects.</Link>

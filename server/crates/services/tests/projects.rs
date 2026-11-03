@@ -97,3 +97,42 @@ async fn a_new_session_belongs_to_its_project_folder() {
     );
     assert_eq!(projects::session_folder(&pool, "nope").await.unwrap(), None);
 }
+
+#[tokio::test]
+async fn the_first_message_names_the_session_and_every_message_bumps_activity() {
+    let pool = pool().await;
+    let project = projects::open_project(&pool, repo("named").to_str().unwrap())
+        .await
+        .unwrap();
+    let (session, _) = projects::create_session(&pool, &project.id).await.unwrap();
+
+    projects::record_message(&pool, &session.id, "  Fix the login bug\nwith details  ")
+        .await
+        .unwrap();
+    projects::record_message(&pool, &session.id, "and add a test")
+        .await
+        .unwrap();
+
+    let listed = projects::list_sessions(&pool, &project.id).await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].title, "Fix the login bug");
+    assert!(listed[0].updated_at >= session.updated_at);
+}
+
+#[test]
+fn long_titles_are_shortened() {
+    let title = projects::title_from_message(&"word ".repeat(30));
+    assert!(title.chars().count() <= 60, "{title}");
+    assert!(title.starts_with("word word"));
+    assert!(title.ends_with('…'));
+    assert_eq!(projects::title_from_message("  short  "), "short");
+}
+
+#[tokio::test]
+async fn listing_sessions_of_an_unknown_project_is_not_found() {
+    let pool = pool().await;
+    assert!(matches!(
+        projects::list_sessions(&pool, "nope").await,
+        Err(ProjectError::NotFound)
+    ));
+}

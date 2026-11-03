@@ -69,7 +69,7 @@ async fn ensure_open(state: &AppState, session_id: &str) {
     }
 }
 
-async fn handle_client_message(state: &AppState, text: &str) {
+pub(crate) async fn handle_client_message(state: &AppState, text: &str) {
     let message = match serde_json::from_str::<ClientMessage>(text) {
         Ok(message) => message,
         Err(err) => {
@@ -80,6 +80,13 @@ async fn handle_client_message(state: &AppState, text: &str) {
     match message {
         ClientMessage::SendMessage { session_id, text } => {
             ensure_open(state, &session_id).await;
+            // Record first so the title is in place when the sidebar
+            // refreshes on `turn_started`.
+            if let Err(err) =
+                services::projects::record_message(&state.db, &session_id, &text).await
+            {
+                tracing::warn!(%err, %session_id, "cannot record session activity");
+            }
             if let Err(err) = state.agent.send_message(&session_id, &text) {
                 state.events.publish(SessionEvent::Error {
                     session_id,

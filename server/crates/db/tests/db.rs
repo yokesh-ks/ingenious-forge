@@ -73,3 +73,44 @@ async fn a_session_needs_an_existing_project() {
     let pool = pool().await;
     assert!(db::create_session(&pool, "missing", "t", 1).await.is_err());
 }
+
+#[tokio::test]
+async fn sessions_list_newest_activity_first_within_a_project() {
+    let pool = pool().await;
+    let p = db::upsert_project(&pool, "/a", "a", 1).await.unwrap();
+    let other = db::upsert_project(&pool, "/b", "b", 1).await.unwrap();
+    let old = db::create_session(&pool, &p.id, "old", 1).await.unwrap();
+    let new = db::create_session(&pool, &p.id, "new", 2).await.unwrap();
+    db::create_session(&pool, &other.id, "elsewhere", 3)
+        .await
+        .unwrap();
+
+    let titles = |rows: Vec<SessionRow>| rows.into_iter().map(|s| s.title).collect::<Vec<_>>();
+    assert_eq!(
+        titles(db::list_sessions(&pool, &p.id).await.unwrap()),
+        ["new", "old"]
+    );
+
+    db::touch_session(&pool, &old.id, None, 9).await.unwrap();
+    assert_eq!(
+        titles(db::list_sessions(&pool, &p.id).await.unwrap()),
+        ["old", "new"]
+    );
+    let _ = new;
+}
+
+#[tokio::test]
+async fn touch_session_can_set_the_title() {
+    let pool = pool().await;
+    let p = db::upsert_project(&pool, "/a", "a", 1).await.unwrap();
+    let s = db::create_session(&pool, &p.id, "New session", 1)
+        .await
+        .unwrap();
+
+    db::touch_session(&pool, &s.id, Some("Fix the bug"), 5)
+        .await
+        .unwrap();
+
+    let row = db::get_session(&pool, &s.id).await.unwrap().unwrap();
+    assert_eq!((row.title.as_str(), row.updated_at), ("Fix the bug", 5));
+}

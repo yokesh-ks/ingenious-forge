@@ -20,6 +20,12 @@ describe("api client", () => {
     expect(JSON.parse(String(init?.body))).toEqual({ path: "/code/forge" });
   });
 
+  it("lists a project's sessions", async () => {
+    const fetch = fakeFetch({ "GET /api/projects/p1/sessions": [] });
+    await expect(api.listSessions("p1")).resolves.toEqual([]);
+    expect(String(fetch.mock.calls[0][0])).toBe("/api/projects/p1/sessions");
+  });
+
   it("encodes the folder picker path as a query parameter", async () => {
     const fetch = fakeFetch({
       "GET /api/fs/dirs": { path: "/a b", parent: "/", is_git_repo: false, entries: [] },
