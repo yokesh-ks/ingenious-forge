@@ -124,6 +124,55 @@ describe("ProjectPage", () => {
     expect(window.location.pathname).toBe("/projects/p1");
   });
 
+  it("opening an old session shows its messages, tool calls and diffs in order", async () => {
+    fakeFetch({
+      "GET /api/projects/p1": project,
+      "GET /api/projects/p1/sessions": [session("s1", "Older")],
+      "GET /api/sessions/s1/events": [
+        { seq: 1, type: "user_message", session_id: "s1", text: "fix the typo" },
+        { seq: 2, type: "turn_started", session_id: "s1" },
+        { seq: 3, type: "output", session_id: "s1", chunk: "Reading it." },
+        {
+          seq: 4,
+          type: "tool_call",
+          session_id: "s1",
+          call_id: "t1",
+          name: "edit_file",
+          args: { path: "a.md" },
+        },
+        {
+          seq: 5,
+          type: "tool_result",
+          session_id: "s1",
+          call_id: "t1",
+          output: "Edited a.md",
+          is_error: false,
+        },
+        {
+          seq: 6,
+          type: "file_changed",
+          session_id: "s1",
+          path: "a.md",
+          diff: "@@ -1 +1 @@\n-teh\n+the\n",
+          additions: 1,
+          deletions: 1,
+        },
+        { seq: 7, type: "output", session_id: "s1", chunk: "Fixed." },
+        { seq: 8, type: "done", session_id: "s1" },
+      ],
+    });
+    render(<ProjectPage projectId="p1" sessionId="s1" />);
+    // The page opens one socket for the session list and one for the session.
+    for (const socket of [...FakeSocket.instances]) await openSocket(socket);
+
+    const texts = screen.getAllByTestId("message-text").map((el) => el.textContent);
+    expect(texts).toEqual(["fix the typo", "Reading it.", "Fixed."]);
+    expect(screen.getByRole("article", { name: /edit tool call/i })).toHaveTextContent(
+      "Edited a.md",
+    );
+    expect(screen.getByRole("button", { name: /a\.md/ })).toHaveTextContent("+1−1");
+  });
+
   it("shows an error for an unknown project", async () => {
     fakeFetch({
       "GET /api/projects/zz": () => ({ status: 404, body: { error: "project not found" } }),
