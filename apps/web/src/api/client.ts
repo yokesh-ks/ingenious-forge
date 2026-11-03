@@ -1,4 +1,11 @@
-import type { ApiError, DirListing, OpenProjectRequest, Project, Session } from "./types";
+import type {
+  ApiError,
+  DirListing,
+  OpenProjectRequest,
+  Project,
+  Session,
+  SessionEnvelope,
+} from "./types";
 
 /** A failed API call, carrying the server's message for the user. */
 export class ApiRequestError extends Error {
@@ -45,6 +52,11 @@ export const api = {
     request<Session[]>(`/api/projects/${encodeURIComponent(projectId)}/sessions`),
   createSession: (projectId: string) =>
     post<Session>(`/api/projects/${encodeURIComponent(projectId)}/sessions`, {}),
+  /** A session's logged events with a sequence number above `after`. */
+  sessionEvents: (sessionId: string, after = 0) =>
+    request<SessionEnvelope[]>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/events?${new URLSearchParams({ after: String(after) })}`,
+    ),
   listDirs: (path?: string) =>
     request<DirListing>(
       path === undefined ? "/api/fs/dirs" : `/api/fs/dirs?${new URLSearchParams({ path })}`,

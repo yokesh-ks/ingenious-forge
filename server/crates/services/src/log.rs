@@ -1,0 +1,182 @@
+//! Session logs on disk: one append-only JSON Lines file per session
+//! (ADR 0005, PRD §6.1 Sessions and resume).
+
+use std::{
+    collections::{BTreeMap, HashMap},
+    fs::{self, OpenOptions},
+    io::{self, Read, Seek, SeekFrom, Write},
+    path::PathBuf,
+    sync::Mutex,
+};
+
+use api_types::{SessionEnvelope, SessionEvent};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LogRecord {
+    /// An event shown in the session, with its sequence number.
+    Event { seq: u64, event: SessionEvent },
+    /// A message of the model conversation.
+    Message { message: Value },
+    /// A file's content before the agent's first edit (`None`: it did not
+    /// exist).
+    Original {
+        path: String,
+        content: Option<String>,
+    },
+    /// The baselines still tracked after a revert, replacing earlier ones.
+    Originals {
+        originals: BTreeMap<String, Option<String>>,
+    },
+}
+
+pub struct SessionLog {
+    dir: PathBuf,
+    /// The last sequence number of each session seen since start-up.
+    seqs: Mutex<HashMap<String, u64>>,
+}
+
+/// Session ids become file names, so only plain ids are logged.
+fn is_safe_id(session_id: &str) -> bool {
+    !session_id.is_empty()
+        && session_id.len() <= 128
+        && session_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Reads only the last byte, so appending stays cheap as a log grows.
+fn ends_without_newline(path: &std::path::Path) -> io::Result<bool> {
+    let mut file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    if file.metadata()?.len() == 0 {
+        return Ok(false);
+    }
+    file.seek(SeekFrom::End(-1))?;
+    let mut last = [0u8; 1];
+    file.read_exact(&mut last)?;
+    Ok(last[0] != b'\n')
+}
+
+fn unsafe_id(session_id: &str) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!("unsafe session id {session_id:?}"),
+    )
+}
+
+impl SessionLog {
+    pub fn open(dir: impl Into<PathBuf>) -> io::Result<Self> {
+        let dir = dir.into();
+        fs::create_dir_all(&dir)?;
+        Ok(Self {
+            dir,
+            seqs: Mutex::default(),
+        })
+    }
+
+    fn path(&self, session_id: &str) -> PathBuf {
+        self.dir.join(format!("{session_id}.jsonl"))
+    }
+
+    /// Appends `event` and returns its sequence number, or `None` when the
+    /// session id cannot name a log file.
+    pub fn append_event(&self, event: &SessionEvent) -> io::Result<Option<u64>> {
+        let session_id = event.session_id();
+        if !is_safe_id(session_id) {
+            return Ok(None);
+        }
+        // Held across the write so sequence numbers reach the file in order.
+        let mut seqs = self.seqs.lock().unwrap();
+        let last = match seqs.get(session_id) {
+            Some(last) => *last,
+            None => self.last_seq(session_id)?,
+        };
+        let seq = last + 1;
+        self.write(
+            session_id,
+            &LogRecord::Event {
+                seq,
+                event: event.clone(),
+            },
+        )?;
+        seqs.insert(session_id.to_string(), seq);
+        Ok(Some(seq))
+    }
+
+    pub fn append(&self, session_id: &str, record: &LogRecord) -> io::Result<()> {
+        if !is_safe_id(session_id) {
+            return Err(unsafe_id(session_id));
+        }
+        let _order = self.seqs.lock().unwrap();
+        self.write(session_id, record)
+    }
+
+    fn write(&self, session_id: &str, record: &LogRecord) -> io::Result<()> {
+        let mut line = serde_json::to_string(record)?;
+        line.push('\n');
+        let path = self.path(session_id);
+        // A line torn by a crash would swallow the next record, so start
+        // on a fresh line when the file does not end with one.
+        let torn = ends_without_newline(&path)?;
+        if torn {
+            line.insert(0, '\n');
+        }
+        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+        file.write_all(line.as_bytes())
+    }
+
+    /// Every readable record of a session, in the order written.
+    pub fn read(&self, session_id: &str) -> io::Result<Vec<LogRecord>> {
+        if !is_safe_id(session_id) {
+            return Ok(Vec::new());
+        }
+        let text = match fs::read_to_string(self.path(session_id)) {
+            Ok(text) => text,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(e),
+        };
+        Ok(text
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .filter_map(|line| match serde_json::from_str(line) {
+                Ok(record) => Some(record),
+                Err(err) => {
+                    tracing::warn!(%session_id, %err, "skipping unreadable log line");
+                    None
+                }
+            })
+            .collect())
+    }
+
+    /// The logged events of a session with a sequence number above `after`.
+    pub fn events_after(&self, session_id: &str, after: u64) -> io::Result<Vec<SessionEnvelope>> {
+        Ok(self
+            .read(session_id)?
+            .into_iter()
+            .filter_map(|record| match record {
+                LogRecord::Event { seq, event } if seq > after => {
+                    Some(SessionEnvelope { seq, event })
+                }
+                _ => None,
+            })
+            .collect())
+    }
+
+    fn last_seq(&self, session_id: &str) -> io::Result<u64> {
+        Ok(self
+            .read(session_id)?
+            .iter()
+            .filter_map(|record| match record {
+                LogRecord::Event { seq, .. } => Some(*seq),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0))
+    }
+}

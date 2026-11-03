@@ -1,9 +1,9 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeFetch } from "@/test/fake-fetch";
-import { FakeSocket } from "@/test/fake-socket";
+import { FakeSocket, openSocket } from "@/test/fake-socket";
 import ProjectPage from "./ProjectPage";
 
 beforeEach(() => {
@@ -88,7 +88,7 @@ describe("ProjectPage", () => {
     expect(window.location.pathname).toBe("/projects/p1/sessions/s2");
     rerender(<ProjectPage projectId="p1" sessionId="s2" />);
     const socket = FakeSocket.instances[FakeSocket.instances.length - 1];
-    act(() => socket.open());
+    await openSocket(socket);
     await userEvent.type(screen.getByPlaceholderText(/ask forge/i), "hi{Enter}");
     expect(JSON.parse(socket.sent[0]).session_id).toBe("s2");
   });

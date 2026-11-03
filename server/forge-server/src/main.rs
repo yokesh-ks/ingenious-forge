@@ -59,7 +59,13 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
-    let events = services::EventService::new();
+    // Session logs live beside the database (ADR 0005).
+    let log_dir = std::path::Path::new(&args.db_path)
+        .parent()
+        .unwrap_or(std::path::Path::new("."))
+        .join("sessions");
+    let log = services::log::SessionLog::open(&log_dir)?;
+    let events = services::EventService::with_log(Arc::new(log));
     // Provider keys move to Settings in a later story (PRD §6.2 Settings).
     let model = AnthropicClient::new(std::env::var("ANTHROPIC_API_KEY").ok());
     let state = Arc::new(AppState {

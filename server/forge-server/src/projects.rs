@@ -3,7 +3,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use agent::tools::ToolBox;
-use api_types::{ApiError, DirListing, OpenProjectRequest, Project, Session};
+use api_types::{ApiError, DirListing, OpenProjectRequest, Project, Session, SessionEnvelope};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -27,6 +27,7 @@ pub fn router() -> Router<Arc<AppState>> {
             "/projects/{id}/sessions",
             get(list_sessions).post(create_session),
         )
+        .route("/sessions/{id}/events", get(session_events))
         .route("/fs/dirs", get(list_dirs))
 }
 
@@ -94,6 +95,41 @@ async fn list_sessions(
 }
 
 #[derive(Deserialize)]
+struct EventsQuery {
+    after: Option<u64>,
+}
+
+/// The logged events of a session after `?after=` (default: all), so a
+/// browser can catch up after connecting or reconnecting.
+async fn session_events(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Query(query): Query<EventsQuery>,
+) -> ApiResult<Vec<SessionEnvelope>> {
+    let known = db::get_session(&state.db, &id)
+        .await
+        .map_err(ProjectError::from)?
+        .is_some();
+    if !known {
+        return Err(ApiFailure(
+            StatusCode::NOT_FOUND,
+            "session not found".into(),
+        ));
+    }
+    // Opening restores the session, closing a turn the server cut off.
+    crate::routes::ensure_open(&state, &id).await;
+    let Some(log) = state.events.log().cloned() else {
+        return Ok(Json(Vec::new()));
+    };
+    let after = query.after.unwrap_or(0);
+    let events = tokio::task::spawn_blocking(move || log.events_after(&id, after))
+        .await
+        .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(events))
+}
+
+#[derive(Deserialize)]
 struct DirQuery {
     path: Option<String>,
 }
@@ -124,9 +160,10 @@ mod tests {
         model::{ModelClient, ModelError, ModelEvent, ModelRequest},
         Agent,
     };
+    use api_types::SessionEvent;
     use reqwest::StatusCode;
     use serde_json::{json, Value};
-    use services::EventService;
+    use services::{log::SessionLog, EventService};
     use tokio::sync::mpsc;
 
     use super::*;
@@ -169,7 +206,8 @@ mod tests {
     }
 
     async fn start_with(model: Arc<dyn ModelClient>) -> (String, Arc<AppState>) {
-        let events = EventService::new();
+        let log = SessionLog::open(folders().join("logs")).unwrap();
+        let events = EventService::with_log(Arc::new(log));
         let state = Arc::new(AppState {
             db: db::connect(":memory:").await.unwrap(),
             agent: Agent::new(model, events.clone()),
@@ -358,5 +396,40 @@ mod tests {
         let (_, listed) = get_json(&format!("{api}/projects/{project_id}/sessions")).await;
         assert_eq!(listed[0]["title"], "Add dark mode");
         assert_eq!(listed[0]["running"], true);
+    }
+
+    #[tokio::test]
+    async fn a_session_backlog_is_served_in_order_after_a_sequence_number() {
+        let (api, state) = start().await;
+        let (_, sessions) = project_with_sessions(&api, 1).await;
+        let id = sessions[0]["id"].as_str().unwrap();
+        for chunk in ["a", "b", "c"] {
+            state.events.publish(SessionEvent::Output {
+                session_id: id.into(),
+                chunk: chunk.into(),
+            });
+        }
+
+        let (status, all) = get_json(&format!("{api}/sessions/{id}/events")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(all.as_array().unwrap().len(), 3);
+        assert_eq!(
+            all[0],
+            json!({ "seq": 1, "type": "output", "session_id": id, "chunk": "a" })
+        );
+
+        let (_, newer) = get_json(&format!("{api}/sessions/{id}/events?after=2")).await;
+        assert_eq!(
+            newer,
+            json!([{ "seq": 3, "type": "output", "session_id": id, "chunk": "c" }])
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unknown_session_has_no_backlog() {
+        let (api, _) = start().await;
+        let (status, body) = get_json(&format!("{api}/sessions/nope/events")).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body, json!({ "error": "session not found" }));
     }
 }

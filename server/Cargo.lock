@@ -1973,6 +1973,8 @@ version = "0.1.0"
 dependencies = [
  "api-types",
  "db",
+ "serde",
+ "serde_json",
  "sqlx",
  "thiserror 1.0.69",
  "tokio",
