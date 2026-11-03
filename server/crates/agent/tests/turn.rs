@@ -1073,6 +1073,27 @@ mod restart {
         let (_agent, _, mut rx) = start(FakeModel::default(), &dir, &root);
         assert!(rx.try_recv().is_err());
     }
+
+    #[tokio::test]
+    async fn a_message_cut_off_before_its_turn_started_is_closed_with_an_error() {
+        let (dir, root) = (log_dir(), project(&[]));
+        let log = SessionLog::open(&dir).unwrap();
+        log.append_event(&SessionEvent::UserMessage {
+            session_id: "s1".into(),
+            text: "hi".into(),
+        })
+        .unwrap();
+        drop(log);
+
+        let (_agent, _, mut rx) = start(FakeModel::default(), &dir, &root);
+
+        let closing = rx.try_recv().unwrap();
+        assert_eq!(closing.seq, 2);
+        assert!(matches!(
+            closing.event,
+            SessionEvent::Error { ref message, .. } if message.contains("server stopped")
+        ));
+    }
 }
 
 #[tokio::test]
