@@ -1,5 +1,5 @@
 import { ArrowUpIcon, SquareIcon } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
   InputGroup,
   InputGroupAddon,
@@ -14,10 +14,22 @@ interface ComposerProps {
   busy?: boolean;
   /** Stops the running turn. */
   onStop?: () => void;
+  /** Focus the message box when the composer appears. */
+  focusOnMount?: boolean;
 }
 
-export default function Composer({ onSend, busy = false, onStop }: ComposerProps) {
+export default function Composer({
+  onSend,
+  busy = false,
+  onStop,
+  focusOnMount = false,
+}: ComposerProps) {
   const [value, setValue] = useState("");
+  const input = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (focusOnMount) input.current?.focus();
+  }, [focusOnMount]);
   const canSend = value.trim() !== "";
 
   function handleSubmit(event?: FormEvent) {
@@ -30,6 +42,7 @@ export default function Composer({ onSend, busy = false, onStop }: ComposerProps
     <form className="mx-auto w-full max-w-3xl" aria-label="Composer" onSubmit={handleSubmit}>
       <InputGroup>
         <InputGroupTextarea
+          ref={input}
           placeholder="Ask Forge to do something…"
           className="p-3.5"
           value={value}

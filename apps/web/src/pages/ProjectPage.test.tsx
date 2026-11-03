@@ -93,6 +93,37 @@ describe("ProjectPage", () => {
     expect(JSON.parse(socket.sent[0]).session_id).toBe("s2");
   });
 
+  it("New session creates a session, opens it and lists it at once", async () => {
+    let list = [session("s1", "Older")];
+    fakeFetch({
+      "GET /api/projects/p1": project,
+      "GET /api/projects/p1/sessions": () => ({ body: list }),
+      "POST /api/projects/p1/sessions": () => {
+        list = [session("s3", "New session"), ...list];
+        return { body: list[0] };
+      },
+    });
+    const { rerender } = render(<ProjectPage projectId="p1" sessionId="s1" />);
+    await userEvent.click(await screen.findByRole("button", { name: /new session/i }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/projects/p1/sessions/s3"));
+    expect(await screen.findByRole("link", { name: /new session/i })).toBeInTheDocument();
+    rerender(<ProjectPage projectId="p1" sessionId="s3" />);
+    expect(screen.getByPlaceholderText(/ask forge/i)).toHaveFocus();
+  });
+
+  it("shows why a new session could not be created", async () => {
+    fakeFetch({
+      "GET /api/projects/p1": project,
+      "GET /api/projects/p1/sessions": [session("s1", "Older")],
+      "POST /api/projects/p1/sessions": () => ({ status: 500, body: { error: "disk full" } }),
+    });
+    render(<ProjectPage projectId="p1" sessionId="s1" />);
+    await userEvent.click(await screen.findByRole("button", { name: /new session/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
+    expect(window.location.pathname).toBe("/projects/p1");
+  });
+
   it("shows an error for an unknown project", async () => {
     fakeFetch({
       "GET /api/projects/zz": () => ({ status: 404, body: { error: "project not found" } }),

@@ -1,4 +1,6 @@
+import { PlusIcon } from "lucide-react";
 import type { Session } from "@/api/types";
+import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/router";
 import { timeAgo } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -7,12 +9,32 @@ interface SessionSidebarProps {
   projectId: string;
   sessions: Session[] | null;
   activeId: string | null;
+  onNewSession?: () => void;
+  /** True while a new session is being created. */
+  creating?: boolean;
 }
 
 /** The project's sessions; choosing one opens it without a page load. */
-export default function SessionSidebar({ projectId, sessions, activeId }: SessionSidebarProps) {
+export default function SessionSidebar({
+  projectId,
+  sessions,
+  activeId,
+  onNewSession,
+  creating = false,
+}: SessionSidebarProps) {
   return (
     <nav aria-label="Sessions" className="flex flex-col gap-1">
+      {onNewSession && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="mb-2"
+          disabled={creating}
+          onClick={onNewSession}
+        >
+          <PlusIcon /> New session
+        </Button>
+      )}
       {sessions === null && <p className="text-xs text-muted-foreground">Loading…</p>}
       {sessions?.map((session) => (
         <Link
