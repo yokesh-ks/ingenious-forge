@@ -84,28 +84,33 @@ impl SessionLog {
         self.dir.join(format!("{session_id}.jsonl"))
     }
 
-    /// Appends `event` and returns its sequence number, or `None` when the
-    /// session id cannot name a log file.
+    /// Numbers `event`, appends it and returns its sequence number, or
+    /// `None` when the session id cannot name a log file. A failed write
+    /// still uses up its number, so no later event repeats it; the error
+    /// is only reported, and the file has a gap there.
     pub fn append_event(&self, event: &SessionEvent) -> io::Result<Option<u64>> {
         let session_id = event.session_id();
         if !is_safe_id(session_id) {
             return Ok(None);
         }
-        // Held across the write so sequence numbers reach the file in order.
+        // The lock orders numbering and writing together, so concurrent
+        // events reach the file in sequence order. The map only caches each
+        // session's last number; after a restart it is read back from the
+        // file.
         let mut seqs = self.seqs.lock().unwrap();
         let last = match seqs.get(session_id) {
             Some(last) => *last,
             None => self.last_seq(session_id)?,
         };
         let seq = last + 1;
-        self.write(
-            session_id,
-            &LogRecord::Event {
-                seq,
-                event: event.clone(),
-            },
-        )?;
         seqs.insert(session_id.to_string(), seq);
+        let record = LogRecord::Event {
+            seq,
+            event: event.clone(),
+        };
+        if let Err(err) = self.write(session_id, &record) {
+            tracing::error!(%err, %session_id, seq, "cannot write session event");
+        }
         Ok(Some(seq))
     }
 

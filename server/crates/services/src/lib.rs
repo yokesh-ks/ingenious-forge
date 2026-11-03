@@ -18,7 +18,8 @@ use log::SessionLog;
 pub struct EventService {
     tx: broadcast::Sender<SessionEnvelope>,
     log: Option<Arc<SessionLog>>,
-    /// Sequence numbers for events that are not logged.
+    /// The last sequence number published for each session, logged or
+    /// not; it numbers the events the log cannot.
     seqs: Arc<Mutex<HashMap<String, u64>>>,
 }
 
@@ -61,12 +62,14 @@ impl EventService {
                     None
                 }
             });
-        let seq = logged.unwrap_or_else(|| {
+        // Tracking logged numbers too keeps a fallback number from going
+        // back below what browsers have already seen.
+        let seq = {
             let mut seqs = self.seqs.lock().unwrap();
-            let seq = seqs.entry(event.session_id().to_string()).or_default();
-            *seq += 1;
-            *seq
-        });
+            let last = seqs.entry(event.session_id().to_string()).or_default();
+            *last = logged.unwrap_or(*last + 1);
+            *last
+        };
         if let Err(err) = self.tx.send(SessionEnvelope { seq, event }) {
             tracing::debug!(?err, "no subscribers for session event");
         }

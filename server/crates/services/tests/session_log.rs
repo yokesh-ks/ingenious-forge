@@ -127,6 +127,31 @@ fn unsafe_session_ids_are_never_written_to_disk() {
     assert!(!path.parent().unwrap().join("escape.jsonl").exists());
 }
 
+#[test]
+fn a_failed_write_uses_up_its_sequence_number() {
+    let path = dir();
+    let log = SessionLog::open(&path).unwrap();
+    log.append_event(&output("a", "1")).unwrap();
+    let file = path.join("a.jsonl");
+    let saved = std::fs::read(&file).unwrap();
+
+    // A directory in the file's place makes the next write fail.
+    std::fs::remove_file(&file).unwrap();
+    std::fs::create_dir(&file).unwrap();
+    assert_eq!(log.append_event(&output("a", "lost")).unwrap(), Some(2));
+
+    std::fs::remove_dir(&file).unwrap();
+    std::fs::write(&file, saved).unwrap();
+    assert_eq!(log.append_event(&output("a", "3")).unwrap(), Some(3));
+    let seqs: Vec<_> = log
+        .events_after("a", 0)
+        .unwrap()
+        .iter()
+        .map(|e| e.seq)
+        .collect();
+    assert_eq!(seqs, [1, 3]);
+}
+
 #[tokio::test]
 async fn published_events_carry_their_sequence_number_and_are_logged() {
     let log = Arc::new(SessionLog::open(dir()).unwrap());

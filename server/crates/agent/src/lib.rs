@@ -124,7 +124,11 @@ impl Agent {
                 }
                 LogRecord::Originals { originals } => session.originals = originals,
                 LogRecord::Event { event, .. } => match event {
-                    SessionEvent::TurnStarted { .. } => in_turn = true,
+                    // A message is logged before its turn starts, so a
+                    // restart between the two still leaves a turn open.
+                    SessionEvent::UserMessage { .. } | SessionEvent::TurnStarted { .. } => {
+                        in_turn = true
+                    }
                     SessionEvent::Done { .. }
                     | SessionEvent::Error { .. }
                     | SessionEvent::Interrupted { .. } => in_turn = false,
