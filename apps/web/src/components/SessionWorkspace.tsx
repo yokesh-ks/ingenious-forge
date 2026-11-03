@@ -13,7 +13,7 @@ export default function SessionWorkspace({ sessionId }: { sessionId: string }) {
         <div className="flex min-h-0 flex-1">
           <SessionView messages={state.messages} running={state.running} error={state.error} />
         </div>
-        <Composer onSend={send} busy={state.running} onStop={stop} />
+        <Composer onSend={send} busy={state.running} onStop={stop} focusOnMount />
       </div>
       <aside className="hidden w-96 shrink-0 overflow-y-auto border-l pl-4 lg:flex lg:flex-col">
         <ChangedFilesPanel

@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Session } from "@/api/types";
 import SessionSidebar from "./SessionSidebar";
 
@@ -59,6 +59,33 @@ describe("SessionSidebar", () => {
     render(<SessionSidebar projectId="p1" sessions={sessions} activeId="s2" />);
     await userEvent.click(screen.getByRole("link", { name: /fix login/i }));
     expect(window.location.pathname).toBe("/projects/p1/sessions/s1");
+  });
+
+  it("has a New session button", async () => {
+    const onNewSession = vi.fn();
+    render(
+      <SessionSidebar
+        projectId="p1"
+        sessions={sessions}
+        activeId="s2"
+        onNewSession={onNewSession}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /new session/i }));
+    expect(onNewSession).toHaveBeenCalledOnce();
+  });
+
+  it("disables New session while one is being created", () => {
+    render(
+      <SessionSidebar
+        projectId="p1"
+        sessions={sessions}
+        activeId="s2"
+        onNewSession={vi.fn()}
+        creating
+      />,
+    );
+    expect(screen.getByRole("button", { name: /new session/i })).toBeDisabled();
   });
 
   it("shows a loading state", () => {

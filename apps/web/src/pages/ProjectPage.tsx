@@ -16,7 +16,8 @@ interface ProjectPageProps {
 export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) {
   const [project, setProject] = useState<Project | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { sessions, error: sessionsError } = useProjectSessions(projectId);
+  const { sessions, error: sessionsError, reload } = useProjectSessions(projectId);
+  const [creatingNew, setCreatingNew] = useState(false);
   // Guards against creating a second first session when the effect below
   // runs again before the first request returns.
   const creating = useRef(false);
@@ -52,6 +53,20 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
     );
   }, [projectId, sessionId, sessions]);
 
+  async function newSession() {
+    setCreatingNew(true);
+    setError(null);
+    try {
+      const created = await api.createSession(projectId);
+      reload();
+      navigate(`/projects/${projectId}/sessions/${created.id}`);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setCreatingNew(false);
+    }
+  }
+
   const shownError = error ?? sessionsError;
 
   return (
@@ -77,7 +92,13 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
       )}
       <div className="flex min-h-0 flex-1 gap-4">
         <aside className="hidden w-56 shrink-0 overflow-y-auto border-r pr-4 md:block">
-          <SessionSidebar projectId={projectId} sessions={sessions} activeId={sessionId} />
+          <SessionSidebar
+            projectId={projectId}
+            sessions={sessions}
+            activeId={sessionId}
+            onNewSession={newSession}
+            creating={creatingNew}
+          />
         </aside>
         {sessionId && <SessionWorkspace key={sessionId} sessionId={sessionId} />}
       </div>
