@@ -63,14 +63,9 @@ const nextId = (state: SessionState) => `m${state.messages.length}`;
 export function sessionReducer(state: SessionState, action: SessionAction): SessionState {
   switch (action.kind) {
     case "send":
-      // During a turn this steers it; the reply continues in a new message.
-      return {
-        ...state,
-        messages: [...state.messages, { id: nextId(state), role: "user", text: action.text }],
-        running: true,
-        error: null,
-        streamingId: null,
-      };
+      // The message appears when the server echoes it as `user_message`,
+      // so the live view and a resumed session show the same thing.
+      return { ...state, running: true, error: null };
     case "local_error":
       return { ...state, running: false, error: action.message, streamingId: null };
     case "event":
@@ -80,6 +75,13 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
 
 function applyEvent(state: SessionState, event: SessionEvent): SessionState {
   switch (event.type) {
+    case "user_message":
+      // During a turn this steers it; the reply continues in a new message.
+      return {
+        ...state,
+        streamingId: null,
+        messages: [...state.messages, { id: nextId(state), role: "user", text: event.text }],
+      };
     case "turn_started":
       return { ...state, running: true, streamingId: null };
     case "output": {

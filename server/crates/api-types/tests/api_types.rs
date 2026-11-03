@@ -266,3 +266,34 @@ fn project_and_listing_types_serialize_as_the_frontend_expects() {
     assert!(ts.contains("export type OpenProjectRequest"));
     assert!(ts.contains("export type ApiError"));
 }
+
+#[test]
+fn an_envelope_puts_seq_beside_the_event_fields() {
+    let envelope = api_types::SessionEnvelope {
+        seq: 7,
+        event: SessionEvent::Done {
+            session_id: "s1".into(),
+        },
+    };
+    let value = serde_json::to_value(&envelope).unwrap();
+    assert_eq!(
+        value,
+        json!({ "seq": 7, "type": "done", "session_id": "s1" })
+    );
+    let back: api_types::SessionEnvelope = serde_json::from_value(value).unwrap();
+    assert_eq!(back.seq, 7);
+    assert!(typescript_bindings().contains("export type SessionEnvelope"));
+}
+
+#[test]
+fn user_message_event_serializes() {
+    let event = SessionEvent::UserMessage {
+        session_id: "s1".into(),
+        text: "hi".into(),
+    };
+    assert_eq!(event.session_id(), "s1");
+    assert_eq!(
+        serde_json::to_value(&event).unwrap(),
+        json!({ "type": "user_message", "session_id": "s1", "text": "hi" })
+    );
+}

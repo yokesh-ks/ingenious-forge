@@ -8,8 +8,13 @@ function apply(state: SessionState, ...events: SessionEvent[]): SessionState {
   return events.reduce((acc, event) => sessionReducer(acc, { kind: "event", event }), state);
 }
 
+/** The user sends `text` and the server echoes it back. */
 function sent(text: string, state = initialSessionState): SessionState {
-  return sessionReducer(state, { kind: "send", text });
+  const sending = sessionReducer(state, { kind: "send", text });
+  return sessionReducer(sending, {
+    kind: "event",
+    event: { type: "user_message", session_id: S, text },
+  });
 }
 
 describe("sessionReducer", () => {
@@ -23,10 +28,26 @@ describe("sessionReducer", () => {
     });
   });
 
-  it("adds the user's message and marks the turn running", () => {
+  it("marks the turn running as soon as a message is sent", () => {
+    const state = sessionReducer(initialSessionState, { kind: "send", text: "hello" });
+    expect(state.running).toBe(true);
+    // The message itself appears when the server echoes it back.
+    expect(state.messages).toEqual([]);
+  });
+
+  it("adds the user's message when the server echoes it", () => {
     const state = sent("hello");
     expect(state.messages).toEqual([{ id: "m0", role: "user", text: "hello" }]);
     expect(state.running).toBe(true);
+  });
+
+  it("shows messages sent from another tab", () => {
+    const state = apply(initialSessionState, {
+      type: "user_message",
+      session_id: S,
+      text: "from tab 2",
+    });
+    expect(state.messages).toEqual([{ id: "m0", role: "user", text: "from tab 2" }]);
   });
 
   it("streams output chunks into one assistant message", () => {

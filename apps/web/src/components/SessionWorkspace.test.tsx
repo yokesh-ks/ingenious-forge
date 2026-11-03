@@ -1,7 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeSocket } from "@/test/fake-socket";
+import { FakeSocket, openSocket } from "@/test/fake-socket";
 import SessionWorkspace from "./SessionWorkspace";
 
 describe("SessionWorkspace", () => {
@@ -11,13 +11,21 @@ describe("SessionWorkspace", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
+  it("says when it is not connected to the server", async () => {
+    render(<SessionWorkspace sessionId="s1" />);
+    expect(screen.getByRole("status")).toHaveTextContent(/connecting/i);
+    await openSocket(FakeSocket.latest());
+    expect(screen.queryByText(/connecting/i)).not.toBeInTheDocument();
+  });
+
   it("sends a message and streams the reply into the session view", async () => {
     render(<SessionWorkspace sessionId="s1" />);
     const socket = FakeSocket.latest();
-    act(() => socket.open());
+    await openSocket(socket);
 
     await userEvent.type(screen.getByPlaceholderText(/ask forge/i), "hello{Enter}");
     const { session_id } = JSON.parse(socket.sent[0]);
+    act(() => socket.emit({ type: "user_message", session_id, text: "hello" }));
     expect(screen.getByText("hello")).toBeInTheDocument();
 
     act(() => {
@@ -64,7 +72,7 @@ describe("SessionWorkspace", () => {
   it("stops a running turn and re-enables the composer", async () => {
     render(<SessionWorkspace sessionId="s1" />);
     const socket = FakeSocket.latest();
-    act(() => socket.open());
+    await openSocket(socket);
 
     await userEvent.type(screen.getByPlaceholderText(/ask forge/i), "long task{Enter}");
     const { session_id } = JSON.parse(socket.sent[0]);
@@ -83,7 +91,7 @@ describe("SessionWorkspace", () => {
   it("reverts all changes from the panel", async () => {
     render(<SessionWorkspace sessionId="s1" />);
     const socket = FakeSocket.latest();
-    act(() => socket.open());
+    await openSocket(socket);
     await userEvent.type(screen.getByPlaceholderText(/ask forge/i), "edit{Enter}");
     const { session_id } = JSON.parse(socket.sent[0]);
     act(() => {

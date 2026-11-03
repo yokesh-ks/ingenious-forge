@@ -12,3 +12,4 @@ new ADR that supersedes the old one. See
 | [0002](0002-shadcn-tailwind-web-ui.md) | Adopt Tailwind CSS and Shadcn UI for the web frontend | Proposed | 2026-11-02 |
 | [0003](0003-server-cargo-workspace.md) | Split the Rust server into a Cargo workspace by PRD module | Proposed | 2026-11-02 |
 | [0004](0004-model-client-and-typed-api.md) | Call model providers over HTTP with reqwest and generate the typed API with ts-rs | Proposed | 2026-11-02 |
+| [0005](0005-session-log-on-disk.md) | Persist each session as an append-only JSON Lines log | Proposed | 2026-11-03 |

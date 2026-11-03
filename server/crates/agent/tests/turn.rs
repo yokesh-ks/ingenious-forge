@@ -9,7 +9,7 @@ use agent::{
     tools::ToolBox,
     Agent, AgentError,
 };
-use api_types::SessionEvent;
+use api_types::{SessionEnvelope, SessionEvent};
 use serde_json::json;
 use services::EventService;
 use tokio::sync::{broadcast, mpsc, Semaphore};
@@ -61,16 +61,17 @@ fn text(s: &str) -> Step {
     (Duration::ZERO, Ok(ModelEvent::TextDelta(s.into())))
 }
 
-async fn next(rx: &mut broadcast::Receiver<SessionEvent>) -> SessionEvent {
+async fn next(rx: &mut broadcast::Receiver<SessionEnvelope>) -> SessionEvent {
     tokio::time::timeout(Duration::from_secs(2), rx.recv())
         .await
         .expect("timed out waiting for a session event")
         .unwrap()
+        .event
 }
 
 /// Collects events for `session_id` until its turn ends (done or error).
 async fn turn_events(
-    rx: &mut broadcast::Receiver<SessionEvent>,
+    rx: &mut broadcast::Receiver<SessionEnvelope>,
     session_id: &str,
 ) -> Vec<SessionEvent> {
     let mut out = Vec::new();
@@ -92,9 +93,11 @@ async fn turn_events(
     }
 }
 
+/// Short labels for events; user messages are covered by their own test.
 fn describe(events: &[SessionEvent]) -> Vec<String> {
     events
         .iter()
+        .filter(|e| !matches!(e, SessionEvent::UserMessage { .. }))
         .map(|e| match e {
             SessionEvent::TurnStarted { .. } => "started".to_string(),
             SessionEvent::Output { chunk, .. } => format!("out:{chunk}"),
@@ -109,19 +112,20 @@ fn describe(events: &[SessionEvent]) -> Vec<String> {
             SessionEvent::Done { .. } => "done".to_string(),
             SessionEvent::Interrupted { .. } => "interrupted".to_string(),
             SessionEvent::FileChanged { path, .. } => format!("changed:{path}"),
+            SessionEvent::UserMessage { .. } => unreachable!(),
             SessionEvent::ChangesReverted { paths, .. } => format!("reverted:{paths:?}"),
         })
         .collect()
 }
 
-fn setup(model: FakeModel) -> (Agent, Arc<FakeModel>, broadcast::Receiver<SessionEvent>) {
+fn setup(model: FakeModel) -> (Agent, Arc<FakeModel>, broadcast::Receiver<SessionEnvelope>) {
     setup_in(model, std::env::temp_dir())
 }
 
 fn setup_in(
     model: FakeModel,
     root: std::path::PathBuf,
-) -> (Agent, Arc<FakeModel>, broadcast::Receiver<SessionEvent>) {
+) -> (Agent, Arc<FakeModel>, broadcast::Receiver<SessionEnvelope>) {
     let model = Arc::new(model);
     let events = EventService::new();
     let rx = events.subscribe();
@@ -237,7 +241,7 @@ async fn a_busy_session_does_not_block_other_sessions() {
 /// Waits for the next event of `session_id` matching `pred`, returning the
 /// events seen on the way.
 async fn until(
-    rx: &mut broadcast::Receiver<SessionEvent>,
+    rx: &mut broadcast::Receiver<SessionEnvelope>,
     session_id: &str,
     pred: impl Fn(&SessionEvent) -> bool,
 ) -> Vec<SessionEvent> {
@@ -698,10 +702,9 @@ async fn each_edit_publishes_the_cumulative_diff_of_the_file() {
         changes[1].3
     );
     // The change event follows the tool result it belongs to.
-    let kinds = describe(&events);
-    let result_at = kinds
+    let result_at = events
         .iter()
-        .position(|k| k.starts_with("result:e1"))
+        .position(|e| matches!(e, SessionEvent::ToolResult { call_id, .. } if call_id == "e1"))
         .unwrap();
     assert!(matches!(
         events[result_at + 1],
@@ -775,7 +778,7 @@ fn reverted(events: &[SessionEvent]) -> Option<Vec<String>> {
     })
 }
 
-async fn next_for(rx: &mut broadcast::Receiver<SessionEvent>, session_id: &str) -> SessionEvent {
+async fn next_for(rx: &mut broadcast::Receiver<SessionEnvelope>, session_id: &str) -> SessionEvent {
     loop {
         let event = next(rx).await;
         if event.session_id() == session_id {
@@ -913,4 +916,193 @@ async fn is_running_follows_the_turn() {
     turn_events(&mut rx, "s1").await;
     assert!(!agent.is_running("s1"));
     assert!(!agent.is_running("unknown"));
+}
+
+mod restart {
+    //! The session log lets a session continue after the server restarts.
+
+    use std::path::PathBuf;
+
+    use services::log::SessionLog;
+
+    use super::*;
+
+    fn log_dir() -> PathBuf {
+        project(&[]).join("logs")
+    }
+
+    /// An agent whose events go to the session log in `dir`, as after a
+    /// fresh server start.
+    fn start(
+        model: FakeModel,
+        dir: &std::path::Path,
+        root: &std::path::Path,
+    ) -> (Agent, Arc<FakeModel>, broadcast::Receiver<SessionEnvelope>) {
+        let model = Arc::new(model);
+        let events = EventService::with_log(Arc::new(SessionLog::open(dir).unwrap()));
+        let rx = events.subscribe();
+        let agent = Agent::new(model.clone(), events);
+        agent.open_session("s1", ToolBox::new(root));
+        (agent, model, rx)
+    }
+
+    #[tokio::test]
+    async fn the_conversation_continues_after_a_restart() {
+        let (dir, root) = (log_dir(), project(&[]));
+        {
+            let (agent, _, mut rx) =
+                start(FakeModel::replying(vec![vec![text("Hello")]]), &dir, &root);
+            agent.send_message("s1", "hi").unwrap();
+            turn_events(&mut rx, "s1").await;
+        }
+
+        let (agent, model, mut rx) =
+            start(FakeModel::replying(vec![vec![text("Again")]]), &dir, &root);
+        agent.send_message("s1", "more").unwrap();
+        turn_events(&mut rx, "s1").await;
+
+        assert_eq!(
+            model.requests.lock().unwrap()[0].messages,
+            vec![
+                ChatMessage::user_text("hi"),
+                ChatMessage::assistant_text("Hello"),
+                ChatMessage::user_text("more"),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_turn_is_not_restored() {
+        let (dir, root) = (log_dir(), project(&[]));
+        {
+            let (agent, _, mut rx) = start(
+                FakeModel::replying(vec![vec![(Duration::ZERO, Err(ModelError::MissingApiKey))]]),
+                &dir,
+                &root,
+            );
+            agent.send_message("s1", "hi").unwrap();
+            turn_events(&mut rx, "s1").await;
+        }
+
+        let (agent, model, mut rx) =
+            start(FakeModel::replying(vec![vec![text("ok")]]), &dir, &root);
+        agent.send_message("s1", "retry").unwrap();
+        turn_events(&mut rx, "s1").await;
+
+        assert_eq!(
+            model.requests.lock().unwrap()[0].messages,
+            vec![ChatMessage::user_text("retry")]
+        );
+    }
+
+    #[tokio::test]
+    async fn revert_all_still_works_after_a_restart() {
+        let (dir, root) = (log_dir(), project(&[("a.txt", "original")]));
+        {
+            let (agent, _, mut rx) = start(
+                FakeModel::replying(vec![
+                    vec![edit("e1", "a.txt", "original", "changed")],
+                    vec![edit("e2", "made.txt", "", "new")],
+                    vec![text("ok")],
+                ]),
+                &dir,
+                &root,
+            );
+            agent.send_message("s1", "edit").unwrap();
+            turn_events(&mut rx, "s1").await;
+        }
+
+        let (agent, _, _rx) = start(FakeModel::default(), &dir, &root);
+        agent.revert_all("s1").await.unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(root.join("a.txt")).unwrap(),
+            "original"
+        );
+        assert!(!root.join("made.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn baselines_left_after_a_revert_are_what_is_restored() {
+        let (dir, root) = (log_dir(), project(&[("a.txt", "v0")]));
+        {
+            let (agent, _, mut rx) = start(
+                FakeModel::replying(vec![
+                    vec![edit("e1", "a.txt", "v0", "v1")],
+                    vec![text("ok")],
+                ]),
+                &dir,
+                &root,
+            );
+            agent.send_message("s1", "edit").unwrap();
+            turn_events(&mut rx, "s1").await;
+            agent.revert_all("s1").await.unwrap();
+        }
+        std::fs::write(root.join("a.txt"), "user's own edit").unwrap();
+
+        let (agent, _, _rx) = start(FakeModel::default(), &dir, &root);
+        agent.revert_all("s1").await.unwrap();
+
+        // Nothing was tracked after the first revert, so the user's edit stays.
+        assert_eq!(
+            std::fs::read_to_string(root.join("a.txt")).unwrap(),
+            "user's own edit"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_turn_cut_off_by_the_restart_is_closed_with_an_error() {
+        let (dir, root) = (log_dir(), project(&[]));
+        let log = SessionLog::open(&dir).unwrap();
+        log.append_event(&SessionEvent::TurnStarted {
+            session_id: "s1".into(),
+        })
+        .unwrap();
+        drop(log);
+
+        let (_agent, _, mut rx) = start(FakeModel::default(), &dir, &root);
+
+        let closing = rx.try_recv().unwrap();
+        assert_eq!(closing.seq, 2);
+        assert!(matches!(
+            closing.event,
+            SessionEvent::Error { ref message, .. } if message.contains("server stopped")
+        ));
+
+        // Opening again does not add a second error.
+        let (_agent, _, mut rx) = start(FakeModel::default(), &dir, &root);
+        assert!(rx.try_recv().is_err());
+    }
+}
+
+#[tokio::test]
+async fn accepted_messages_are_published_including_steers() {
+    let (agent, _, mut rx) = setup(FakeModel::replying(vec![
+        vec![text("a"), slow("b")],
+        vec![text("c")],
+    ]));
+
+    agent.send_message("s1", "  first  ").unwrap();
+    let mut events = until(&mut rx, "s1", is_output).await;
+    agent.send_message("s1", "steer").unwrap();
+    events.extend(turn_events(&mut rx, "s1").await);
+
+    let users: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            SessionEvent::UserMessage { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(users, ["first", "steer"]);
+    assert!(matches!(events[0], SessionEvent::UserMessage { .. }));
+    assert!(matches!(events[1], SessionEvent::TurnStarted { .. }));
+}
+
+#[tokio::test]
+async fn rejected_messages_are_not_published() {
+    let (agent, _, mut rx) = setup(FakeModel::default());
+    assert!(agent.send_message("s1", "  ").is_err());
+    assert!(agent.send_message("ghost", "hi").is_err());
+    assert!(rx.try_recv().is_err());
 }

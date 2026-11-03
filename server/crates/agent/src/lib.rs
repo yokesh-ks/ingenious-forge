@@ -13,7 +13,7 @@ use std::{
 };
 
 use api_types::SessionEvent;
-use services::EventService;
+use services::{log::LogRecord, EventService};
 use tokio::sync::watch;
 
 use model::{ChatMessage, ContentBlock, ModelClient, ModelEvent, ModelRequest};
@@ -85,7 +85,62 @@ impl Agent {
     pub fn open_session(&self, session_id: &str, tools: ToolBox) {
         let mut sessions = self.sessions.lock().unwrap();
         let session = sessions.entry(session_id.to_string()).or_default();
-        session.tools.get_or_insert(tools);
+        if session.tools.is_some() {
+            return;
+        }
+        session.tools = Some(tools);
+        let unfinished = self.restore(session_id, session);
+        drop(sessions);
+        if unfinished {
+            self.events.publish(SessionEvent::Error {
+                session_id: session_id.to_string(),
+                message: "The server stopped during this turn, so it did not finish.".into(),
+            });
+        }
+    }
+
+    /// Loads a session's conversation and file baselines from its log.
+    /// Returns true when the log ends inside a turn.
+    fn restore(&self, session_id: &str, session: &mut SessionState) -> bool {
+        let Some(log) = self.events.log() else {
+            return false;
+        };
+        let records = match log.read(session_id) {
+            Ok(records) => records,
+            Err(err) => {
+                tracing::error!(%err, %session_id, "cannot read session log");
+                return false;
+            }
+        };
+        let mut in_turn = false;
+        for record in records {
+            match record {
+                LogRecord::Message { message } => match serde_json::from_value(message) {
+                    Ok(message) => session.history.push(message),
+                    Err(err) => tracing::warn!(%err, %session_id, "skipping unreadable message"),
+                },
+                LogRecord::Original { path, content } => {
+                    session.originals.entry(path).or_insert(content);
+                }
+                LogRecord::Originals { originals } => session.originals = originals,
+                LogRecord::Event { event, .. } => match event {
+                    SessionEvent::TurnStarted { .. } => in_turn = true,
+                    SessionEvent::Done { .. }
+                    | SessionEvent::Error { .. }
+                    | SessionEvent::Interrupted { .. } => in_turn = false,
+                    _ => {}
+                },
+            }
+        }
+        in_turn
+    }
+
+    fn log(&self, session_id: &str, record: &LogRecord) {
+        if let Some(log) = self.events.log() {
+            if let Err(err) = log.append(session_id, record) {
+                tracing::error!(%err, %session_id, "cannot write session log");
+            }
+        }
     }
 
     pub fn is_open(&self, session_id: &str) -> bool {
@@ -111,10 +166,16 @@ impl Agent {
             .get_mut(session_id)
             .filter(|s| s.tools.is_some())
             .ok_or(AgentError::UnknownSession)?;
+        let user_message = || SessionEvent::UserMessage {
+            session_id: session_id.to_string(),
+            text: text.to_string(),
+        };
         if session.running {
             session.pending.push(text.to_string());
+            self.events.publish(user_message());
             return Ok(());
         }
+        self.events.publish(user_message());
         let mut conversation = session.history.clone();
         let mut content = text_blocks(std::mem::take(&mut session.notes));
         content.push(ContentBlock::Text { text: text.into() });
@@ -169,6 +230,12 @@ impl Agent {
             for (path, (original, _)) in &failed {
                 session.originals.insert(path.clone(), original.clone());
             }
+            self.log(
+                session_id,
+                &LogRecord::Originals {
+                    originals: session.originals.clone(),
+                },
+            );
         }
 
         self.events.publish(SessionEvent::ChangesReverted {
@@ -244,6 +311,12 @@ impl Agent {
         // replay the failed prompt. An interrupted one does: every tool call
         // in it has a result, so the conversation stays valid.
         if result.is_ok() {
+            for message in conversation.iter().skip(session.history.len()) {
+                match serde_json::to_value(message) {
+                    Ok(message) => self.log(&session_id, &LogRecord::Message { message }),
+                    Err(err) => tracing::error!(%err, "cannot serialize message"),
+                }
+            }
             session.history = conversation;
         }
         // A message that arrived after the last step starts the next turn.
@@ -452,7 +525,16 @@ impl Agent {
                 let mut sessions = self.sessions.lock().unwrap();
                 let session = sessions.entry(session_id.to_string()).or_default();
                 if let Some(baseline) = baseline {
-                    session.originals.entry(path.clone()).or_insert(baseline);
+                    if !session.originals.contains_key(&path) {
+                        self.log(
+                            session_id,
+                            &LogRecord::Original {
+                                path: path.clone(),
+                                content: baseline.clone(),
+                            },
+                        );
+                        session.originals.insert(path.clone(), baseline);
+                    }
                 }
                 session.originals.get(&path).cloned()
             };

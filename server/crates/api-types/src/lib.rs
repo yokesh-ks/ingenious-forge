@@ -72,6 +72,11 @@ pub enum ClientMessage {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SessionEvent {
+    /// The user's message, as the agent accepted it (a new turn or a steer).
+    UserMessage {
+        session_id: String,
+        text: String,
+    },
     TurnStarted {
         session_id: String,
     },
@@ -119,10 +124,22 @@ pub enum SessionEvent {
     },
 }
 
+/// A session event as sent to the browser: the event's fields plus its
+/// per-session sequence number, which starts at 1.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct SessionEnvelope {
+    #[ts(type = "number")]
+    pub seq: u64,
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub event: SessionEvent,
+}
+
 impl SessionEvent {
     pub fn session_id(&self) -> &str {
         match self {
-            Self::TurnStarted { session_id }
+            Self::UserMessage { session_id, .. }
+            | Self::TurnStarted { session_id }
             | Self::Output { session_id, .. }
             | Self::ToolCall { session_id, .. }
             | Self::ToolResult { session_id, .. }
@@ -149,6 +166,7 @@ pub fn typescript_bindings() -> String {
         ApiError::decl(&cfg),
         ClientMessage::decl(&cfg),
         SessionEvent::decl(&cfg),
+        SessionEnvelope::decl(&cfg),
     ];
     let mut out = String::from(
         "// Generated from server/crates/api-types. Do not edit by hand;\n\

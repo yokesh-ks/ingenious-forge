@@ -58,7 +58,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
 
 /// Opens a session the agent has not seen since the server started, such as
 /// one created before a restart.
-async fn ensure_open(state: &AppState, session_id: &str) {
+pub(crate) async fn ensure_open(state: &AppState, session_id: &str) {
     if state.agent.is_open(session_id) {
         return;
     }
@@ -210,7 +210,14 @@ mod tests {
                 .unwrap()
                 .unwrap();
             if let WsMessage::Text(text) = msg {
-                return serde_json::from_str(&text).unwrap();
+                let mut value: Value = serde_json::from_str(&text).unwrap();
+                // Sequence numbers and the echoed user message have their
+                // own tests.
+                if value["type"] == "user_message" {
+                    continue;
+                }
+                value.as_object_mut().unwrap().remove("seq");
+                return value;
             }
         }
     }
@@ -355,6 +362,51 @@ mod tests {
             next_event(&mut ws).await,
             json!({ "type": "error", "session_id": "ghost", "message": "this session is not open" })
         );
+    }
+
+    #[tokio::test]
+    async fn the_accepted_message_is_echoed_first() {
+        let (url, _) = start(vec![vec!["a"]], Duration::ZERO).await;
+        let mut ws = connect(&url).await;
+        send(&mut ws, send_message("s1", "  hi  ")).await;
+
+        let msg = tokio::time::timeout(Duration::from_secs(2), ws.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let WsMessage::Text(text) = msg else {
+            panic!("expected text")
+        };
+        let value: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            value,
+            json!({ "seq": 1, "type": "user_message", "session_id": "s1", "text": "hi" })
+        );
+    }
+
+    #[tokio::test]
+    async fn every_frame_carries_the_session_sequence_number() {
+        let (url, _) = start(vec![vec!["a"]], Duration::ZERO).await;
+        let mut ws = connect(&url).await;
+        send(&mut ws, send_message("s1", "hi")).await;
+
+        let mut seqs = Vec::new();
+        loop {
+            let msg = tokio::time::timeout(Duration::from_secs(2), ws.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            let WsMessage::Text(text) = msg else { continue };
+            let value: Value = serde_json::from_str(&text).unwrap();
+            seqs.push(value["seq"].as_u64().unwrap());
+            if value["type"] == "done" {
+                break;
+            }
+        }
+        // user_message, turn_started, output, done
+        assert_eq!(seqs, [1, 2, 3, 4]);
     }
 
     #[tokio::test]

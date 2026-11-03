@@ -1,8 +1,10 @@
+import { act } from "@testing-library/react";
 import type { SessionEvent } from "@/api/types";
 
 /** A WebSocket stand-in that tests drive by hand. */
 export class FakeSocket {
   static instances: FakeSocket[] = [];
+  static seqs = new Map<string, number>();
   static readonly OPEN = 1;
 
   readyState = 0;
@@ -35,8 +37,15 @@ export class FakeSocket {
     this.onclose?.();
   }
 
-  emit(event: SessionEvent) {
-    this.onmessage?.({ data: JSON.stringify(event) });
+  /** Sends an event, numbering it after the last one of its session
+   * unless `seq` is given. */
+  emit(event: SessionEvent, seq?: number) {
+    const next = seq ?? (FakeSocket.seqs.get(event.session_id) ?? 0) + 1;
+    FakeSocket.seqs.set(
+      event.session_id,
+      Math.max(next, FakeSocket.seqs.get(event.session_id) ?? 0),
+    );
+    this.onmessage?.({ data: JSON.stringify({ seq: next, ...event }) });
   }
 
   emitRaw(data: string) {
@@ -51,7 +60,16 @@ export class FakeSocket {
 
   static reset() {
     FakeSocket.instances = [];
+    FakeSocket.seqs = new Map();
   }
 }
 
 export const createFakeSocket = (url: string) => new FakeSocket(url) as unknown as WebSocket;
+
+/** Opens `socket` and waits for the session's backlog request to settle. */
+export async function openSocket(socket: FakeSocket) {
+  await act(async () => {
+    socket.open();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}

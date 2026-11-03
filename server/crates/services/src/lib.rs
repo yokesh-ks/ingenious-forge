@@ -1,12 +1,25 @@
 pub mod folders;
+pub mod log;
 pub mod projects;
 
-use api_types::SessionEvent;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
+use api_types::{SessionEnvelope, SessionEvent};
 use tokio::sync::broadcast;
 
+use log::SessionLog;
+
+/// Delivers session events to every open browser tab, numbering them per
+/// session and, when a log is attached, writing them to disk first.
 #[derive(Clone)]
 pub struct EventService {
-    tx: broadcast::Sender<SessionEvent>,
+    tx: broadcast::Sender<SessionEnvelope>,
+    log: Option<Arc<SessionLog>>,
+    /// Sequence numbers for events that are not logged.
+    seqs: Arc<Mutex<HashMap<String, u64>>>,
 }
 
 impl Default for EventService {
@@ -18,16 +31,49 @@ impl Default for EventService {
 impl EventService {
     pub fn new() -> Self {
         let (tx, _rx) = broadcast::channel(1024);
-        Self { tx }
-    }
-
-    pub fn publish(&self, event: SessionEvent) {
-        if let Err(err) = self.tx.send(event) {
-            tracing::debug!(?err, "no subscribers for session event");
+        Self {
+            tx,
+            log: None,
+            seqs: Arc::default(),
         }
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<SessionEvent> {
+    pub fn with_log(log: Arc<SessionLog>) -> Self {
+        Self {
+            log: Some(log),
+            ..Self::new()
+        }
+    }
+
+    pub fn log(&self) -> Option<&Arc<SessionLog>> {
+        self.log.as_ref()
+    }
+
+    /// Publishes `event` and returns its sequence number.
+    pub fn publish(&self, event: SessionEvent) -> u64 {
+        let logged = self
+            .log
+            .as_ref()
+            .and_then(|log| match log.append_event(&event) {
+                Ok(seq) => seq,
+                Err(err) => {
+                    tracing::error!(%err, "cannot write session log");
+                    None
+                }
+            });
+        let seq = logged.unwrap_or_else(|| {
+            let mut seqs = self.seqs.lock().unwrap();
+            let seq = seqs.entry(event.session_id().to_string()).or_default();
+            *seq += 1;
+            *seq
+        });
+        if let Err(err) = self.tx.send(SessionEnvelope { seq, event }) {
+            tracing::debug!(?err, "no subscribers for session event");
+        }
+        seq
+    }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<SessionEnvelope> {
         self.tx.subscribe()
     }
 }

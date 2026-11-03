@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import type { ClientMessage, SessionEvent } from "@/api/types";
+import { api } from "@/api/client";
+import type { ClientMessage, SessionEnvelope } from "@/api/types";
 import { initialSessionState, sessionReducer } from "./session-reducer";
 
 export function sessionSocketUrl(location: Pick<Location, "protocol" | "host">): string {
@@ -9,53 +10,102 @@ export function sessionSocketUrl(location: Pick<Location, "protocol" | "host">):
 
 interface Options {
   createSocket?: (url: string) => WebSocket;
+  /** First wait before reconnecting, in ms; it doubles up to 5 s. */
+  reconnectDelay?: number;
 }
 
 const defaultCreateSocket = (url: string) => new WebSocket(url);
+const MAX_RECONNECT_DELAY = 5_000;
 
-function isSessionEvent(value: unknown): value is SessionEvent {
+function isEnvelope(value: unknown): value is SessionEnvelope {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
   return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as { type?: unknown }).type === "string" &&
-    typeof (value as { session_id?: unknown }).session_id === "string"
+    typeof v.seq === "number" && typeof v.type === "string" && typeof v.session_id === "string"
   );
 }
 
-/** Connects to the server's session socket and tracks one session's turns. */
+/**
+ * Connects to the server's session socket and tracks one session. Every
+ * event carries a per-session sequence number: on each (re)connect the
+ * hook loads the logged events it has not applied yet, holding live
+ * frames until then, and it applies each sequence number once, in order.
+ */
 export function useSession(
   sessionId: string,
-  { createSocket = defaultCreateSocket }: Options = {},
+  { createSocket = defaultCreateSocket, reconnectDelay = 500 }: Options = {},
 ) {
   const [state, dispatch] = useReducer(sessionReducer, initialSessionState);
   const [connected, setConnected] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    const socket = createSocket(sessionSocketUrl(window.location));
-    socketRef.current = socket;
-    socket.onopen = () => setConnected(true);
-    socket.onclose = () => {
-      setConnected(false);
-      dispatch({ kind: "local_error", message: "Lost the connection to the Forge server." });
+    let lastSeq = 0;
+    // Live frames held back while the backlog loads; null when not syncing.
+    let held: SessionEnvelope[] | null = null;
+    let closed = false;
+    let delay = reconnectDelay;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const apply = (envelope: SessionEnvelope) => {
+      if (envelope.seq <= lastSeq) return;
+      lastSeq = envelope.seq;
+      dispatch({ kind: "event", event: envelope });
     };
-    socket.onmessage = (message: MessageEvent<string>) => {
-      let event: unknown;
+
+    async function catchUp() {
+      held = [];
       try {
-        event = JSON.parse(message.data);
+        for (const envelope of await api.sessionEvents(sessionId, lastSeq)) apply(envelope);
       } catch {
-        return;
+        // No backlog (for example a session the server has not logged);
+        // live frames still apply.
+      } finally {
+        const pending = held ?? [];
+        held = null;
+        for (const envelope of pending) apply(envelope);
       }
-      if (isSessionEvent(event) && event.session_id === sessionId) {
-        dispatch({ kind: "event", event });
-      }
-    };
+    }
+
+    function connect() {
+      const socket = createSocket(sessionSocketUrl(window.location));
+      socketRef.current = socket;
+      socket.onopen = () => {
+        delay = reconnectDelay;
+        setConnected(true);
+        void catchUp();
+      };
+      socket.onclose = () => {
+        setConnected(false);
+        if (closed) return;
+        timer = setTimeout(connect, delay);
+        delay = Math.min(Math.max(delay * 2, 1), MAX_RECONNECT_DELAY);
+      };
+      socket.onmessage = (message: MessageEvent<string>) => {
+        let value: unknown;
+        try {
+          value = JSON.parse(message.data);
+        } catch {
+          return;
+        }
+        if (!isEnvelope(value) || value.session_id !== sessionId) return;
+        if (held) held.push(value);
+        else apply(value);
+      };
+    }
+
+    connect();
     return () => {
-      socket.onclose = null;
-      socket.close();
+      closed = true;
+      clearTimeout(timer);
+      const socket = socketRef.current;
+      if (socket) {
+        socket.onclose = null;
+        socket.close();
+      }
       socketRef.current = null;
     };
-  }, [sessionId, createSocket]);
+  }, [sessionId, createSocket, reconnectDelay]);
 
   const send = useCallback(
     (text: string): boolean => {
