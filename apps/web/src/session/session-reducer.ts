@@ -48,6 +48,8 @@ export interface SessionState {
 export type SessionAction =
   | { kind: "send"; text: string }
   | { kind: "event"; event: SessionEvent }
+  /** Several events at once, such as a backlog loaded on connect. */
+  | { kind: "events"; events: SessionEvent[] }
   | { kind: "local_error"; message: string };
 
 export const initialSessionState: SessionState = {
@@ -58,8 +60,6 @@ export const initialSessionState: SessionState = {
   changedFiles: [],
 };
 
-const nextId = (state: SessionState) => `m${state.messages.length}`;
-
 export function sessionReducer(state: SessionState, action: SessionAction): SessionState {
   switch (action.kind) {
     case "send":
@@ -69,105 +69,115 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
     case "local_error":
       return { ...state, running: false, error: action.message, streamingId: null };
     case "event":
-      return applyEvent(state, action.event);
+      return applyEvents(state, [action.event]);
+    case "events":
+      return applyEvents(state, action.events);
   }
 }
 
-function applyEvent(state: SessionState, event: SessionEvent): SessionState {
+/**
+ * Applies events to one copy of the state. The timeline array is copied
+ * once per call, not once per event, so loading a long backlog stays
+ * linear; items that do not change keep their identity, so the view can
+ * skip re-rendering them.
+ */
+function applyEvents(state: SessionState, events: SessionEvent[]): SessionState {
+  const draft: SessionState = {
+    ...state,
+    messages: state.messages.slice(),
+    changedFiles: state.changedFiles,
+  };
+  let changed = false;
+  for (const event of events) changed = applyEvent(draft, event) || changed;
+  return changed ? draft : state;
+}
+
+const nextId = (draft: SessionState) => `m${draft.messages.length}`;
+
+/** Applies one event to `draft` in place; returns whether it changed. */
+function applyEvent(draft: SessionState, event: SessionEvent): boolean {
+  const items = draft.messages;
   switch (event.type) {
     case "user_message":
       // During a turn this steers it; the reply continues in a new message.
-      return {
-        ...state,
-        streamingId: null,
-        messages: [...state.messages, { id: nextId(state), role: "user", text: event.text }],
-      };
+      items.push({ id: nextId(draft), role: "user", text: event.text });
+      draft.streamingId = null;
+      return true;
     case "turn_started":
-      return { ...state, running: true, streamingId: null };
+      draft.running = true;
+      draft.streamingId = null;
+      return true;
     case "output": {
-      if (state.streamingId) {
-        const id = state.streamingId;
-        return {
-          ...state,
-          messages: state.messages.map((m) =>
-            m.id === id && m.role === "assistant" ? { ...m, text: m.text + event.chunk } : m,
-          ),
-        };
+      // The message being streamed is always the newest item: anything
+      // added after it (a tool call, a user message) ends the stream.
+      const last = items[items.length - 1];
+      if (draft.streamingId && last?.id === draft.streamingId && last.role === "assistant") {
+        items[items.length - 1] = { ...last, text: last.text + event.chunk };
+        return true;
       }
-      const id = nextId(state);
-      return {
-        ...state,
-        streamingId: id,
-        messages: [...state.messages, { id, role: "assistant", text: event.chunk }],
-      };
+      const id = nextId(draft);
+      items.push({ id, role: "assistant", text: event.chunk });
+      draft.streamingId = id;
+      return true;
     }
     case "tool_call":
-      return {
-        ...state,
-        // Text after a tool call belongs to a new assistant message.
-        streamingId: null,
-        messages: [
-          ...state.messages,
-          {
-            id: nextId(state),
-            role: "tool",
-            callId: event.call_id,
-            name: event.name,
-            args: event.args,
-            status: "running",
-            output: null,
-          },
-        ],
-      };
+      // Text after a tool call belongs to a new assistant message.
+      draft.streamingId = null;
+      items.push({
+        id: nextId(draft),
+        role: "tool",
+        callId: event.call_id,
+        name: event.name,
+        args: event.args,
+        status: "running",
+        output: null,
+      });
+      return true;
     case "tool_result": {
-      const found = state.messages.some((m) => m.role === "tool" && m.callId === event.call_id);
-      if (!found) return state;
-      return {
-        ...state,
-        messages: state.messages.map((m) =>
-          m.role === "tool" && m.callId === event.call_id
-            ? { ...m, status: event.is_error ? "error" : "done", output: event.output }
-            : m,
-        ),
-      };
+      // Results follow their call closely, so search from the end.
+      for (let i = items.length - 1; i >= 0; i--) {
+        const item = items[i];
+        if (item.role === "tool" && item.callId === event.call_id) {
+          items[i] = { ...item, status: event.is_error ? "error" : "done", output: event.output };
+          return true;
+        }
+      }
+      return false;
     }
     case "changes_reverted": {
       const count = event.paths.length;
-      return {
-        ...state,
-        changedFiles: [],
-        messages: [
-          ...state.messages,
-          {
-            id: nextId(state),
-            role: "notice",
-            text: `Reverted ${count} ${count === 1 ? "file" : "files"}`,
-          },
-        ],
-      };
+      draft.changedFiles = [];
+      items.push({
+        id: nextId(draft),
+        role: "notice",
+        text: `Reverted ${count} ${count === 1 ? "file" : "files"}`,
+      });
+      return true;
     }
     case "file_changed":
-      return { ...state, changedFiles: upsertChange(state.changedFiles, event) };
+      draft.changedFiles = upsertChange(draft.changedFiles, event);
+      return true;
     case "done":
-      return { ...state, running: false, streamingId: null };
+      draft.running = false;
+      draft.streamingId = null;
+      return true;
     case "interrupted":
-      return {
-        ...state,
-        running: false,
-        streamingId: null,
-        messages: [
-          ...state.messages.map((m) =>
-            m.role === "tool" && m.status === "running"
-              ? { ...m, status: "error" as const, output: "Interrupted" }
-              : m,
-          ),
-          { id: nextId(state), role: "notice", text: "Turn interrupted" },
-        ],
-      };
+      for (const [i, item] of items.entries()) {
+        if (item.role === "tool" && item.status === "running") {
+          items[i] = { ...item, status: "error", output: "Interrupted" };
+        }
+      }
+      items.push({ id: nextId(draft), role: "notice", text: "Turn interrupted" });
+      draft.running = false;
+      draft.streamingId = null;
+      return true;
     case "error":
-      return { ...state, running: false, error: event.message, streamingId: null };
+      draft.running = false;
+      draft.error = event.message;
+      draft.streamingId = null;
+      return true;
     default:
-      return state;
+      return false;
   }
 }
 

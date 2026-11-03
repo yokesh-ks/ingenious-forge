@@ -127,6 +127,29 @@ describe("useSession", () => {
     expect(result.current.state.running).toBe(false);
   });
 
+  it("loads a long backlog quickly", async () => {
+    const backlog = [];
+    let seq = 0;
+    for (let i = 0; i < 1_000; i++) {
+      for (let c = 0; c < 20; c++)
+        backlog.push({ seq: ++seq, type: "output", session_id: "s1", chunk: "w " });
+      backlog.push({
+        seq: ++seq,
+        type: "tool_call",
+        session_id: "s1",
+        call_id: `t${i}`,
+        name: "read_file",
+        args: {},
+      });
+    }
+    fakeFetch({ "GET /api/sessions/s1/events": backlog });
+    const { result } = setup();
+    const start = performance.now();
+    await openSocket(FakeSocket.latest());
+    expect(performance.now() - start).toBeLessThan(250);
+    expect(result.current.state.messages).toHaveLength(2_000);
+  });
+
   it("applies overlapping backlog and live frames once, in order", async () => {
     let release: (body: unknown) => void = () => {};
     const backlog = new Promise((resolve) => {

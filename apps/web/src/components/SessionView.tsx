@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Message, MessageContent } from "@/components/ui/message";
 import {
@@ -28,6 +29,33 @@ function ErrorAlert({ message }: { message: string }) {
   );
 }
 
+/**
+ * One entry of the timeline. Memoised: the reducer keeps unchanged items'
+ * identity, so while a reply streams only its own entry re-renders, which
+ * keeps sessions with thousands of entries responsive.
+ */
+const TimelineItem = memo(function TimelineItem({ item }: { item: SessionItem }) {
+  return (
+    <MessageScrollerItem messageId={item.id} scrollAnchor={item.role === "user"}>
+      {item.role === "tool" ? (
+        <ToolCallCard tool={item} />
+      ) : item.role === "notice" ? (
+        <p className="text-center text-xs text-muted-foreground">{item.text}</p>
+      ) : (
+        <Message align={item.role === "user" ? "end" : "start"}>
+          <MessageContent>
+            <Bubble align={item.role === "user" ? "end" : "start"} variant="muted">
+              <BubbleContent className="whitespace-pre-wrap" data-testid="message-text">
+                {item.text}
+              </BubbleContent>
+            </Bubble>
+          </MessageContent>
+        </Message>
+      )}
+    </MessageScrollerItem>
+  );
+});
+
 export default function SessionView({ messages, running, error }: SessionViewProps) {
   if (messages.length === 0) {
     return (
@@ -53,27 +81,7 @@ export default function SessionView({ messages, running, error }: SessionViewPro
         <MessageScrollerViewport>
           <MessageScrollerContent className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-6">
             {messages.map((message) => (
-              <MessageScrollerItem
-                key={message.id}
-                messageId={message.id}
-                scrollAnchor={message.role === "user"}
-              >
-                {message.role === "tool" ? (
-                  <ToolCallCard tool={message} />
-                ) : message.role === "notice" ? (
-                  <p className="text-center text-xs text-muted-foreground">{message.text}</p>
-                ) : (
-                  <Message align={message.role === "user" ? "end" : "start"}>
-                    <MessageContent>
-                      <Bubble align={message.role === "user" ? "end" : "start"} variant="muted">
-                        <BubbleContent className="whitespace-pre-wrap" data-testid="message-text">
-                          {message.text}
-                        </BubbleContent>
-                      </Bubble>
-                    </MessageContent>
-                  </Message>
-                )}
-              </MessageScrollerItem>
+              <TimelineItem key={message.id} item={message} />
             ))}
             {waitingForReply && (
               <p role="status" className="text-sm text-muted-foreground">
