@@ -3,12 +3,13 @@
 
 pub mod anthropic;
 pub mod changes;
+pub mod instructions;
 pub mod model;
 mod sse;
 pub mod tools;
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::{Arc, Mutex},
 };
 
@@ -50,6 +51,11 @@ struct SessionState {
     originals: BTreeMap<String, Option<String>>,
     /// Notes for the model, sent with the user's next message.
     notes: Vec<String>,
+    /// The system prompt, built from the project's `AGENTS.md` when the
+    /// session opens.
+    system: Option<String>,
+    /// Nested `AGENTS.md` files already given to the model.
+    instructions_loaded: BTreeSet<String>,
 }
 
 /// How a turn that did not fail came to an end.
@@ -83,12 +89,17 @@ impl Agent {
     /// Makes `session_id` ready for messages, working in the folder `tools`
     /// is rooted at. Opening a session that is already open changes nothing.
     pub fn open_session(&self, session_id: &str, tools: ToolBox) {
+        if self.is_open(session_id) {
+            return;
+        }
+        let system = instructions::system_prompt(&tools);
         let mut sessions = self.sessions.lock().unwrap();
         let session = sessions.entry(session_id.to_string()).or_default();
         if session.tools.is_some() {
             return;
         }
         session.tools = Some(tools);
+        session.system = system;
         let unfinished = self.restore(session_id, session);
         drop(sessions);
         if unfinished {
@@ -424,9 +435,14 @@ impl Agent {
         cancelled: &mut watch::Receiver<bool>,
         tools: &ToolBox,
     ) -> Result<Reply, String> {
+        let system = {
+            let sessions = self.sessions.lock().unwrap();
+            sessions.get(session_id).and_then(|s| s.system.clone())
+        };
         let mut rx = self.model.stream(ModelRequest {
             messages: conversation.to_vec(),
             tools: tools.specs(),
+            system,
         });
         let mut text = String::new();
         let mut message = None;
@@ -495,28 +511,62 @@ impl Agent {
                 .is_some_and(|s| s.originals.contains_key(path))
         });
 
+        // A tool that works under a folder brings in that folder's
+        // nested AGENTS.md files the first time.
+        let scope = instruction_scope(&name, &input);
+        let mut loaded = match scope {
+            Some(_) => {
+                let sessions = self.sessions.lock().unwrap();
+                sessions
+                    .get(session_id)
+                    .map(|s| s.instructions_loaded.clone())
+                    .unwrap_or_default()
+            }
+            None => BTreeSet::new(),
+        };
+
         let tools = tools.clone();
         let tracked = edited.clone();
-        let (outcome, baseline, current) = tokio::task::spawn_blocking(move || {
-            let baseline = tracked
-                .as_deref()
-                .filter(|_| needs_baseline)
-                .and_then(|path| tools.read_text(path).ok());
-            let outcome = tools.run(&name, &input);
-            let current = tracked
-                .as_deref()
-                .filter(|_| !outcome.is_error)
-                .and_then(|path| tools.read_text(path).ok());
-            (outcome, baseline, current)
-        })
-        .await
-        .unwrap_or_else(|err| {
-            let outcome = tools::ToolOutcome {
-                output: format!("tool failed: {err}"),
-                is_error: true,
-            };
-            (outcome, None, None)
-        });
+        let (mut outcome, baseline, current, nested, loaded) =
+            tokio::task::spawn_blocking(move || {
+                let baseline = tracked
+                    .as_deref()
+                    .filter(|_| needs_baseline)
+                    .and_then(|path| tools.read_text(path).ok());
+                let outcome = tools.run(&name, &input);
+                let current = tracked
+                    .as_deref()
+                    .filter(|_| !outcome.is_error)
+                    .and_then(|path| tools.read_text(path).ok());
+                let nested = match scope.filter(|_| !outcome.is_error) {
+                    Some((path, is_dir)) => {
+                        let own = tools.project_path(&path).ok();
+                        instructions::nested(&tools, &path, is_dir, &mut loaded)
+                            .into_iter()
+                            // A file the tool just showed is not repeated.
+                            .filter(|(file, _)| own.as_deref() != Some(file.as_str()))
+                            .collect()
+                    }
+                    None => Vec::new(),
+                };
+                (outcome, baseline, current, nested, Some(loaded))
+            })
+            .await
+            .unwrap_or_else(|err| {
+                let outcome = tools::ToolOutcome {
+                    output: format!("tool failed: {err}"),
+                    is_error: true,
+                };
+                (outcome, None, None, Vec::new(), None)
+            });
+        if let Some(loaded) = loaded {
+            let mut sessions = self.sessions.lock().unwrap();
+            let session = sessions.entry(session_id.to_string()).or_default();
+            session.instructions_loaded.extend(loaded);
+        }
+        outcome
+            .output
+            .push_str(&instructions::render_nested(&nested));
         self.events.publish(SessionEvent::ToolResult {
             session_id: session_id.to_string(),
             call_id: call_id.clone(),
@@ -558,6 +608,18 @@ impl Agent {
             content: outcome.output,
             is_error: outcome.is_error,
         }
+    }
+}
+
+/// The path a tool call works on, and whether it is a folder, for tools
+/// whose folder's instructions apply.
+fn instruction_scope(name: &str, input: &serde_json::Value) -> Option<(String, bool)> {
+    match name {
+        tools::READ_FILE | tools::EDIT_FILE => {
+            input["path"].as_str().map(|p| (p.to_string(), false))
+        }
+        tools::LIST_DIRECTORY => Some((input["path"].as_str().unwrap_or(".").to_string(), true)),
+        _ => None,
     }
 }
 
