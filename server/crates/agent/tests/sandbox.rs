@@ -334,6 +334,34 @@ fn bubblewrap_keeps_the_network_when_allowed() {
 }
 
 #[test]
+fn macos_without_sandbox_exec_is_unavailable() {
+    let sandbox = agent::sandbox::macos_sandbox(false, || Ok(()));
+    let Sandbox::Unavailable(reason) = sandbox else {
+        panic!("expected unavailable, got {sandbox:?}")
+    };
+    assert!(reason.contains("sandbox-exec is missing"), "{reason}");
+}
+
+#[test]
+fn sandbox_exec_that_cannot_start_a_sandbox_is_unavailable() {
+    let sandbox =
+        agent::sandbox::macos_sandbox(
+            true,
+            || Err("sandbox_apply: Operation not permitted".into()),
+        );
+    let Sandbox::Unavailable(reason) = sandbox else {
+        panic!("expected unavailable, got {sandbox:?}")
+    };
+    assert!(reason.contains("Operation not permitted"), "{reason}");
+}
+
+#[test]
+fn working_sandbox_exec_is_used() {
+    let sandbox = agent::sandbox::macos_sandbox(true, || Ok(()));
+    assert_eq!(sandbox, Sandbox::SandboxExec);
+}
+
+#[test]
 fn linux_without_bubblewrap_is_unavailable_with_install_advice() {
     let sandbox = agent::sandbox::linux_sandbox(None, |_| Ok(()));
     let Sandbox::Unavailable(reason) = sandbox else {

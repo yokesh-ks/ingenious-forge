@@ -44,13 +44,7 @@ impl Sandbox {
     /// The sandbox this machine supports.
     pub fn detect() -> Self {
         if cfg!(target_os = "macos") {
-            if Path::new(SANDBOX_EXEC).exists() {
-                Sandbox::SandboxExec
-            } else {
-                Sandbox::Unavailable(format!(
-                    "{SANDBOX_EXEC} is missing, so commands cannot be sandboxed"
-                ))
-            }
+            macos_sandbox(Path::new(SANDBOX_EXEC).exists(), probe_sandbox_exec)
         } else if cfg!(target_os = "linux") {
             linux_sandbox(find_on_path("bwrap"), probe_bwrap)
         } else {
@@ -143,6 +137,39 @@ fn find_on_path(program: &str) -> Option<PathBuf> {
             .map(|dir| dir.join(program))
             .find(|path| path.is_file())
     })
+}
+
+/// The macOS sandbox: `sandbox-exec` when it is `installed` and `probe`
+/// shows it can start a sandbox, otherwise unavailable with the reason.
+pub fn macos_sandbox(installed: bool, probe: impl Fn() -> Result<(), String>) -> Sandbox {
+    if !installed {
+        return Sandbox::Unavailable(format!(
+            "{SANDBOX_EXEC} is missing, so commands cannot be sandboxed"
+        ));
+    }
+    match probe() {
+        Ok(()) => Sandbox::SandboxExec,
+        Err(err) => Sandbox::Unavailable(format!("sandbox-exec cannot start a sandbox ({err})")),
+    }
+}
+
+/// Runs `true` under the default `sandbox-exec` profile to check it works.
+fn probe_sandbox_exec() -> Result<(), String> {
+    let out = std::process::Command::new(SANDBOX_EXEC)
+        .arg("-p")
+        .arg(sandbox_exec_profile(&Policy {
+            writable: Vec::new(),
+            network: false,
+        }))
+        .arg("/usr/bin/true")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
 }
 
 /// Runs `true` in a minimal bubblewrap sandbox to check it works.
