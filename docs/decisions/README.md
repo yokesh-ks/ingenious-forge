@@ -13,3 +13,4 @@ new ADR that supersedes the old one. See
 | [0003](0003-server-cargo-workspace.md) | Split the Rust server into a Cargo workspace by PRD module | Proposed | 2026-11-02 |
 | [0004](0004-model-client-and-typed-api.md) | Call model providers over HTTP with reqwest and generate the typed API with ts-rs | Proposed | 2026-11-02 |
 | [0005](0005-session-log-on-disk.md) | Persist each session as an append-only JSON Lines log | Proposed | 2026-11-03 |
+| [0006](0006-os-sandbox-for-shell-commands.md) | Confine shell commands with sandbox-exec on macOS and bubblewrap on Linux | Proposed | 2026-11-04 |
