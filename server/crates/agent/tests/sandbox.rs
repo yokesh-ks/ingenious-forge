@@ -531,3 +531,43 @@ async fn commands_follow_the_session_policy() {
     }
     assert!(extra.join("ok").exists());
 }
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn full_auto_runs_without_asking_but_still_inside_the_sandbox() {
+    let root = folder("full-auto");
+    let outside = folder("full-auto-out").join("x");
+    let model = FakeModel(Mutex::new(
+        vec![
+            vec![ModelEvent::Message(vec![ContentBlock::ToolUse {
+                id: "t1".into(),
+                name: RUN_SHELL.into(),
+                input: json!({ "command": format!("touch inside; touch '{}'", outside.display()) }),
+            }])],
+            vec![ModelEvent::TextDelta("done".into())],
+        ]
+        .into(),
+    ));
+    let events = EventService::new();
+    let mut rx = events.subscribe();
+    let agent = Agent::new(Arc::new(model), events).with_sandbox(Sandbox::SandboxExec);
+    agent.open_session("s1", ToolBox::new(&root));
+    agent.set_approval_mode("s1", api_types::ApprovalMode::FullAuto);
+    agent.send_message("s1", "go").unwrap();
+
+    let mut asked = false;
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap()
+            .event;
+        asked |= matches!(event, SessionEvent::ApprovalRequested { .. });
+        if matches!(event, SessionEvent::Done { .. }) {
+            break;
+        }
+    }
+    assert!(!asked);
+    assert!(root.join("inside").exists());
+    assert!(!outside.exists());
+}
