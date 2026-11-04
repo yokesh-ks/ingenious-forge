@@ -156,4 +156,58 @@ describe("SessionWorkspace", () => {
     );
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
   });
+
+  it("a Full-auto turn shows every action as it happens, with no approval card", async () => {
+    render(<SessionWorkspace sessionId="s1" />);
+    const socket = FakeSocket.latest();
+    await openSocket(socket);
+    act(() => {
+      socket.emit({ type: "turn_started", session_id: "s1" });
+      socket.emit({
+        type: "tool_call",
+        session_id: "s1",
+        call_id: "t1",
+        name: "edit_file",
+        args: { path: "a.txt" },
+      });
+      socket.emit({
+        type: "tool_result",
+        session_id: "s1",
+        call_id: "t1",
+        output: "Edited a.txt",
+        is_error: false,
+        exit_code: null,
+      });
+      socket.emit({
+        type: "tool_call",
+        session_id: "s1",
+        call_id: "t2",
+        name: "run_shell",
+        args: { command: "npm test" },
+      });
+      socket.emit({
+        type: "tool_output",
+        session_id: "s1",
+        call_id: "t2",
+        stream: "stdout",
+        text: "ok",
+      });
+      socket.emit({
+        type: "tool_result",
+        session_id: "s1",
+        call_id: "t2",
+        output: "ok\nExit code: 0",
+        is_error: false,
+        exit_code: 0,
+      });
+      socket.emit({ type: "done", session_id: "s1" });
+    });
+    expect(screen.getByRole("article", { name: /edit tool call/i })).toHaveTextContent(
+      "Edited a.txt",
+    );
+    expect(screen.getByRole("article", { name: /shell tool call/i })).toHaveTextContent(
+      "Exit code 0",
+    );
+    expect(screen.queryByRole("region", { name: /approval needed/i })).not.toBeInTheDocument();
+  });
 });
