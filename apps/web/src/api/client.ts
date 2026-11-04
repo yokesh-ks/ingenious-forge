@@ -1,6 +1,8 @@
 import type {
   ApiError,
   ApprovalMode,
+  CommitMessageDraft,
+  CommitResult,
   DirListing,
   FileContent,
   FileList,
@@ -69,6 +71,12 @@ export const api = {
     request<FileContent>(
       `/api/projects/${encodeURIComponent(projectId)}/file?${new URLSearchParams({ path })}`,
     ),
+  createBranch: (projectId: string, name: string) =>
+    post<GitStatus>(`/api/projects/${encodeURIComponent(projectId)}/git/branch`, { name }),
+  commit: (projectId: string, message: string) =>
+    post<CommitResult>(`/api/projects/${encodeURIComponent(projectId)}/git/commit`, { message }),
+  draftCommitMessage: (sessionId: string) =>
+    post<CommitMessageDraft>(`/api/sessions/${encodeURIComponent(sessionId)}/commit-message`, {}),
   gitStatus: (projectId: string) =>
     request<GitStatus>(`/api/projects/${encodeURIComponent(projectId)}/git/status`),
   modelCatalog: () => request<ModelCatalog>("/api/models"),

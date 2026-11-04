@@ -40,6 +40,8 @@ pub enum AgentError {
     UnknownSession,
     #[error(transparent)]
     Model(#[from] ModelError),
+    #[error("the model returned an empty reply")]
+    EmptyReply,
 }
 
 #[derive(Default)]
@@ -258,6 +260,83 @@ impl Agent {
                 .and_then(|s| s.approvals.remove(call_id))
         };
         waiting.is_some_and(|tx| tx.send(decision).is_ok())
+    }
+
+    /// Asks the session's model for a commit message describing `changes`
+    /// in the light of what the user asked for in this session. A one-off
+    /// request: it does not join the conversation.
+    pub async fn draft_commit_message(
+        &self,
+        session_id: &str,
+        changes: &str,
+    ) -> Result<String, AgentError> {
+        let (model, effort, asked) = {
+            let sessions = self.sessions.lock().unwrap();
+            let session = sessions
+                .get(session_id)
+                .filter(|s| s.tools.is_some())
+                .ok_or(AgentError::UnknownSession)?;
+            let asked: Vec<String> = session
+                .history
+                .iter()
+                .filter(|m| m.role == model::Role::User)
+                .flat_map(|m| m.content.iter())
+                .filter_map(|b| match b {
+                    ContentBlock::Text { text } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect();
+            (session.model.clone(), session.effort, asked)
+        };
+        let model = model.ok_or(ModelError::NoProvider)?;
+        let asked = asked
+            .iter()
+            .rev()
+            .take(5)
+            .rev()
+            .map(|t| format!("- {}", t.chars().take(500).collect::<String>()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let prompt = format!(
+            "Write a git commit message for the changes below. Use a conventional \
+             commit title (type(scope): subject, at most 72 characters, no trailing \
+             period), then a blank line and a short body saying what changed and why. \
+             Reply with the commit message only.\n\nWhat the user asked for in this \
+             session:\n{}\n\n{changes}",
+            if asked.is_empty() {
+                "(nothing yet)".to_string()
+            } else {
+                asked
+            }
+        );
+        let mut rx = model.stream(ModelRequest {
+            messages: vec![ChatMessage::user_text(prompt)],
+            tools: Vec::new(),
+            system: None,
+            effort,
+        });
+        let mut text = String::new();
+        let mut message = None;
+        while let Some(item) = rx.recv().await {
+            match item? {
+                ModelEvent::TextDelta(chunk) => text.push_str(&chunk),
+                ModelEvent::Message(content) => message = Some(content),
+            }
+        }
+        if let Some(content) = message {
+            text = content
+                .into_iter()
+                .filter_map(|b| match b {
+                    ContentBlock::Text { text } => Some(text),
+                    _ => None,
+                })
+                .collect();
+        }
+        let text = text.trim();
+        if text.is_empty() {
+            return Err(AgentError::EmptyReply);
+        }
+        Ok(text.to_string())
     }
 
     pub fn is_running(&self, session_id: &str) -> bool {
