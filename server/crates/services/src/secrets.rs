@@ -2,7 +2,12 @@
 //! Security; ADR 0008): AES-256-GCM, a fresh nonce per secret, the key in
 //! a private file beside the database.
 
-use std::{io::Write, os::unix::fs::OpenOptionsExt, path::Path, sync::Arc};
+use std::{
+    io::Write,
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
+    path::Path,
+    sync::Arc,
+};
 
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
@@ -18,9 +23,24 @@ pub struct SecretStore {
 
 impl SecretStore {
     /// Opens the store, creating the key file (mode 0600) the first time.
+    /// An existing key file that other users can read is refused.
     pub fn open(pool: SqlitePool, key_file: &Path) -> Result<Self, String> {
         let key = match std::fs::read(key_file) {
-            Ok(bytes) if bytes.len() == 32 => bytes,
+            Ok(bytes) if bytes.len() == 32 => {
+                let mode = std::fs::metadata(key_file)
+                    .map_err(|e| format!("cannot read {}: {e}", key_file.display()))?
+                    .permissions()
+                    .mode();
+                if mode & 0o077 != 0 {
+                    return Err(format!(
+                        "{} can be read by other users (mode {:o}); run `chmod 600 {}` and restart Forge",
+                        key_file.display(),
+                        mode & 0o777,
+                        key_file.display()
+                    ));
+                }
+                bytes
+            }
             Ok(_) => return Err(format!("{} is not a valid key file", key_file.display())),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 let key = Aes256Gcm::generate_key(OsRng).to_vec();
