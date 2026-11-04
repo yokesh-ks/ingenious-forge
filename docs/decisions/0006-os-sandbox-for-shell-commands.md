@@ -1,6 +1,6 @@
 # 0006. Confine shell commands with sandbox-exec on macOS and bubblewrap on Linux
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-04
 - **PRD:** §6.1 Sandbox, §6.2 Live session view (session header), §6.2
   Settings, §8 Architecture (Forge Agent: loop, tools, sandbox)
