@@ -69,4 +69,67 @@ describe("Composer", () => {
     setup({ onStop: vi.fn() });
     expect(screen.queryByRole("button", { name: /stop/i })).not.toBeInTheDocument();
   });
+
+  describe("slash commands", () => {
+    it("lists /init when the text starts with a slash", async () => {
+      const { input } = setup();
+      await userEvent.type(input, "/");
+      const menu = screen.getByRole("listbox", { name: /slash commands/i });
+      expect(menu).toBeInTheDocument();
+      expect(screen.getByRole("option", { name: /\/init/i })).toHaveTextContent(/agents\.md/i);
+    });
+
+    it("shows no menu for ordinary text or an unknown command", async () => {
+      const { input } = setup();
+      await userEvent.type(input, "hello /");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      await userEvent.clear(input);
+      await userEvent.type(input, "/xyz");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    });
+
+    it("completes a partial command on Tab", async () => {
+      const { input, onSend } = setup();
+      await userEvent.type(input, "/in{Tab}");
+      expect(input).toHaveValue("/init");
+      expect(onSend).not.toHaveBeenCalled();
+    });
+
+    it("completes a partial command on Enter instead of sending it", async () => {
+      const { input, onSend } = setup();
+      await userEvent.type(input, "/i{Enter}");
+      expect(input).toHaveValue("/init");
+      expect(onSend).not.toHaveBeenCalled();
+    });
+
+    it("sends a complete command on Enter", async () => {
+      const { input, onSend } = setup();
+      await userEvent.type(input, "/init{Enter}");
+      expect(onSend).toHaveBeenCalledWith("/init");
+      expect(input).toHaveValue("");
+    });
+
+    it("fills the command when its option is clicked", async () => {
+      const { input } = setup();
+      await userEvent.type(input, "/");
+      await userEvent.click(screen.getByRole("option", { name: /\/init/i }));
+      expect(input).toHaveValue("/init");
+      expect(input).toHaveFocus();
+    });
+
+    it("hides the menu on Escape and keeps the text", async () => {
+      const { input, onSend } = setup();
+      await userEvent.type(input, "/in{Escape}");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(input).toHaveValue("/in");
+      await userEvent.type(input, "{Enter}");
+      expect(onSend).toHaveBeenCalledWith("/in");
+    });
+
+    it("hides the menu once the command has arguments", async () => {
+      const { input } = setup();
+      await userEvent.type(input, "/init focus");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    });
+  });
 });

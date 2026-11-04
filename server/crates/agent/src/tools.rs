@@ -41,6 +41,11 @@ impl ToolBox {
         Self { root: root.into() }
     }
 
+    /// The project folder the tools work in.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     pub fn specs(&self) -> Vec<ToolSpec> {
         vec![
             ToolSpec {
