@@ -169,6 +169,26 @@ else
 	echo "skip  main-guard cases: jq is not installed"
 fi
 
+# check-commits.sh without origin/main must still check the tip commit,
+# not pass on an empty range.
+nr=$tmp/no-remote
+git init -q -b main "$nr"
+nr_commit() {
+	git -C "$nr" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m "$1"
+}
+nr_check() {
+	FORGE_CHECK_REPO=$nr sh "$root/scripts/check-commits.sh" >"$tmp/out" 2>&1
+	result "$1" "check-commits without origin/main: $2" $?
+}
+nr_commit "feat: first"
+nr_check pass "a good root commit"
+nr_commit "Bad title"
+nr_check fail "a bad tip commit"
+grep -q "1 checked" "$tmp/out"
+result pass "check-commits without origin/main checks one commit" $?
+nr_commit "fix: later good commit"
+nr_check pass "a good tip after a bad commit"
+
 echo
 echo "$passed passed, $failed failed"
 [ "$failed" -eq 0 ]
