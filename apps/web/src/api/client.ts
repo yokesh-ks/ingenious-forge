@@ -10,6 +10,7 @@ import type {
   ModelCatalog,
   OpenProjectRequest,
   Project,
+  PushResult,
   Session,
   SessionEnvelope,
   SessionModel,
@@ -75,6 +76,8 @@ export const api = {
     post<GitStatus>(`/api/projects/${encodeURIComponent(projectId)}/git/branch`, { name }),
   commit: (projectId: string, message: string) =>
     post<CommitResult>(`/api/projects/${encodeURIComponent(projectId)}/git/commit`, { message }),
+  push: (projectId: string) =>
+    post<PushResult>(`/api/projects/${encodeURIComponent(projectId)}/git/push`, {}),
   draftCommitMessage: (sessionId: string) =>
     post<CommitMessageDraft>(`/api/sessions/${encodeURIComponent(sessionId)}/commit-message`, {}),
   gitStatus: (projectId: string) =>

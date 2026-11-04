@@ -4,7 +4,7 @@
 
 use std::{path::Path, process::Command};
 
-pub use api_types::{CommitResult, GitStatus};
+pub use api_types::{CommitResult, GitStatus, PushResult};
 
 /// Runs `git args…` in `dir` and returns its stdout, or its stderr as the
 /// error.
@@ -12,6 +12,9 @@ fn git(dir: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
     let out = Command::new("git")
         .args(args)
         .current_dir(dir)
+        // Never wait for a password prompt nobody can answer.
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(std::process::Stdio::null())
         .output()
         .map_err(|e| format!("cannot run git: {e}"))?;
     if out.status.success() {
@@ -166,4 +169,42 @@ pub fn describe_changes(dir: &Path, limit: usize) -> Result<String, String> {
         diff.push_str("\n[diff cut: it is longer than shown]");
     }
     Ok(format!("Changed files:\n{files}\nDiff:\n{diff}"))
+}
+
+/// Pushes the current branch to its remote (`origin`, or the only remote),
+/// setting it as the branch's upstream.
+pub fn push(dir: &Path) -> Result<PushResult, String> {
+    let branch = String::from_utf8_lossy(&git(dir, &["branch", "--show-current"])?)
+        .trim()
+        .to_string();
+    if branch.is_empty() {
+        return Err("not on a branch: check out a branch before pushing".into());
+    }
+    let remotes = String::from_utf8_lossy(&git(dir, &["remote"])?).into_owned();
+    let remotes: Vec<&str> = remotes
+        .lines()
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+        .collect();
+    let remote = if remotes.contains(&"origin") {
+        "origin".to_string()
+    } else {
+        match remotes.as_slice() {
+            [only] => only.to_string(),
+            [] => return Err("no remote to push to: add one with git remote add".into()),
+            _ => return Err("several remotes and none is named origin".into()),
+        }
+    };
+    let url = String::from_utf8_lossy(&git(dir, &["remote", "get-url", &remote])?)
+        .trim()
+        .to_string();
+    git(
+        dir,
+        &["push", "--porcelain", "--set-upstream", &remote, &branch],
+    )?;
+    Ok(PushResult {
+        remote,
+        url,
+        branch,
+    })
 }

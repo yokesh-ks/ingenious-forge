@@ -224,6 +224,15 @@ pub struct CommitResult {
     pub summary: String,
 }
 
+/// A branch just pushed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct PushResult {
+    pub remote: String,
+    /// The remote's URL, as git knows it.
+    pub url: String,
+    pub branch: String,
+}
+
 /// Body of `POST /api/sessions/{id}/commit-message`: the agent's draft.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct CommitMessageDraft {
@@ -452,6 +461,7 @@ pub fn typescript_bindings() -> String {
         CreateBranchRequest::decl(&cfg),
         CommitRequest::decl(&cfg),
         CommitResult::decl(&cfg),
+        PushResult::decl(&cfg),
         CommitMessageDraft::decl(&cfg),
         TerminalInput::decl(&cfg),
         TerminalNotice::decl(&cfg),

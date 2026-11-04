@@ -88,6 +88,12 @@ sha: string,
  */
 summary: string, };
 
+export type PushResult = { remote: string, 
+/**
+ * The remote's URL, as git knows it.
+ */
+url: string, branch: string, };
+
 export type CommitMessageDraft = { message: string, };
 
 export type TerminalInput = { "type": "input", data: string, } | { "type": "resize", cols: number, rows: number, };
