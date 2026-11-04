@@ -109,6 +109,7 @@ fn describe(events: &[SessionEvent]) -> Vec<String> {
                 ..
             } => format!("result:{call_id}:{is_error}:{output}"),
             SessionEvent::ToolOutput { text, .. } => format!("line:{text}"),
+            SessionEvent::ApprovalModeChanged { mode, .. } => format!("mode:{mode:?}"),
             SessionEvent::Error { message, .. } => format!("error:{message}"),
             SessionEvent::Done { .. } => "done".to_string(),
             SessionEvent::Interrupted { .. } => "interrupted".to_string(),

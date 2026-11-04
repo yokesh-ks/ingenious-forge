@@ -66,6 +66,9 @@ struct SessionState {
     /// provider is configured.
     model: Option<Arc<dyn ModelClient>>,
     effort: Option<api_types::ReasoningEffort>,
+    /// `None` until set: a session opened without a mode runs without
+    /// approvals.
+    approval_mode: Option<api_types::ApprovalMode>,
 }
 
 /// How a turn that did not fail came to an end.
@@ -212,6 +215,28 @@ impl Agent {
     pub fn is_open(&self, session_id: &str) -> bool {
         let sessions = self.sessions.lock().unwrap();
         sessions.get(session_id).is_some_and(|s| s.tools.is_some())
+    }
+
+    /// The approval mode of an open session.
+    pub fn approval_mode(&self, session_id: &str) -> Option<api_types::ApprovalMode> {
+        let sessions = self.sessions.lock().unwrap();
+        sessions
+            .get(session_id)
+            .filter(|s| s.tools.is_some())
+            .map(|s| s.approval_mode.unwrap_or(api_types::ApprovalMode::FullAuto))
+    }
+
+    /// Sets the approval mode of an open session; it applies from the next
+    /// action. False when the session is not open.
+    pub fn set_approval_mode(&self, session_id: &str, mode: api_types::ApprovalMode) -> bool {
+        let mut sessions = self.sessions.lock().unwrap();
+        match sessions.get_mut(session_id).filter(|s| s.tools.is_some()) {
+            Some(session) => {
+                session.approval_mode = Some(mode);
+                true
+            }
+            None => false,
+        }
     }
 
     pub fn is_running(&self, session_id: &str) -> bool {

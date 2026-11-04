@@ -49,6 +49,17 @@ describe("useProjectSessions", () => {
     expect(fetch.mock.calls.length).toBe(calls);
   });
 
+  it("reloads when another tab changes a session's approval mode", async () => {
+    const fetch = fakeFetch({ "GET /api/projects/p1/sessions": [session("a", false)] });
+    const { result } = setup();
+    await waitFor(() => expect(result.current.sessions).not.toBeNull());
+    const calls = fetch.mock.calls.length;
+    act(() =>
+      FakeSocket.latest().emit({ type: "approval_mode_changed", session_id: "a", mode: "ask" }),
+    );
+    await waitFor(() => expect(fetch.mock.calls.length).toBe(calls + 1));
+  });
+
   it("reports a load error", async () => {
     fakeFetch({
       "GET /api/projects/p1/sessions": () => ({ status: 500, body: { error: "boom" } }),

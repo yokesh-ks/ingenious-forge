@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionModel } from "@/api/types";
+import type { ApprovalMode, SessionModel } from "@/api/types";
 import { catalog } from "@/test/catalog";
 import { fakeFetch } from "@/test/fake-fetch";
 import { FakeSocket, openSocket } from "@/test/fake-socket";
@@ -27,6 +27,7 @@ const session = (id: string, title: string, model: SessionModel | null = null) =
   updated_at: Date.now(),
   running: false,
   model,
+  approval_mode: "ask" as ApprovalMode,
 });
 
 describe("ProjectPage", () => {
@@ -252,5 +253,40 @@ describe("ProjectPage", () => {
     expect(screen.getByRole("group", { name: /session settings/i })).toHaveTextContent(
       "Low effort",
     );
+  });
+
+  it("changes the approval mode from the header", async () => {
+    let mode: ApprovalMode = "ask";
+    const fetch = fakeFetch({
+      "GET /api/projects/p1": project,
+      "GET /api/models": catalog,
+      "GET /api/projects/p1/sessions": () => ({
+        body: [{ ...session("s1", "Older"), approval_mode: mode }],
+      }),
+      "PUT /api/sessions/s1/approval-mode": (init: RequestInit | undefined) => {
+        mode = JSON.parse(String(init?.body)).mode;
+        return { body: { ...session("s1", "Older"), approval_mode: mode } };
+      },
+    });
+    render(<ProjectPage projectId="p1" sessionId="s1" />);
+    await userEvent.click(await screen.findByRole("button", { name: /approval mode: ask/i }));
+    await userEvent.click(screen.getByRole("menuitemradio", { name: /auto-edit/i }));
+
+    expect(
+      await screen.findByRole("button", { name: /approval mode: auto-edit/i }),
+    ).toBeInTheDocument();
+    expect(fetch.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(true);
+  });
+
+  it("shows why the approval mode could not be changed", async () => {
+    fakeFetch({
+      "GET /api/projects/p1": project,
+      "GET /api/projects/p1/sessions": [session("s1", "Older")],
+      "PUT /api/sessions/s1/approval-mode": () => ({ status: 500, body: { error: "db locked" } }),
+    });
+    render(<ProjectPage projectId="p1" sessionId="s1" />);
+    await userEvent.click(await screen.findByRole("button", { name: /approval mode: ask/i }));
+    await userEvent.click(screen.getByRole("menuitemradio", { name: /full-auto/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("db locked");
   });
 });

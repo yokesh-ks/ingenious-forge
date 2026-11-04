@@ -5,13 +5,13 @@ use std::{path::PathBuf, sync::Arc};
 use agent::tools::ToolBox;
 use api_types::{
     ApiError, CreateSessionRequest, DirListing, ModelCatalog, OpenProjectRequest, Project, Session,
-    SessionEnvelope,
+    SessionEnvelope, SessionEvent, SetApprovalModeRequest,
 };
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, put},
     Json, Router,
 };
 use serde::Deserialize;
@@ -31,6 +31,7 @@ pub fn router() -> Router<Arc<AppState>> {
             get(list_sessions).post(create_session),
         )
         .route("/sessions/{id}/events", get(session_events))
+        .route("/sessions/{id}/approval-mode", put(set_approval_mode))
         .route("/fs/dirs", get(list_dirs))
         .route("/models", get(model_catalog))
 }
@@ -106,6 +107,27 @@ async fn create_session(
             .map_err(|err| ApiFailure(StatusCode::BAD_REQUEST, err.to_string()))?,
         None => state.agent.open_session(&session.id, tools),
     }
+    state
+        .agent
+        .set_approval_mode(&session.id, session.approval_mode);
+    Ok(Json(session))
+}
+
+/// Changes a session's approval mode; the agent uses it from its next
+/// action, and every open tab hears about it.
+async fn set_approval_mode(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<SetApprovalModeRequest>,
+) -> ApiResult<Session> {
+    let mut session = projects::set_approval_mode(&state.db, &id, body.mode).await?;
+    crate::routes::ensure_open(&state, &id).await;
+    state.agent.set_approval_mode(&id, body.mode);
+    state.events.publish(SessionEvent::ApprovalModeChanged {
+        session_id: id.clone(),
+        mode: body.mode,
+    });
+    session.running = state.agent.is_running(&id);
     Ok(Json(session))
 }
 
@@ -462,6 +484,93 @@ mod tests {
         assert!(body["error"].as_str().unwrap().contains("nope"), "{body}");
         let (_, listed) = get_json(&sessions).await;
         assert_eq!(listed, json!([]));
+    }
+
+    async fn put_json(url: &str, body: Value) -> (StatusCode, Value) {
+        let res = reqwest::Client::new()
+            .put(url)
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        (res.status(), res.json().await.unwrap())
+    }
+
+    #[tokio::test]
+    async fn a_new_session_asks_and_its_approval_mode_can_be_changed() {
+        let (api, state) = start().await;
+        let id = new_project(&api).await;
+        let mut rx = state.events.subscribe();
+        let (_, session) = post_json(&format!("{api}/projects/{id}/sessions"), json!({})).await;
+        let sid = session["id"].as_str().unwrap().to_string();
+        assert_eq!(session["approval_mode"], "ask");
+        assert_eq!(
+            state.agent.approval_mode(&sid),
+            Some(api_types::ApprovalMode::Ask)
+        );
+
+        let (status, changed) = put_json(
+            &format!("{api}/sessions/{sid}/approval-mode"),
+            json!({ "mode": "auto_edit" }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(changed["approval_mode"], "auto_edit");
+        assert_eq!(
+            state.agent.approval_mode(&sid),
+            Some(api_types::ApprovalMode::AutoEdit)
+        );
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+            .unwrap()
+            .event;
+        assert!(matches!(
+            event,
+            SessionEvent::ApprovalModeChanged {
+                mode: api_types::ApprovalMode::AutoEdit,
+                ..
+            }
+        ));
+        let (_, listed) = get_json(&format!("{api}/projects/{id}/sessions")).await;
+        assert_eq!(listed[0]["approval_mode"], "auto_edit");
+    }
+
+    #[tokio::test]
+    async fn changing_the_mode_of_an_unknown_session_is_not_found() {
+        let (api, _) = start().await;
+        let (status, _) = put_json(
+            &format!("{api}/sessions/nope/approval-mode"),
+            json!({ "mode": "ask" }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn a_session_reopened_after_a_restart_keeps_its_mode() {
+        let (api, state) = start().await;
+        let id = new_project(&api).await;
+        let (_, session) = post_json(&format!("{api}/projects/{id}/sessions"), json!({})).await;
+        let sid = session["id"].as_str().unwrap().to_string();
+        put_json(
+            &format!("{api}/sessions/{sid}/approval-mode"),
+            json!({ "mode": "full_auto" }),
+        )
+        .await;
+
+        // A fresh agent, as after a restart, sharing the same database.
+        let restarted = AppState {
+            db: state.db.clone(),
+            events: EventService::new(),
+            agent: Agent::new(Arc::new(NoModel), EventService::new()),
+        };
+        crate::routes::ensure_open(&restarted, &sid).await;
+        assert_eq!(
+            restarted.agent.approval_mode(&sid),
+            Some(api_types::ApprovalMode::FullAuto)
+        );
     }
 
     #[tokio::test]

@@ -177,3 +177,27 @@ async fn a_session_keeps_its_model_choice_and_old_sessions_have_none() {
         None
     );
 }
+
+#[tokio::test]
+async fn new_sessions_ask_for_approval_and_the_mode_can_change() {
+    use api_types::ApprovalMode;
+    let pool = pool().await;
+    let project = projects::open_project(&pool, repo("modes").to_str().unwrap())
+        .await
+        .unwrap();
+    let (session, _) = projects::create_session(&pool, &project.id, None)
+        .await
+        .unwrap();
+    assert_eq!(session.approval_mode, ApprovalMode::Ask);
+
+    let changed = projects::set_approval_mode(&pool, &session.id, ApprovalMode::FullAuto)
+        .await
+        .unwrap();
+    assert_eq!(changed.approval_mode, ApprovalMode::FullAuto);
+    let listed = projects::list_sessions(&pool, &project.id).await.unwrap();
+    assert_eq!(listed[0].approval_mode, ApprovalMode::FullAuto);
+    assert!(matches!(
+        projects::set_approval_mode(&pool, "nope", ApprovalMode::Ask).await,
+        Err(ProjectError::NotFound)
+    ));
+}
