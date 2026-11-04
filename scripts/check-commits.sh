@@ -3,30 +3,32 @@
 # title and no AI attribution. POSIX sh. CI job: commits.
 #
 # Usage: scripts/check-commits.sh [<range>]   (default: origin/main..HEAD)
+# FORGE_CHECK_REPO checks another repository (used by test-hooks.sh).
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 FORGE_HOOKS_DIR=$root/.githooks
 # shellcheck source-path=SCRIPTDIR source=../.githooks/lib/checks.sh
 . "$FORGE_HOOKS_DIR/lib/checks.sh"
 
+repo=${FORGE_CHECK_REPO:-$root}
+
 if [ $# -ge 1 ]; then
 	range=$1
 else
-	# Derive the default range. If origin/main hasn't been fetched yet,
-	# fall back to the merge-base so the script still works in a fresh clone.
-	if git -C "$root" rev-parse --verify origin/main >/dev/null 2>&1; then
+	# Without origin/main (a fresh clone that has not fetched it) there is
+	# no base to compare with, so check at least the tip commit and warn.
+	if git -C "$repo" rev-parse --verify -q origin/main >/dev/null 2>&1; then
 		range=origin/main..HEAD
+	elif git -C "$repo" rev-parse --verify -q "HEAD^" >/dev/null 2>&1; then
+		range="HEAD^!"
+		forge_err "warning: origin/main not found; checking the tip commit only"
 	else
-		base=$(git -C "$root" merge-base HEAD "$(git -C "$root" rev-parse HEAD)" 2>/dev/null) || base=
-		if [ -n "$base" ]; then
-			range="$base..HEAD"
-		else
-			range="HEAD^!"
-		fi
-		forge_err "warning: origin/main not found; checking $range only"
+		# A root commit has no parent for HEAD^! to exclude.
+		range=HEAD
+		forge_err "warning: origin/main not found; checking the tip commit only"
 	fi
 fi
-shas=$(git -C "$root" rev-list --reverse "$range") || exit 1
+shas=$(git -C "$repo" rev-list --reverse "$range") || exit 1
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
 
@@ -34,7 +36,7 @@ count=0
 failed=0
 for sha in $shas; do
 	count=$((count + 1))
-	git -C "$root" log -1 --format=%B "$sha" >"$tmp"
+	git -C "$repo" log -1 --format=%B "$sha" >"$tmp"
 	if ! forge_check_message "$tmp" 2>"$tmp.err"; then
 		failed=$((failed + 1))
 		printf 'FAIL  %s %s\n' "$sha" "$(head -n 1 "$tmp")"
