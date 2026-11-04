@@ -2,6 +2,8 @@ import type {
   ApiError,
   ApprovalMode,
   DirListing,
+  FileContent,
+  FileList,
   ModelCatalog,
   OpenProjectRequest,
   Project,
@@ -59,6 +61,12 @@ export const api = {
     post<Session>(
       `/api/projects/${encodeURIComponent(projectId)}/sessions`,
       model ? { model } : {},
+    ),
+  projectFiles: (projectId: string) =>
+    request<FileList>(`/api/projects/${encodeURIComponent(projectId)}/files`),
+  projectFile: (projectId: string, path: string) =>
+    request<FileContent>(
+      `/api/projects/${encodeURIComponent(projectId)}/file?${new URLSearchParams({ path })}`,
     ),
   modelCatalog: () => request<ModelCatalog>("/api/models"),
   setApprovalMode: (sessionId: string, mode: ApprovalMode) =>

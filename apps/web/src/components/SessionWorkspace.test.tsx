@@ -1,6 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fakeFetch } from "@/test/fake-fetch";
 import { FakeSocket, openSocket } from "@/test/fake-socket";
 import SessionWorkspace from "./SessionWorkspace";
 
@@ -209,5 +210,15 @@ describe("SessionWorkspace", () => {
       "Exit code 0",
     );
     expect(screen.queryByRole("region", { name: /approval needed/i })).not.toBeInTheDocument();
+  });
+
+  it("switches the side panel to the project's files without leaving the session", async () => {
+    fakeFetch({ "GET /api/projects/p1/files": { files: ["README.md"], truncated: false } });
+    render(<SessionWorkspace sessionId="s1" projectId="p1" />);
+    await openSocket(FakeSocket.latest());
+    expect(screen.getByRole("tab", { name: /changes/i })).toHaveAttribute("aria-selected", "true");
+    await userEvent.click(screen.getByRole("tab", { name: /files/i }));
+    expect(await screen.findByRole("button", { name: "README.md" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/ask forge/i)).toBeInTheDocument();
   });
 });

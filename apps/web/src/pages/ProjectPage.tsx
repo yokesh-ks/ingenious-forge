@@ -143,7 +143,7 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
                 onApprovalModeChange={changeApprovalMode}
                 savingMode={savingMode}
               />
-              <SessionWorkspace key={sessionId} sessionId={sessionId} />
+              <SessionWorkspace key={sessionId} sessionId={sessionId} projectId={projectId} />
             </div>
           )
         )}

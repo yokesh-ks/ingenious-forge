@@ -4,8 +4,8 @@ use std::{path::PathBuf, sync::Arc};
 
 use agent::tools::ToolBox;
 use api_types::{
-    ApiError, CreateSessionRequest, DirListing, ModelCatalog, OpenProjectRequest, Project, Session,
-    SessionEnvelope, SessionEvent, SetApprovalModeRequest,
+    ApiError, CreateSessionRequest, DirListing, FileContent, FileList, ModelCatalog,
+    OpenProjectRequest, Project, Session, SessionEnvelope, SessionEvent, SetApprovalModeRequest,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -26,6 +26,8 @@ pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/projects", get(recent_projects).post(open_project))
         .route("/projects/{id}", get(get_project))
+        .route("/projects/{id}/files", get(project_files))
+        .route("/projects/{id}/file", get(project_file))
         .route(
             "/projects/{id}/sessions",
             get(list_sessions).post(create_session),
@@ -77,6 +79,60 @@ async fn get_project(
     Path(id): Path<String>,
 ) -> ApiResult<Project> {
     Ok(Json(projects::get_project(&state.db, &id).await?))
+}
+
+/// Most files listed in the workspace file tree.
+const MAX_LISTED_FILES: usize = 20_000;
+
+async fn project_files(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<FileList> {
+    let project = projects::get_project(&state.db, &id).await?;
+    let list = tokio::task::spawn_blocking(move || {
+        services::workspace::list_files(std::path::Path::new(&project.path), MAX_LISTED_FILES)
+    })
+    .await
+    .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(list))
+}
+
+/// Largest file the viewer shows.
+const MAX_VIEWED_BYTES: usize = 2_000_000;
+
+#[derive(Deserialize)]
+struct FileQuery {
+    path: String,
+}
+
+/// One project file for the read-only viewer. Paths outside the project
+/// are refused, as for the agent's own tools.
+async fn project_file(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Query(query): Query<FileQuery>,
+) -> ApiResult<FileContent> {
+    let project = projects::get_project(&state.db, &id).await?;
+    let tools = ToolBox::new(&project.path);
+    let rel = query.path;
+    let read = tokio::task::spawn_blocking(move || {
+        let path = tools.project_path(&rel)?;
+        Ok::<_, String>((path, tools.read_text(&rel)?))
+    })
+    .await
+    .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    match read {
+        Ok((path, Some(content))) if content.len() > MAX_VIEWED_BYTES => Err(ApiFailure(
+            StatusCode::BAD_REQUEST,
+            format!("{path} is too large to show ({} bytes)", content.len()),
+        )),
+        Ok((path, Some(content))) => Ok(Json(FileContent { path, content })),
+        Ok((path, None)) => Err(ApiFailure(
+            StatusCode::NOT_FOUND,
+            format!("{path} does not exist"),
+        )),
+        Err(message) => Err(ApiFailure(StatusCode::BAD_REQUEST, message)),
+    }
 }
 
 async fn model_catalog(State(state): State<Arc<AppState>>) -> Json<ModelCatalog> {
@@ -571,6 +627,66 @@ mod tests {
             restarted.agent.approval_mode(&sid),
             Some(api_types::ApprovalMode::FullAuto)
         );
+    }
+
+    #[tokio::test]
+    async fn a_project_lists_its_files_and_serves_one() {
+        let (api, _) = start().await;
+        let repo = folders().join("repo");
+        let (_, project) = post_json(&format!("{api}/projects"), json!({ "path": repo })).await;
+        let pid = project["id"].as_str().unwrap();
+        fs::create_dir_all(repo.join("src")).unwrap();
+        fs::write(repo.join("src/main.rs"), "fn main() {}\n").unwrap();
+
+        let (status, list) = get_json(&format!("{api}/projects/{pid}/files")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(list["files"], json!(["src/main.rs"]));
+        assert_eq!(list["truncated"], false);
+
+        let (status, file) =
+            get_json(&format!("{api}/projects/{pid}/file?path=src%2Fmain.rs")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            file,
+            json!({ "path": "src/main.rs", "content": "fn main() {}\n" })
+        );
+    }
+
+    #[tokio::test]
+    async fn the_file_viewer_refuses_paths_outside_and_reports_missing_files() {
+        let (api, _) = start().await;
+        let repo = folders().join("repo");
+        let (_, project) = post_json(&format!("{api}/projects"), json!({ "path": repo })).await;
+        let pid = project["id"].as_str().unwrap();
+        fs::write(repo.join("bin.dat"), [0xff, 0xfe, 0x00]).unwrap();
+
+        let (status, body) = get_json(&format!(
+            "{api}/projects/{pid}/file?path=..%2F..%2Fetc%2Fpasswd"
+        ))
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            body["error"].as_str().unwrap().contains("outside"),
+            "{body}"
+        );
+
+        let (status, _) = get_json(&format!("{api}/projects/{pid}/file?path=nope.txt")).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        let (status, body) = get_json(&format!("{api}/projects/{pid}/file?path=bin.dat")).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body["error"].as_str().unwrap().contains("UTF-8"), "{body}");
+
+        fs::write(repo.join("big.txt"), "x".repeat(MAX_VIEWED_BYTES + 1)).unwrap();
+        let (status, body) = get_json(&format!("{api}/projects/{pid}/file?path=big.txt")).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            body["error"].as_str().unwrap().contains("too large"),
+            "{body}"
+        );
+
+        let (status, _) = get_json(&format!("{api}/projects/zzz/files")).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

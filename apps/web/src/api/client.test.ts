@@ -50,6 +50,17 @@ describe("api client", () => {
     expect(JSON.parse(String(init?.body))).toEqual({ mode: "full_auto" });
   });
 
+  it("lists a project's files and reads one by path", async () => {
+    const fetch = fakeFetch({
+      "GET /api/projects/p1/files": { files: [], truncated: false },
+      "GET /api/projects/p1/file": { path: "a b.txt", content: "" },
+    });
+    await api.projectFiles("p1");
+    await api.projectFile("p1", "a b.txt");
+    expect(String(fetch.mock.calls[0][0])).toBe("/api/projects/p1/files");
+    expect(String(fetch.mock.calls[1][0])).toBe("/api/projects/p1/file?path=a+b.txt");
+  });
+
   it("encodes the folder picker path as a query parameter", async () => {
     const fetch = fakeFetch({
       "GET /api/fs/dirs": { path: "/a b", parent: "/", is_git_repo: false, entries: [] },
