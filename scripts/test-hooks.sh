@@ -189,6 +189,10 @@ result pass "check-commits without origin/main checks one commit" $?
 nr_commit "fix: later good commit"
 nr_check pass "a good tip after a bad commit"
 
+# The link checker's parser has its own unit tests.
+node --test "$root/scripts/check-links.test.mjs" >"$tmp/out" 2>&1
+result pass "check-links parser tests (node --test)" $?
+
 echo
 echo "$passed passed, $failed failed"
 [ "$failed" -eq 0 ]
