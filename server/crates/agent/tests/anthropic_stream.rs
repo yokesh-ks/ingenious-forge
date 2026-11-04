@@ -140,3 +140,19 @@ event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,
         vec![Err(ModelError::Stream("Overloaded".into()))]
     );
 }
+
+#[tokio::test]
+async fn the_provider_builds_a_client_for_the_chosen_model() {
+    use agent::{anthropic::AnthropicProvider, providers::ModelProvider};
+    let (url, seen) = serve(StatusCode::OK, STREAM).await;
+    let provider = AnthropicProvider::new(Some("test-key".into())).with_base_url(url);
+
+    let client = provider.client("claude-sonnet-5-5");
+    let mut rx = client.stream(request());
+    while rx.recv().await.is_some() {}
+
+    let body = seen.body.lock().unwrap().clone().unwrap();
+    assert_eq!(body["model"], "claude-sonnet-5-5");
+    let headers = seen.headers.lock().unwrap().clone().unwrap();
+    assert_eq!(headers["x-api-key"], "test-key");
+}

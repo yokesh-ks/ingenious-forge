@@ -102,6 +102,12 @@ pub enum ModelError {
     Stream(String),
     #[error("the model declined to respond")]
     Refusal,
+    #[error("unknown model provider: {0}")]
+    UnknownProvider(String),
+    #[error("{provider} has no model {model}")]
+    UnknownModel { provider: String, model: String },
+    #[error("no model provider is configured")]
+    NoProvider,
 }
 
 /// A model provider. `stream` returns at once; events arrive on the

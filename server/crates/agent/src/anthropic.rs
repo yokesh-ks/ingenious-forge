@@ -4,7 +4,10 @@
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
+use std::sync::Arc;
+
 use crate::model::{ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest};
+use crate::providers::{ModelInfo, ModelProvider};
 use crate::sse::{SseEvent, SseParser};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
@@ -39,6 +42,57 @@ impl AnthropicClient {
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();
         self
+    }
+}
+
+/// The Claude models offered, the default first.
+const MODELS: &[(&str, &str)] = &[
+    (DEFAULT_MODEL, "Claude Opus 5.5"),
+    ("claude-fable-5-1", "Claude Fable 5.1"),
+    ("claude-sonnet-5-5", "Claude Sonnet 5.5"),
+    ("claude-haiku-5-5", "Claude Haiku 5.5"),
+];
+
+/// The Anthropic provider adapter: builds an [`AnthropicClient`] per model.
+#[derive(Debug, Clone)]
+pub struct AnthropicProvider {
+    client: AnthropicClient,
+}
+
+impl AnthropicProvider {
+    pub fn new(api_key: Option<String>) -> Self {
+        Self {
+            client: AnthropicClient::new(api_key),
+        }
+    }
+
+    pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.client = self.client.with_base_url(base_url);
+        self
+    }
+}
+
+impl ModelProvider for AnthropicProvider {
+    fn id(&self) -> &str {
+        "anthropic"
+    }
+
+    fn name(&self) -> &str {
+        "Anthropic"
+    }
+
+    fn models(&self) -> Vec<ModelInfo> {
+        MODELS
+            .iter()
+            .map(|(id, name)| ModelInfo {
+                id: (*id).into(),
+                name: (*name).into(),
+            })
+            .collect()
+    }
+
+    fn client(&self, model: &str) -> Arc<dyn ModelClient> {
+        Arc::new(self.client.clone().with_model(model))
     }
 }
 

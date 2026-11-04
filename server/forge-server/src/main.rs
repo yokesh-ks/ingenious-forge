@@ -4,7 +4,7 @@ mod state;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
-use agent::{anthropic::AnthropicClient, Agent};
+use agent::{anthropic::AnthropicProvider, providers::Providers, Agent};
 use clap::Parser;
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::info;
@@ -67,10 +67,14 @@ async fn main() -> anyhow::Result<()> {
     let log = services::log::SessionLog::open(&log_dir)?;
     let events = services::EventService::with_log(Arc::new(log));
     // Provider keys move to Settings in a later story (PRD §6.2 Settings).
-    let model = AnthropicClient::new(std::env::var("ANTHROPIC_API_KEY").ok());
+    // Each provider adapter is registered here; the first is the default.
+    let mut providers = Providers::new();
+    providers.register(Arc::new(AnthropicProvider::new(
+        std::env::var("ANTHROPIC_API_KEY").ok(),
+    )));
     let state = Arc::new(AppState {
         db: pool,
-        agent: Agent::new(Arc::new(model), events.clone()),
+        agent: Agent::with_providers(providers, events.clone()),
         events,
     });
 

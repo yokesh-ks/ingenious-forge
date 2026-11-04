@@ -6,6 +6,7 @@ pub mod changes;
 pub mod commands;
 pub mod instructions;
 pub mod model;
+pub mod providers;
 mod sse;
 pub mod tools;
 
@@ -18,7 +19,8 @@ use api_types::SessionEvent;
 use services::{log::LogRecord, EventService};
 use tokio::sync::watch;
 
-use model::{ChatMessage, ContentBlock, ModelClient, ModelEvent, ModelRequest};
+use model::{ChatMessage, ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest};
+use providers::{ModelChoice, Providers};
 use tools::ToolBox;
 
 /// Model calls allowed in one turn before the agent gives up, so a model
@@ -35,6 +37,8 @@ pub enum AgentError {
     TurnRunning,
     #[error("this session is not open")]
     UnknownSession,
+    #[error(transparent)]
+    Model(#[from] ModelError),
 }
 
 #[derive(Default)]
@@ -57,6 +61,9 @@ struct SessionState {
     system: Option<String>,
     /// Nested `AGENTS.md` files already given to the model.
     instructions_loaded: BTreeSet<String>,
+    /// The client for the session's provider and model; `None` when no
+    /// provider is configured.
+    model: Option<Arc<dyn ModelClient>>,
 }
 
 /// How a turn that did not fail came to an end.
@@ -73,23 +80,56 @@ struct Reply {
 
 #[derive(Clone)]
 pub struct Agent {
-    model: Arc<dyn ModelClient>,
+    providers: Arc<Providers>,
     events: EventService,
     sessions: Arc<Mutex<HashMap<String, SessionState>>>,
 }
 
 impl Agent {
+    /// An agent that sends every session to `model`.
     pub fn new(model: Arc<dyn ModelClient>, events: EventService) -> Self {
+        let mut providers = Providers::new();
+        providers.register(Arc::new(providers::FixedProvider(model)));
+        Self::with_providers(providers, events)
+    }
+
+    /// An agent whose sessions pick a model from `providers`.
+    pub fn with_providers(providers: Providers, events: EventService) -> Self {
         Self {
-            model,
+            providers: Arc::new(providers),
             events,
             sessions: Arc::default(),
         }
     }
 
-    /// Makes `session_id` ready for messages, working in the folder `tools`
-    /// is rooted at. Opening a session that is already open changes nothing.
+    pub fn providers(&self) -> &Providers {
+        &self.providers
+    }
+
+    /// Makes `session_id` ready for messages with the default provider and
+    /// model, working in the folder `tools` is rooted at. Opening a session
+    /// that is already open changes nothing.
     pub fn open_session(&self, session_id: &str, tools: ToolBox) {
+        let model = self
+            .providers
+            .default_choice()
+            .and_then(|choice| self.providers.resolve(&choice).ok());
+        self.open(session_id, tools, model);
+    }
+
+    /// Like [`Agent::open_session`], talking to the model in `choice`.
+    pub fn open_session_with(
+        &self,
+        session_id: &str,
+        tools: ToolBox,
+        choice: &ModelChoice,
+    ) -> Result<(), AgentError> {
+        let model = self.providers.resolve(choice)?;
+        self.open(session_id, tools, Some(model));
+        Ok(())
+    }
+
+    fn open(&self, session_id: &str, tools: ToolBox, model: Option<Arc<dyn ModelClient>>) {
         if self.is_open(session_id) {
             return;
         }
@@ -101,6 +141,7 @@ impl Agent {
         }
         session.tools = Some(tools);
         session.system = system;
+        session.model = model;
         let unfinished = self.restore(session_id, session);
         drop(sessions);
         if unfinished {
@@ -442,11 +483,16 @@ impl Agent {
         cancelled: &mut watch::Receiver<bool>,
         tools: &ToolBox,
     ) -> Result<Reply, String> {
-        let system = {
+        let (system, model) = {
             let sessions = self.sessions.lock().unwrap();
-            sessions.get(session_id).and_then(|s| s.system.clone())
+            let session = sessions.get(session_id);
+            (
+                session.and_then(|s| s.system.clone()),
+                session.and_then(|s| s.model.clone()),
+            )
         };
-        let mut rx = self.model.stream(ModelRequest {
+        let model = model.ok_or_else(|| ModelError::NoProvider.to_string())?;
+        let mut rx = model.stream(ModelRequest {
             messages: conversation.to_vec(),
             tools: tools.specs(),
             system,
