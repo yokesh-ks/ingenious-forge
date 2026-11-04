@@ -4,7 +4,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use agent::anthropic::KeyHandle;
-use api_types::{KeySource, ProviderKeyStatus, SetProviderKeyRequest};
+use api_types::{KeySource, ProviderKeyStatus, SessionDefaults, SetProviderKeyRequest};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -80,6 +80,45 @@ pub fn router() -> Router<Arc<AppState>> {
             "/settings/providers/{id}/key",
             put(set_key).delete(remove_key),
         )
+        .route("/settings/defaults", get(get_defaults).put(set_defaults))
+}
+
+const DEFAULTS: &str = "session-defaults";
+
+/// The saved new-session defaults; the built-in ones when none are saved
+/// or they cannot be read.
+pub async fn defaults(state: &AppState) -> SessionDefaults {
+    match db::get_setting(&state.db, DEFAULTS).await {
+        Ok(Some(json)) => serde_json::from_str(&json).unwrap_or_default(),
+        Ok(None) => SessionDefaults::default(),
+        Err(err) => {
+            tracing::warn!(%err, "cannot read session defaults");
+            SessionDefaults::default()
+        }
+    }
+}
+
+async fn get_defaults(State(state): State<Arc<AppState>>) -> Json<SessionDefaults> {
+    Json(defaults(&state).await)
+}
+
+/// Saves the new-session defaults. Sessions already created keep theirs.
+async fn set_defaults(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<SessionDefaults>,
+) -> Result<Json<SessionDefaults>, ApiFailure> {
+    if let Some(model) = &body.model {
+        state
+            .agent
+            .providers()
+            .resolve(&model.into())
+            .map_err(|err| ApiFailure::new(StatusCode::BAD_REQUEST, err.to_string()))?;
+    }
+    let json = serde_json::to_string(&body).map_err(|e| ApiFailure::internal(e.to_string()))?;
+    db::set_setting(&state.db, DEFAULTS, &json)
+        .await
+        .map_err(|e| ApiFailure::internal(e.to_string()))?;
+    Ok(Json(body))
 }
 
 async fn list_providers(State(state): State<Arc<AppState>>) -> Json<Vec<ProviderKeyStatus>> {

@@ -154,3 +154,19 @@ async fn a_session_approval_mode_is_stored_and_changed() {
     assert_eq!(found.approval_mode.as_deref(), Some("full_auto"));
     assert!(!db::set_approval_mode(&pool, "nope", "ask").await.unwrap());
 }
+
+#[tokio::test]
+async fn settings_are_stored_by_name() {
+    let pool = pool().await;
+    assert_eq!(db::get_setting(&pool, "defaults").await.unwrap(), None);
+    db::set_setting(&pool, "defaults", "{\"a\":1}")
+        .await
+        .unwrap();
+    db::set_setting(&pool, "defaults", "{\"a\":2}")
+        .await
+        .unwrap();
+    assert_eq!(
+        db::get_setting(&pool, "defaults").await.unwrap().as_deref(),
+        Some("{\"a\":2}")
+    );
+}

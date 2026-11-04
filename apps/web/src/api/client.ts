@@ -13,6 +13,7 @@ import type {
   ProviderKeyStatus,
   PushResult,
   Session,
+  SessionDefaults,
   SessionEnvelope,
   SessionModel,
   SetApprovalModeRequest,
@@ -88,6 +89,9 @@ export const api = {
     request<ProviderKeyStatus>(`/api/settings/providers/${encodeURIComponent(provider)}/key`, {
       method: "DELETE",
     }),
+  sessionDefaults: () => request<SessionDefaults>("/api/settings/defaults"),
+  setSessionDefaults: (defaults: SessionDefaults) =>
+    post<SessionDefaults>("/api/settings/defaults", defaults, "PUT"),
   push: (projectId: string) =>
     post<PushResult>(`/api/projects/${encodeURIComponent(projectId)}/git/push`, {}),
   draftCommitMessage: (sessionId: string) =>

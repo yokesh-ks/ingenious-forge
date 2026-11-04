@@ -237,8 +237,20 @@ async fn project_file(
     }
 }
 
+/// The models to pick from, with the saved default model pre-selected
+/// when it is still offered.
 async fn model_catalog(State(state): State<Arc<AppState>>) -> Json<ModelCatalog> {
-    Json(state.agent.providers().catalog())
+    Json(catalog(&state).await)
+}
+
+async fn catalog(state: &AppState) -> ModelCatalog {
+    let mut catalog = state.agent.providers().catalog();
+    if let Some(model) = crate::settings::defaults(state).await.model {
+        if state.agent.providers().resolve(&(&model).into()).is_ok() {
+            catalog.default = Some(model);
+        }
+    }
+    catalog
 }
 
 /// Creates a session with the chosen model, or the catalog default.
@@ -247,16 +259,23 @@ async fn create_session(
     Path(id): Path<String>,
     body: Option<Json<CreateSessionRequest>>,
 ) -> ApiResult<Session> {
-    let choice = body
-        .and_then(|Json(body)| body.model)
-        .or_else(|| state.agent.providers().catalog().default);
+    let body = body.map(|Json(body)| body).unwrap_or_default();
+    let defaults = crate::settings::defaults(&state).await;
+    let approval_mode = body.approval_mode.unwrap_or(defaults.approval_mode);
+    let choice = match body.model {
+        Some(model) => Some(model),
+        None => catalog(&state).await.default,
+    };
     // Check the choice before anything is stored.
     if let Some(choice) = &choice {
         if let Err(err) = state.agent.providers().resolve(&choice.into()) {
             return Err(ApiFailure(StatusCode::BAD_REQUEST, err.to_string()));
         }
     }
-    let (session, folder) = projects::create_session(&state.db, &id, choice.as_ref()).await?;
+    let (mut session, folder) = projects::create_session(&state.db, &id, choice.as_ref()).await?;
+    if approval_mode != session.approval_mode {
+        session = projects::set_approval_mode(&state.db, &session.id, approval_mode).await?;
+    }
     let tools = ToolBox::new(folder);
     match &choice {
         Some(choice) => state
@@ -547,7 +566,7 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let app = Router::new()
-            .nest("/api", router())
+            .nest("/api", router().merge(crate::settings::router()))
             .with_state(state.clone());
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         (format!("http://{addr}/api"), state)
@@ -628,6 +647,61 @@ mod tests {
             session["model"],
             json!({ "provider": "stub", "model": "fast", "effort": "high" })
         );
+    }
+
+    #[tokio::test]
+    async fn saved_defaults_preselect_new_sessions_and_leave_old_ones_alone() {
+        let (api, state) = start_with_models().await;
+        let id = new_project(&api).await;
+        let sessions = format!("{api}/projects/{id}/sessions");
+        let (_, before) = post_json(&sessions, json!({})).await;
+
+        let defaults = json!({
+            "model": { "provider": "stub", "model": "smart", "effort": "low" },
+            "approval_mode": "full_auto"
+        });
+        let (status, saved) = put_json(&format!("{api}/settings/defaults"), defaults.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(saved, defaults);
+        let (_, got) = get_json(&format!("{api}/settings/defaults")).await;
+        assert_eq!(got, defaults);
+
+        // The session start UI is pre-set from the catalog default.
+        let (_, catalog) = get_json(&format!("{api}/models")).await;
+        assert_eq!(catalog["default"], defaults["model"]);
+
+        let (_, after) = post_json(&sessions, json!({})).await;
+        assert_eq!(after["model"], defaults["model"]);
+        assert_eq!(after["approval_mode"], "full_auto");
+        assert_eq!(
+            state.agent.approval_mode(after["id"].as_str().unwrap()),
+            Some(api_types::ApprovalMode::FullAuto)
+        );
+
+        // A session that already existed keeps what it started with.
+        let (_, listed) = get_json(&sessions).await;
+        let old = listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["id"] == before["id"])
+            .unwrap()
+            .clone();
+        assert_eq!(old["model"], before["model"]);
+        assert_eq!(old["approval_mode"], "ask");
+    }
+
+    #[tokio::test]
+    async fn defaults_with_an_unknown_model_are_refused() {
+        let (api, _) = start_with_models().await;
+        let (status, _) = put_json(
+            &format!("{api}/settings/defaults"),
+            json!({ "model": { "provider": "stub", "model": "nope", "effort": "low" }, "approval_mode": "ask" }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let (_, got) = get_json(&format!("{api}/settings/defaults")).await;
+        assert_eq!(got, json!({ "model": null, "approval_mode": "ask" }));
     }
 
     #[tokio::test]

@@ -26,9 +26,19 @@ default: SessionModel | null, };
 
 export type CreateSessionRequest = { 
 /**
- * The model to use; the catalog default when left out.
+ * The model to use; the saved default when left out.
  */
-model: SessionModel | null, };
+model: SessionModel | null, 
+/**
+ * The approval mode; the saved default when left out.
+ */
+approval_mode: ApprovalMode | null, };
+
+export type SessionDefaults = { 
+/**
+ * `None` uses the first provider's first model.
+ */
+model: SessionModel | null, approval_mode: ApprovalMode, };
 
 export type Session = { id: string, project_id: string, title: string, created_at: number, updated_at: number, 
 /**

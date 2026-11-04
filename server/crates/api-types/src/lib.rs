@@ -128,9 +128,20 @@ pub struct ModelCatalog {
 /// Body of `POST /api/projects/{id}/sessions`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct CreateSessionRequest {
-    /// The model to use; the catalog default when left out.
+    /// The model to use; the saved default when left out.
     #[serde(default)]
     pub model: Option<SessionModel>,
+    /// The approval mode; the saved default when left out.
+    #[serde(default)]
+    pub approval_mode: Option<ApprovalMode>,
+}
+
+/// What new sessions start with (`GET`/`PUT /api/settings/defaults`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SessionDefaults {
+    /// `None` uses the first provider's first model.
+    pub model: Option<SessionModel>,
+    pub approval_mode: ApprovalMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -477,6 +488,7 @@ pub fn typescript_bindings() -> String {
         ProviderOption::decl(&cfg),
         ModelCatalog::decl(&cfg),
         CreateSessionRequest::decl(&cfg),
+        SessionDefaults::decl(&cfg),
         Session::decl(&cfg),
         OpenProjectRequest::decl(&cfg),
         DirEntry::decl(&cfg),
