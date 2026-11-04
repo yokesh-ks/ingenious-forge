@@ -13,6 +13,8 @@ use serde_json::{json, Value};
 pub const READ_FILE: &str = "read_file";
 pub const EDIT_FILE: &str = "edit_file";
 pub const LIST_DIRECTORY: &str = "list_directory";
+/// Runs in the agent rather than here, since it streams (see `shell`).
+pub const RUN_SHELL: &str = "run_shell";
 
 const MAX_READ_BYTES: usize = 200_000;
 const MAX_LIST_ENTRIES: usize = 1_000;
@@ -83,6 +85,18 @@ impl ToolBox {
                     "properties": {
                         "path": { "type": "string", "description": "Directory relative to the project root; defaults to the root" }
                     },
+                    "additionalProperties": false
+                }),
+            },
+            ToolSpec {
+                name: RUN_SHELL,
+                description: "Run a shell command with sh -c in the project root. Returns stdout and stderr (the end, for long output) and the exit code.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "command": { "type": "string", "description": "The command to run" }
+                    },
+                    "required": ["command"],
                     "additionalProperties": false
                 }),
             },

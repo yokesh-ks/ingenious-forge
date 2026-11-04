@@ -76,6 +76,7 @@ fn event_session_id_accessor_covers_every_variant() {
             call_id: "c".into(),
             output: String::new(),
             is_error: false,
+            exit_code: None,
         },
         SessionEvent::Done {
             session_id: "a".into(),
@@ -99,6 +100,7 @@ fn tool_call_and_result_share_a_call_id() {
         call_id: "toolu_1".into(),
         output: "# Forge".into(),
         is_error: false,
+        exit_code: None,
     };
     assert_eq!(
         serde_json::to_value(&call).unwrap(),
@@ -117,7 +119,8 @@ fn tool_call_and_result_share_a_call_id() {
             "session_id": "s1",
             "call_id": "toolu_1",
             "output": "# Forge",
-            "is_error": false
+            "is_error": false,
+            "exit_code": null
         })
     );
 }
@@ -353,4 +356,41 @@ fn session_model_and_catalog_serialize_as_the_frontend_expects() {
     assert!(ts.contains("export type ModelCatalog"), "{ts}");
     assert!(ts.contains("export type CreateSessionRequest"), "{ts}");
     assert!(ts.contains("model: SessionModel | null"), "{ts}");
+}
+
+#[test]
+fn tool_output_lines_and_exit_codes_serialize() {
+    use api_types::OutputStream;
+    let line = SessionEvent::ToolOutput {
+        session_id: "s".into(),
+        call_id: "t1".into(),
+        stream: OutputStream::Stderr,
+        text: "oops".into(),
+    };
+    assert_eq!(
+        serde_json::to_value(&line).unwrap(),
+        json!({ "type": "tool_output", "session_id": "s", "call_id": "t1", "stream": "stderr", "text": "oops" })
+    );
+    assert_eq!(line.session_id(), "s");
+
+    let result = SessionEvent::ToolResult {
+        session_id: "s".into(),
+        call_id: "t1".into(),
+        output: "done".into(),
+        is_error: false,
+        exit_code: Some(2),
+    };
+    assert_eq!(serde_json::to_value(&result).unwrap()["exit_code"], 2);
+    // Results logged before exit codes existed still load.
+    let old: SessionEvent = serde_json::from_value(json!({
+        "type": "tool_result", "session_id": "s", "call_id": "t1", "output": "x", "is_error": false
+    }))
+    .unwrap();
+    assert!(matches!(
+        old,
+        SessionEvent::ToolResult {
+            exit_code: None,
+            ..
+        }
+    ));
 }

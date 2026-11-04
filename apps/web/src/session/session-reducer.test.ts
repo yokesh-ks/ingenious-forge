@@ -122,6 +122,8 @@ describe("sessionReducer", () => {
       args: { path: "a.txt" },
       status: "running",
       output: null,
+      lines: [],
+      exitCode: null,
     });
   });
 
@@ -130,8 +132,22 @@ describe("sessionReducer", () => {
       sent("go"),
       { type: "tool_call", session_id: S, call_id: "t1", name: "read_file", args: {} },
       { type: "tool_call", session_id: S, call_id: "t2", name: "list_directory", args: {} },
-      { type: "tool_result", session_id: S, call_id: "t2", output: "a.txt", is_error: false },
-      { type: "tool_result", session_id: S, call_id: "t1", output: "nope", is_error: true },
+      {
+        type: "tool_result",
+        session_id: S,
+        call_id: "t2",
+        output: "a.txt",
+        is_error: false,
+        exit_code: null,
+      },
+      {
+        type: "tool_result",
+        session_id: S,
+        call_id: "t1",
+        output: "nope",
+        is_error: true,
+        exit_code: null,
+      },
     );
     expect(state.messages.slice(1)).toMatchObject([
       { callId: "t1", status: "error", output: "nope" },
@@ -148,6 +164,7 @@ describe("sessionReducer", () => {
         call_id: "zz",
         output: "x",
         is_error: false,
+        exit_code: null,
       }),
     ).toEqual(state);
   });
@@ -157,11 +174,79 @@ describe("sessionReducer", () => {
       sent("go"),
       { type: "output", session_id: S, chunk: "Looking. " },
       { type: "tool_call", session_id: S, call_id: "t1", name: "read_file", args: {} },
-      { type: "tool_result", session_id: S, call_id: "t1", output: "x", is_error: false },
+      {
+        type: "tool_result",
+        session_id: S,
+        call_id: "t1",
+        output: "x",
+        is_error: false,
+        exit_code: null,
+      },
       { type: "output", session_id: S, chunk: "Found it." },
     );
     expect(state.messages.map((m) => m.role)).toEqual(["user", "assistant", "tool", "assistant"]);
     expect(state.messages[3]).toMatchObject({ text: "Found it." });
+  });
+
+  it("appends streamed shell lines to their tool call while it runs", () => {
+    const state = apply(
+      sent("go"),
+      { type: "tool_call", session_id: S, call_id: "t1", name: "run_shell", args: {} },
+      { type: "tool_output", session_id: S, call_id: "t1", stream: "stdout", text: "hello" },
+      { type: "tool_output", session_id: S, call_id: "t1", stream: "stderr", text: "warn" },
+    );
+    expect(state.messages[1]).toMatchObject({
+      status: "running",
+      lines: [
+        { stream: "stdout", text: "hello" },
+        { stream: "stderr", text: "warn" },
+      ],
+    });
+  });
+
+  it("keeps the exit code from the tool result", () => {
+    const state = apply(
+      sent("go"),
+      { type: "tool_call", session_id: S, call_id: "t1", name: "run_shell", args: {} },
+      {
+        type: "tool_result",
+        session_id: S,
+        call_id: "t1",
+        output: "Exit code: 3",
+        is_error: false,
+        exit_code: 3,
+      },
+    );
+    expect(state.messages[1]).toMatchObject({ status: "done", exitCode: 3 });
+  });
+
+  it("treats a result logged without an exit code as having none", () => {
+    const old = {
+      type: "tool_result",
+      session_id: S,
+      call_id: "t1",
+      output: "x",
+      is_error: false,
+    } as unknown as SessionEvent;
+    const state = apply(
+      sent("go"),
+      { type: "tool_call", session_id: S, call_id: "t1", name: "read_file", args: {} },
+      old,
+    );
+    expect(state.messages[1]).toMatchObject({ status: "done", exitCode: null });
+  });
+
+  it("ignores output for an unknown tool call", () => {
+    const state = sent("go");
+    expect(
+      apply(state, {
+        type: "tool_output",
+        session_id: S,
+        call_id: "zz",
+        stream: "stdout",
+        text: "x",
+      }),
+    ).toEqual(state);
   });
 
   it("ignores event types it does not know", () => {

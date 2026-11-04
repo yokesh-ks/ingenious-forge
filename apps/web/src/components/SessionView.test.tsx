@@ -43,6 +43,8 @@ describe("SessionView", () => {
             args: { path: "README.md" },
             status: "done",
             output: "# Forge",
+            lines: [],
+            exitCode: null,
           },
         ]}
         running={false}
@@ -66,6 +68,8 @@ describe("SessionView", () => {
             args: {},
             status: "done",
             output: "a",
+            lines: [],
+            exitCode: null,
           },
         ]}
         running
