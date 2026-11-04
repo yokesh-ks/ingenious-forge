@@ -6,6 +6,7 @@ import type {
   DirListing,
   FileContent,
   FileList,
+  GitHubConnection,
   GitStatus,
   ModelCatalog,
   OpenProjectRequest,
@@ -92,6 +93,10 @@ export const api = {
   sessionDefaults: () => request<SessionDefaults>("/api/settings/defaults"),
   setSessionDefaults: (defaults: SessionDefaults) =>
     post<SessionDefaults>("/api/settings/defaults", defaults, "PUT"),
+  github: () => request<GitHubConnection>("/api/settings/github"),
+  connectGitHub: (token: string) =>
+    post<GitHubConnection>("/api/settings/github", { token }, "PUT"),
+  disconnectGitHub: () => request<GitHubConnection>("/api/settings/github", { method: "DELETE" }),
   push: (projectId: string) =>
     post<PushResult>(`/api/projects/${encodeURIComponent(projectId)}/git/push`, {}),
   draftCommitMessage: (sessionId: string) =>

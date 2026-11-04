@@ -276,6 +276,20 @@ pub struct SetProviderKeyRequest {
     pub key: String,
 }
 
+/// The GitHub connection as Settings shows it (`GET /api/settings/github`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct GitHubConnection {
+    pub connected: bool,
+    /// The connected account's login.
+    pub login: Option<String>,
+}
+
+/// Body of `PUT /api/settings/github`: a personal access token.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ConnectGitHubRequest {
+    pub token: String,
+}
+
 /// What the browser sends on a project's terminal socket.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -498,6 +512,8 @@ pub fn typescript_bindings() -> String {
         KeySource::decl(&cfg),
         ProviderKeyStatus::decl(&cfg),
         SetProviderKeyRequest::decl(&cfg),
+        GitHubConnection::decl(&cfg),
+        ConnectGitHubRequest::decl(&cfg),
         GitStatus::decl(&cfg),
         CreateBranchRequest::decl(&cfg),
         CommitRequest::decl(&cfg),

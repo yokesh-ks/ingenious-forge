@@ -9,8 +9,14 @@ pub use api_types::{CommitResult, GitStatus, PushResult};
 /// Runs `git args…` in `dir` and returns its stdout, or its stderr as the
 /// error.
 fn git(dir: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
+    git_with(dir, args, &[])
+}
+
+/// `git` with extra environment variables.
+fn git_with(dir: &Path, args: &[&str], env: &[(String, String)]) -> Result<Vec<u8>, String> {
     let out = Command::new("git")
         .args(args)
+        .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
         .current_dir(dir)
         // Never wait for a password prompt nobody can answer.
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -174,6 +180,12 @@ pub fn describe_changes(dir: &Path, limit: usize) -> Result<String, String> {
 /// Pushes the current branch to its remote (`origin`, or the only remote),
 /// setting it as the branch's upstream.
 pub fn push(dir: &Path) -> Result<PushResult, String> {
+    push_with(dir, None)
+}
+
+/// Like [`push`], offering `github_token` to git as the credential for
+/// github.com over HTTPS (an SSH remote uses the user's own keys).
+pub fn push_with(dir: &Path, github_token: Option<&str>) -> Result<PushResult, String> {
     let branch = String::from_utf8_lossy(&git(dir, &["branch", "--show-current"])?)
         .trim()
         .to_string();
@@ -198,13 +210,37 @@ pub fn push(dir: &Path) -> Result<PushResult, String> {
     let url = String::from_utf8_lossy(&git(dir, &["remote", "get-url", &remote])?)
         .trim()
         .to_string();
-    git(
+    let env = github_token.map(token_env).unwrap_or_default();
+    git_with(
         dir,
         &["push", "--porcelain", "--set-upstream", &remote, &branch],
+        &env,
     )?;
     Ok(PushResult {
         remote,
         url,
         branch,
     })
+}
+
+/// Environment that makes git answer github.com credential requests with
+/// `token`. The token travels only in `FORGE_GITHUB_TOKEN`, never in
+/// arguments other processes could see; git reads the helper from
+/// `GIT_CONFIG_*` (git 2.31 or later).
+pub fn token_env(token: &str) -> Vec<(String, String)> {
+    let key = "credential.https://github.com.helper";
+    vec![
+        ("FORGE_GITHUB_TOKEN".into(), token.into()),
+        ("GIT_CONFIG_COUNT".into(), "2".into()),
+        // An empty helper first, so the user's own helpers do not answer
+        // instead of the connected account.
+        ("GIT_CONFIG_KEY_0".into(), key.into()),
+        ("GIT_CONFIG_VALUE_0".into(), String::new()),
+        ("GIT_CONFIG_KEY_1".into(), key.into()),
+        (
+            "GIT_CONFIG_VALUE_1".into(),
+            "!f() { test \"$1\" = get && echo username=x-access-token && echo \"password=$FORGE_GITHUB_TOKEN\"; }; f"
+                .into(),
+        ),
+    ]
 }

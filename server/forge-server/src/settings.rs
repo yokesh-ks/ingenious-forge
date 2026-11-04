@@ -30,6 +30,8 @@ pub struct ProviderKey {
 pub struct Settings {
     pub secrets: Option<SecretStore>,
     pub providers: BTreeMap<String, ProviderKey>,
+    /// The GitHub API base URL; GitHub's own when `None`.
+    pub github_api: Option<String>,
 }
 
 /// The name a provider's key is stored under.
@@ -233,6 +235,7 @@ mod tests {
         let settings = Settings {
             secrets: Some(SecretStore::open(pool, &dir.join("secret.key")).unwrap()),
             providers,
+            github_api: None,
         };
         settings.load().await;
         (settings, handle)

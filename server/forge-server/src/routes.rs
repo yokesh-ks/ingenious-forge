@@ -20,7 +20,9 @@ pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .nest(
             "/api",
-            crate::projects::router().merge(crate::settings::router()),
+            crate::projects::router()
+                .merge(crate::settings::router())
+                .merge(crate::github::router()),
         )
         .route("/ws", get(ws_handler))
 }
