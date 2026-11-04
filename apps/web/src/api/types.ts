@@ -59,6 +59,21 @@ truncated: boolean, };
 
 export type FileContent = { path: string, content: string, };
 
+export type GitStatus = { 
+/**
+ * The current branch, or the short commit when `detached`; `None`
+ * only when git cannot tell.
+ */
+branch: string | null, detached: boolean, 
+/**
+ * Files with staged changes.
+ */
+staged: number, 
+/**
+ * Files with changes not staged, including new files.
+ */
+changed: number, };
+
 export type TerminalInput = { "type": "input", data: string, } | { "type": "resize", cols: number, rows: number, };
 
 export type TerminalNotice = { "type": "exit" };

@@ -4,7 +4,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use agent::tools::ToolBox;
 use api_types::{
-    ApiError, CreateSessionRequest, DirListing, FileContent, FileList, ModelCatalog,
+    ApiError, CreateSessionRequest, DirListing, FileContent, FileList, GitStatus, ModelCatalog,
     OpenProjectRequest, Project, Session, SessionEnvelope, SessionEvent, SetApprovalModeRequest,
 };
 use axum::{
@@ -28,6 +28,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/projects/{id}", get(get_project))
         .route("/projects/{id}/files", get(project_files))
         .route("/projects/{id}/file", get(project_file))
+        .route("/projects/{id}/git/status", get(git_status))
         .route(
             "/projects/{id}/terminal",
             get(crate::terminal::terminal_socket),
@@ -105,6 +106,19 @@ async fn project_files(
     .await
     .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(list))
+}
+
+/// The project's branch and how many files have changes.
+async fn git_status(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<GitStatus> {
+    let project = projects::get_project(&state.db, &id).await?;
+    tokio::task::spawn_blocking(move || git::status(std::path::Path::new(&project.path)))
+        .await
+        .map_err(|e| ApiFailure::internal(e.to_string()))?
+        .map(Json)
+        .map_err(|message| ApiFailure(StatusCode::BAD_REQUEST, message))
 }
 
 /// Largest file the viewer shows.
@@ -700,6 +714,45 @@ mod tests {
 
         let (status, _) = get_json(&format!("{api}/projects/zzz/files")).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn a_project_reports_its_branch_and_changes() {
+        let (api, _) = start().await;
+        let repo = folders().join("real");
+        fs::create_dir_all(&repo).unwrap();
+        let git = |args: &[&str]| {
+            assert!(std::process::Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .status()
+                .unwrap()
+                .success());
+        };
+        git(&["init", "-q", "-b", "trunk"]);
+        fs::write(repo.join("a.txt"), "a").unwrap();
+        let (_, project) = post_json(&format!("{api}/projects"), json!({ "path": repo })).await;
+        let pid = project["id"].as_str().unwrap();
+
+        let (status, body) = get_json(&format!("{api}/projects/{pid}/git/status")).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body,
+            json!({ "branch": "trunk", "detached": false, "staged": 0, "changed": 1 })
+        );
+    }
+
+    #[tokio::test]
+    async fn git_status_of_a_broken_repository_is_an_error() {
+        let (api, _) = start().await;
+        // `folders()` repos have an empty .git folder: not a usable repo.
+        let repo = folders().join("repo");
+        let (_, project) = post_json(&format!("{api}/projects"), json!({ "path": repo })).await;
+        let pid = project["id"].as_str().unwrap();
+        let (status, body) = get_json(&format!("{api}/projects/{pid}/git/status")).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body["error"].is_string());
     }
 
     #[tokio::test]

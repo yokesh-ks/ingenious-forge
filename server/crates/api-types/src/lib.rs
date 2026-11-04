@@ -190,6 +190,19 @@ pub struct FileContent {
     pub content: String,
 }
 
+/// Body of `GET /api/projects/{id}/git/status`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct GitStatus {
+    /// The current branch, or the short commit when `detached`; `None`
+    /// only when git cannot tell.
+    pub branch: Option<String>,
+    pub detached: bool,
+    /// Files with staged changes.
+    pub staged: u32,
+    /// Files with changes not staged, including new files.
+    pub changed: u32,
+}
+
 /// What the browser sends on a project's terminal socket.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -408,6 +421,7 @@ pub fn typescript_bindings() -> String {
         DirListing::decl(&cfg),
         FileList::decl(&cfg),
         FileContent::decl(&cfg),
+        GitStatus::decl(&cfg),
         TerminalInput::decl(&cfg),
         TerminalNotice::decl(&cfg),
         ApiError::decl(&cfg),

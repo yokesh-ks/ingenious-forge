@@ -289,4 +289,16 @@ describe("ProjectPage", () => {
     await userEvent.click(screen.getByRole("menuitemradio", { name: /full-auto/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent("db locked");
   });
+
+  it("the header shows the project's branch and changes", async () => {
+    fakeFetch({
+      "GET /api/projects/p1": project,
+      "GET /api/projects/p1/sessions": [session("s1", "Older")],
+      "GET /api/projects/p1/git/status": { branch: "main", detached: false, staged: 1, changed: 0 },
+    });
+    render(<ProjectPage projectId="p1" sessionId="s1" />);
+    const badge = await screen.findByRole("group", { name: /git status/i });
+    expect(badge).toHaveTextContent("main");
+    expect(badge).toHaveTextContent("1 staged");
+  });
 });

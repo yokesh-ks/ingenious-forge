@@ -3,6 +3,7 @@ name = "git"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Git / GitHub operations service (stub)"
+description = "Git / GitHub operations service"
 
 [dependencies]
+api-types.workspace = true
