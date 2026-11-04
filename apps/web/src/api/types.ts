@@ -5,11 +5,37 @@ export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in
 
 export type Project = { id: string, name: string, path: string, last_opened_at: number, };
 
+export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
+export type SessionModel = { provider: string, model: string, effort: ReasoningEffort, };
+
+export type ModelOption = { id: string, name: string, };
+
+export type ProviderOption = { id: string, name: string, models: Array<ModelOption>, };
+
+export type ModelCatalog = { providers: Array<ProviderOption>, efforts: Array<ReasoningEffort>, 
+/**
+ * The choice used when a session is created without one; `None` when
+ * no provider is configured.
+ */
+default: SessionModel | null, };
+
+export type CreateSessionRequest = { 
+/**
+ * The model to use; the catalog default when left out.
+ */
+model: SessionModel | null, };
+
 export type Session = { id: string, project_id: string, title: string, created_at: number, updated_at: number, 
 /**
  * True while the agent is working in this session.
  */
-running: boolean, };
+running: boolean, 
+/**
+ * The model the session was started with; `None` for sessions created
+ * before models could be picked.
+ */
+model: SessionModel | null, };
 
 export type OpenProjectRequest = { path: string, };
 

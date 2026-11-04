@@ -3,7 +3,10 @@
 use std::{path::PathBuf, sync::Arc};
 
 use agent::tools::ToolBox;
-use api_types::{ApiError, DirListing, OpenProjectRequest, Project, Session, SessionEnvelope};
+use api_types::{
+    ApiError, CreateSessionRequest, DirListing, ModelCatalog, OpenProjectRequest, Project, Session,
+    SessionEnvelope,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -29,6 +32,7 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route("/sessions/{id}/events", get(session_events))
         .route("/fs/dirs", get(list_dirs))
+        .route("/models", get(model_catalog))
 }
 
 /// A failed request: its status and a message for the user.
@@ -74,12 +78,34 @@ async fn get_project(
     Ok(Json(projects::get_project(&state.db, &id).await?))
 }
 
+async fn model_catalog(State(state): State<Arc<AppState>>) -> Json<ModelCatalog> {
+    Json(state.agent.providers().catalog())
+}
+
+/// Creates a session with the chosen model, or the catalog default.
 async fn create_session(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
+    body: Option<Json<CreateSessionRequest>>,
 ) -> ApiResult<Session> {
-    let (session, folder) = projects::create_session(&state.db, &id).await?;
-    state.agent.open_session(&session.id, ToolBox::new(folder));
+    let choice = body
+        .and_then(|Json(body)| body.model)
+        .or_else(|| state.agent.providers().catalog().default);
+    // Check the choice before anything is stored.
+    if let Some(choice) = &choice {
+        if let Err(err) = state.agent.providers().resolve(&choice.into()) {
+            return Err(ApiFailure(StatusCode::BAD_REQUEST, err.to_string()));
+        }
+    }
+    let (session, folder) = projects::create_session(&state.db, &id, choice.as_ref()).await?;
+    let tools = ToolBox::new(folder);
+    match &choice {
+        Some(choice) => state
+            .agent
+            .open_session_with(&session.id, tools, &choice.into())
+            .map_err(|err| ApiFailure(StatusCode::BAD_REQUEST, err.to_string()))?,
+        None => state.agent.open_session(&session.id, tools),
+    }
     Ok(Json(session))
 }
 
@@ -298,6 +324,144 @@ mod tests {
         assert_eq!(session["project_id"], id);
         assert_eq!(session["title"], "New session");
         assert!(state.agent.is_open(session["id"].as_str().unwrap()));
+    }
+
+    /// A provider with two models, so a session can pick one.
+    struct TwoModels;
+
+    impl agent::providers::ModelProvider for TwoModels {
+        fn id(&self) -> &str {
+            "stub"
+        }
+        fn name(&self) -> &str {
+            "Stub"
+        }
+        fn models(&self) -> Vec<agent::providers::ModelInfo> {
+            ["fast", "smart"]
+                .into_iter()
+                .map(|id| agent::providers::ModelInfo {
+                    id: id.into(),
+                    name: id.to_uppercase(),
+                })
+                .collect()
+        }
+        fn client(&self, _: &str) -> Arc<dyn ModelClient> {
+            Arc::new(NoModel)
+        }
+    }
+
+    async fn start_with_models() -> (String, Arc<AppState>) {
+        let mut providers = agent::providers::Providers::new();
+        providers.register(Arc::new(TwoModels));
+        let log = SessionLog::open(folders().join("logs")).unwrap();
+        let events = EventService::with_log(Arc::new(log));
+        let state = Arc::new(AppState {
+            db: db::connect(":memory:").await.unwrap(),
+            agent: Agent::with_providers(providers, events.clone()),
+            events,
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .nest("/api", router())
+            .with_state(state.clone());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (format!("http://{addr}/api"), state)
+    }
+
+    async fn new_project(api: &str) -> String {
+        let repo = folders().join("repo");
+        let (_, project) = post_json(&format!("{api}/projects"), json!({ "path": repo })).await;
+        project["id"].as_str().unwrap().to_string()
+    }
+
+    #[tokio::test]
+    async fn the_model_catalog_lists_providers_models_and_efforts() {
+        let (api, _) = start_with_models().await;
+
+        let (status, catalog) = get_json(&format!("{api}/models")).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            catalog,
+            json!({
+                "providers": [{ "id": "stub", "name": "Stub", "models": [
+                    { "id": "fast", "name": "FAST" },
+                    { "id": "smart", "name": "SMART" }
+                ]}],
+                "efforts": ["low", "medium", "high", "xhigh", "max"],
+                "default": { "provider": "stub", "model": "fast", "effort": "high" }
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_session_is_created_with_the_chosen_model_and_keeps_it() {
+        let (api, _) = start_with_models().await;
+        let id = new_project(&api).await;
+        let sessions = format!("{api}/projects/{id}/sessions");
+
+        let (status, first) = post_json(
+            &sessions,
+            json!({ "model": { "provider": "stub", "model": "smart", "effort": "max" } }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            first["model"],
+            json!({ "provider": "stub", "model": "smart", "effort": "max" })
+        );
+
+        // A second session with another model leaves the first unchanged.
+        let (_, second) = post_json(
+            &sessions,
+            json!({ "model": { "provider": "stub", "model": "fast", "effort": "low" } }),
+        )
+        .await;
+        let (_, listed) = get_json(&sessions).await;
+        let model_of = |sid: &Value| {
+            listed
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|s| s["id"] == *sid)
+                .unwrap()["model"]
+                .clone()
+        };
+        assert_eq!(model_of(&first["id"])["model"], "smart");
+        assert_eq!(model_of(&second["id"])["model"], "fast");
+        assert_eq!(model_of(&second["id"])["effort"], "low");
+    }
+
+    #[tokio::test]
+    async fn a_session_without_a_choice_gets_the_default_model() {
+        let (api, _) = start_with_models().await;
+        let id = new_project(&api).await;
+
+        let (_, session) = post_json(&format!("{api}/projects/{id}/sessions"), json!({})).await;
+
+        assert_eq!(
+            session["model"],
+            json!({ "provider": "stub", "model": "fast", "effort": "high" })
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unknown_model_is_a_bad_request_and_creates_nothing() {
+        let (api, _) = start_with_models().await;
+        let id = new_project(&api).await;
+        let sessions = format!("{api}/projects/{id}/sessions");
+
+        let (status, body) = post_json(
+            &sessions,
+            json!({ "model": { "provider": "stub", "model": "nope", "effort": "high" } }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body["error"].as_str().unwrap().contains("nope"), "{body}");
+        let (_, listed) = get_json(&sessions).await;
+        assert_eq!(listed, json!([]));
     }
 
     #[tokio::test]

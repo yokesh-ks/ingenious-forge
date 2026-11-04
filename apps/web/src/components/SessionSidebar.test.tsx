@@ -15,6 +15,7 @@ const sessions: Session[] = [
     created_at: 1,
     updated_at: now - 120_000,
     running: true,
+    model: null,
   },
   {
     id: "s2",
@@ -23,6 +24,7 @@ const sessions: Session[] = [
     created_at: 1,
     updated_at: now - 3 * 3_600_000,
     running: false,
+    model: null,
   },
 ];
 

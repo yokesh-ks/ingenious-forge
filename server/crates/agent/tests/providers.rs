@@ -85,6 +85,7 @@ fn choice(provider: &str, model: &str) -> ModelChoice {
     ModelChoice {
         provider: provider.into(),
         model: model.into(),
+        effort: None,
     }
 }
 
@@ -225,4 +226,38 @@ async fn an_agent_with_no_providers_reports_it_when_a_turn_starts() {
             break;
         }
     }
+}
+
+#[tokio::test]
+async fn the_session_effort_is_sent_with_every_request() {
+    use agent::model::ModelRequest;
+    use api_types::ReasoningEffort;
+
+    /// Records the effort of each request.
+    struct Recorder(Arc<Mutex<Vec<Option<ReasoningEffort>>>>);
+    impl ModelClient for Recorder {
+        fn stream(&self, request: ModelRequest) -> mpsc::Receiver<Result<ModelEvent, ModelError>> {
+            self.0.lock().unwrap().push(request.effort);
+            let (tx, rx) = mpsc::channel(1);
+            tokio::spawn(async move {
+                let _ = tx.send(Ok(ModelEvent::TextDelta("ok".into()))).await;
+            });
+            rx
+        }
+    }
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let events = EventService::new();
+    let mut rx = events.subscribe();
+    let agent = Agent::new(Arc::new(Recorder(seen.clone())), events);
+    let pick = ModelChoice {
+        provider: "default".into(),
+        model: "default".into(),
+        effort: Some(ReasoningEffort::Low),
+    };
+    agent
+        .open_session_with("s", ToolBox::new(std::env::temp_dir()), &pick)
+        .unwrap();
+
+    assert_eq!(reply_text(&agent, "s", &mut rx).await, "ok");
+    assert_eq!(*seen.lock().unwrap(), [Some(ReasoningEffort::Low)]);
 }

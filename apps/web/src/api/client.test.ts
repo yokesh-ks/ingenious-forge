@@ -26,6 +26,21 @@ describe("api client", () => {
     expect(String(fetch.mock.calls[0][0])).toBe("/api/projects/p1/sessions");
   });
 
+  it("loads the model catalog", async () => {
+    const fetch = fakeFetch({ "GET /api/models": { providers: [], efforts: [], default: null } });
+    await api.modelCatalog();
+    expect(String(fetch.mock.calls[0][0])).toBe("/api/models");
+  });
+
+  it("creates a session with the chosen model, or none for the default", async () => {
+    const fetch = fakeFetch({ "POST /api/projects/p1/sessions": {} });
+    const model = { provider: "anthropic", model: "claude-opus-5-5", effort: "low" } as const;
+    await api.createSession("p1", model);
+    expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({ model });
+    await api.createSession("p1");
+    expect(JSON.parse(String(fetch.mock.calls[1][1]?.body))).toEqual({});
+  });
+
   it("encodes the folder picker path as a query parameter", async () => {
     const fetch = fakeFetch({
       "GET /api/fs/dirs": { path: "/a b", parent: "/", is_git_repo: false, entries: [] },

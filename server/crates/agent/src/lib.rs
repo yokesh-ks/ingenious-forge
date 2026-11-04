@@ -64,6 +64,7 @@ struct SessionState {
     /// The client for the session's provider and model; `None` when no
     /// provider is configured.
     model: Option<Arc<dyn ModelClient>>,
+    effort: Option<api_types::ReasoningEffort>,
 }
 
 /// How a turn that did not fail came to an end.
@@ -114,7 +115,7 @@ impl Agent {
             .providers
             .default_choice()
             .and_then(|choice| self.providers.resolve(&choice).ok());
-        self.open(session_id, tools, model);
+        self.open(session_id, tools, model, None);
     }
 
     /// Like [`Agent::open_session`], talking to the model in `choice`.
@@ -125,11 +126,17 @@ impl Agent {
         choice: &ModelChoice,
     ) -> Result<(), AgentError> {
         let model = self.providers.resolve(choice)?;
-        self.open(session_id, tools, Some(model));
+        self.open(session_id, tools, Some(model), choice.effort);
         Ok(())
     }
 
-    fn open(&self, session_id: &str, tools: ToolBox, model: Option<Arc<dyn ModelClient>>) {
+    fn open(
+        &self,
+        session_id: &str,
+        tools: ToolBox,
+        model: Option<Arc<dyn ModelClient>>,
+        effort: Option<api_types::ReasoningEffort>,
+    ) {
         if self.is_open(session_id) {
             return;
         }
@@ -142,6 +149,7 @@ impl Agent {
         session.tools = Some(tools);
         session.system = system;
         session.model = model;
+        session.effort = effort;
         let unfinished = self.restore(session_id, session);
         drop(sessions);
         if unfinished {
@@ -483,12 +491,13 @@ impl Agent {
         cancelled: &mut watch::Receiver<bool>,
         tools: &ToolBox,
     ) -> Result<Reply, String> {
-        let (system, model) = {
+        let (system, model, effort) = {
             let sessions = self.sessions.lock().unwrap();
             let session = sessions.get(session_id);
             (
                 session.and_then(|s| s.system.clone()),
                 session.and_then(|s| s.model.clone()),
+                session.and_then(|s| s.effort),
             )
         };
         let model = model.ok_or_else(|| ModelError::NoProvider.to_string())?;
@@ -496,6 +505,7 @@ impl Agent {
             messages: conversation.to_vec(),
             tools: tools.specs(),
             system,
+            effort,
         });
         let mut text = String::new();
         let mut message = None;

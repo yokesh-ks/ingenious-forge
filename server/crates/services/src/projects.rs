@@ -3,8 +3,8 @@
 
 use std::path::PathBuf;
 
-use api_types::{Project, Session};
-use db::{DbError, ProjectRow, SessionRow};
+use api_types::{Project, Session, SessionModel};
+use db::{DbError, ProjectRow, SessionModelRow, SessionRow};
 use sqlx::SqlitePool;
 
 use crate::folders::{inspect_folder, FolderError};
@@ -49,7 +49,17 @@ fn session(row: SessionRow) -> Session {
         updated_at: row.updated_at,
         // Only the agent knows; the API layer fills it in.
         running: false,
+        model: row.model.and_then(session_model),
     }
+}
+
+/// A stored model choice; `None` when its effort is not one Forge knows.
+fn session_model(row: SessionModelRow) -> Option<SessionModel> {
+    Some(SessionModel {
+        effort: row.effort.parse().ok()?,
+        provider: row.provider,
+        model: row.model,
+    })
 }
 
 /// Opens the git repository at `path` as a project, recording it as the
@@ -73,15 +83,44 @@ pub async fn get_project(pool: &SqlitePool, id: &str) -> Result<Project, Project
         .ok_or(ProjectError::NotFound)
 }
 
-/// Creates a session in a project; returns it with the folder its agent
-/// works in.
+/// Creates a session in a project, recording the model it starts with;
+/// returns it with the folder its agent works in.
 pub async fn create_session(
     pool: &SqlitePool,
     project_id: &str,
+    model: Option<&SessionModel>,
 ) -> Result<(Session, PathBuf), ProjectError> {
     let project = get_project(pool, project_id).await?;
-    let row = db::create_session(pool, &project.id, NEW_SESSION_TITLE, now_ms()).await?;
+    let stored = model.map(|m| SessionModelRow {
+        provider: m.provider.clone(),
+        model: m.model.clone(),
+        effort: m.effort.as_str().to_string(),
+    });
+    let row = db::create_session_with(
+        pool,
+        &project.id,
+        NEW_SESSION_TITLE,
+        now_ms(),
+        stored.as_ref(),
+    )
+    .await?;
     Ok((session(row), PathBuf::from(project.path)))
+}
+
+/// The project folder and model choice of `session_id`, or `None` for an
+/// unknown session.
+pub async fn session_settings(
+    pool: &SqlitePool,
+    session_id: &str,
+) -> Result<Option<(PathBuf, Option<SessionModel>)>, ProjectError> {
+    let Some(row) = db::get_session(pool, session_id).await? else {
+        return Ok(None);
+    };
+    let project = get_project(pool, &row.project_id).await?;
+    Ok(Some((
+        PathBuf::from(project.path),
+        row.model.and_then(session_model),
+    )))
 }
 
 /// The project folder of `session_id`, or `None` for an unknown session.

@@ -45,6 +45,16 @@ pub struct SessionRow {
     /// Milliseconds since the Unix epoch.
     pub created_at: i64,
     pub updated_at: i64,
+    /// The model the session was started with, if one was recorded.
+    pub model: Option<SessionModelRow>,
+}
+
+/// A session's provider, model and reasoning effort, as stored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionModelRow {
+    pub provider: String,
+    pub model: String,
+    pub effort: String,
 }
 
 type ProjectTuple = (String, String, String, i64);
@@ -59,16 +69,37 @@ fn project(row: ProjectTuple) -> ProjectRow {
     }
 }
 
-type SessionTuple = (String, String, String, i64, i64);
+type SessionTuple = (
+    String,
+    String,
+    String,
+    i64,
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
+const SESSION_COLUMNS: &str =
+    "id, project_id, title, created_at, updated_at, provider, model, effort";
 
 fn session(row: SessionTuple) -> SessionRow {
-    let (id, project_id, title, created_at, updated_at) = row;
+    let (id, project_id, title, created_at, updated_at, provider, model, effort) = row;
+    let model = match (provider, model, effort) {
+        (Some(provider), Some(model), Some(effort)) => Some(SessionModelRow {
+            provider,
+            model,
+            effort,
+        }),
+        _ => None,
+    };
     SessionRow {
         id,
         project_id,
         title,
         created_at,
         updated_at,
+        model,
     }
 }
 
@@ -120,23 +151,37 @@ pub async fn create_session(
     title: &str,
     now: i64,
 ) -> Result<SessionRow, DbError> {
-    let row: SessionTuple = sqlx::query_as(
-        "INSERT INTO sessions (id, project_id, title, created_at, updated_at)
-         VALUES (lower(hex(randomblob(16))), ?1, ?2, ?3, ?3)
-         RETURNING id, project_id, title, created_at, updated_at",
-    )
+    create_session_with(pool, project_id, title, now, None).await
+}
+
+/// Creates a session that records the model it was started with.
+pub async fn create_session_with(
+    pool: &SqlitePool,
+    project_id: &str,
+    title: &str,
+    now: i64,
+    model: Option<&SessionModelRow>,
+) -> Result<SessionRow, DbError> {
+    let row: SessionTuple = sqlx::query_as(&format!(
+        "INSERT INTO sessions (id, project_id, title, created_at, updated_at, provider, model, effort)
+         VALUES (lower(hex(randomblob(16))), ?1, ?2, ?3, ?3, ?4, ?5, ?6)
+         RETURNING {SESSION_COLUMNS}"
+    ))
     .bind(project_id)
     .bind(title)
     .bind(now)
+    .bind(model.map(|m| m.provider.as_str()))
+    .bind(model.map(|m| m.model.as_str()))
+    .bind(model.map(|m| m.effort.as_str()))
     .fetch_one(pool)
     .await?;
     Ok(session(row))
 }
 
 pub async fn get_session(pool: &SqlitePool, id: &str) -> Result<Option<SessionRow>, DbError> {
-    let row: Option<SessionTuple> = sqlx::query_as(
-        "SELECT id, project_id, title, created_at, updated_at FROM sessions WHERE id = ?1",
-    )
+    let row: Option<SessionTuple> = sqlx::query_as(&format!(
+        "SELECT {SESSION_COLUMNS} FROM sessions WHERE id = ?1"
+    ))
     .bind(id)
     .fetch_optional(pool)
     .await?;
@@ -148,10 +193,10 @@ pub async fn list_sessions(
     pool: &SqlitePool,
     project_id: &str,
 ) -> Result<Vec<SessionRow>, DbError> {
-    let rows: Vec<SessionTuple> = sqlx::query_as(
-        "SELECT id, project_id, title, created_at, updated_at FROM sessions
-         WHERE project_id = ?1 ORDER BY updated_at DESC, created_at DESC",
-    )
+    let rows: Vec<SessionTuple> = sqlx::query_as(&format!(
+        "SELECT {SESSION_COLUMNS} FROM sessions
+         WHERE project_id = ?1 ORDER BY updated_at DESC, created_at DESC"
+    ))
     .bind(project_id)
     .fetch_all(pool)
     .await?;

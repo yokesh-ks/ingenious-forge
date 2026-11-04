@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use api_types::{ModelCatalog, ModelOption, ProviderOption, ReasoningEffort, SessionModel};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{ModelClient, ModelError};
@@ -16,11 +17,24 @@ pub struct ModelInfo {
     pub name: String,
 }
 
-/// Which provider and model a session talks to.
+/// Which provider and model a session talks to, and how hard it thinks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelChoice {
     pub provider: String,
     pub model: String,
+    /// The provider's default effort when `None`.
+    #[serde(default)]
+    pub effort: Option<ReasoningEffort>,
+}
+
+impl From<&SessionModel> for ModelChoice {
+    fn from(m: &SessionModel) -> Self {
+        Self {
+            provider: m.provider.clone(),
+            model: m.model.clone(),
+            effort: Some(m.effort),
+        }
+    }
 }
 
 pub trait ModelProvider: Send + Sync {
@@ -68,8 +82,38 @@ impl Providers {
             p.models().into_iter().next().map(|m| ModelChoice {
                 provider: p.id().to_string(),
                 model: m.id,
+                effort: None,
             })
         })
+    }
+
+    /// What a new session can pick from; the default uses the default
+    /// effort.
+    pub fn catalog(&self) -> ModelCatalog {
+        ModelCatalog {
+            providers: self
+                .list
+                .iter()
+                .map(|p| ProviderOption {
+                    id: p.id().to_string(),
+                    name: p.name().to_string(),
+                    models: p
+                        .models()
+                        .into_iter()
+                        .map(|m| ModelOption {
+                            id: m.id,
+                            name: m.name,
+                        })
+                        .collect(),
+                })
+                .collect(),
+            efforts: ReasoningEffort::ALL.to_vec(),
+            default: self.default_choice().map(|c| SessionModel {
+                provider: c.provider,
+                model: c.model,
+                effort: ReasoningEffort::default(),
+            }),
+        }
     }
 
     pub fn resolve(&self, choice: &ModelChoice) -> Result<Arc<dyn ModelClient>, ModelError> {

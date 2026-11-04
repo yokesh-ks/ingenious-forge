@@ -62,8 +62,20 @@ pub(crate) async fn ensure_open(state: &AppState, session_id: &str) {
     if state.agent.is_open(session_id) {
         return;
     }
-    match services::projects::session_folder(&state.db, session_id).await {
-        Ok(Some(folder)) => state.agent.open_session(session_id, ToolBox::new(folder)),
+    match services::projects::session_settings(&state.db, session_id).await {
+        Ok(Some((folder, Some(model)))) => {
+            let tools = ToolBox::new(folder);
+            if let Err(err) =
+                state
+                    .agent
+                    .open_session_with(session_id, tools.clone(), &(&model).into())
+            {
+                // The model is no longer offered: fall back to the default.
+                tracing::warn!(%err, %session_id, "cannot open session with its model");
+                state.agent.open_session(session_id, tools);
+            }
+        }
+        Ok(Some((folder, None))) => state.agent.open_session(session_id, ToolBox::new(folder)),
         Ok(None) => {}
         Err(err) => tracing::warn!(%err, %session_id, "cannot look up session"),
     }
