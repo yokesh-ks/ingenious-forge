@@ -59,6 +59,20 @@ async fn the_key_file_is_private_and_reused_after_a_restart() {
 }
 
 #[tokio::test]
+async fn a_key_file_others_can_read_is_refused() {
+    let dir = dir();
+    let key = dir.join("secret.key");
+    drop(SecretStore::open(pool(&dir).await, &key).unwrap());
+    std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    let err = match SecretStore::open(pool(&dir).await, &key) {
+        Ok(_) => panic!("a key file with mode 0644 was accepted"),
+        Err(err) => err,
+    };
+    assert!(err.contains("chmod 600"), "{err}");
+}
+
+#[tokio::test]
 async fn another_key_cannot_read_the_secrets() {
     let dir = dir();
     let store = SecretStore::open(pool(&dir).await, &dir.join("a.key")).unwrap();
