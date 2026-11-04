@@ -10,6 +10,7 @@ import type {
   ModelCatalog,
   OpenProjectRequest,
   Project,
+  ProviderKeyStatus,
   PushResult,
   Session,
   SessionEnvelope,
@@ -76,6 +77,17 @@ export const api = {
     post<GitStatus>(`/api/projects/${encodeURIComponent(projectId)}/git/branch`, { name }),
   commit: (projectId: string, message: string) =>
     post<CommitResult>(`/api/projects/${encodeURIComponent(projectId)}/git/commit`, { message }),
+  providerKeys: () => request<ProviderKeyStatus[]>("/api/settings/providers"),
+  setProviderKey: (provider: string, key: string) =>
+    post<ProviderKeyStatus>(
+      `/api/settings/providers/${encodeURIComponent(provider)}/key`,
+      { key },
+      "PUT",
+    ),
+  removeProviderKey: (provider: string) =>
+    request<ProviderKeyStatus>(`/api/settings/providers/${encodeURIComponent(provider)}/key`, {
+      method: "DELETE",
+    }),
   push: (projectId: string) =>
     post<PushResult>(`/api/projects/${encodeURIComponent(projectId)}/git/push`, {}),
   draftCommitMessage: (sessionId: string) =>

@@ -59,6 +59,16 @@ truncated: boolean, };
 
 export type FileContent = { path: string, content: string, };
 
+export type KeySource = "settings" | "environment";
+
+export type ProviderKeyStatus = { provider: string, name: string, 
+/**
+ * The key's last four characters, when one is set.
+ */
+hint: string | null, source: KeySource | null, };
+
+export type SetProviderKeyRequest = { key: string, };
+
 export type GitStatus = { 
 /**
  * The current branch, or the short commit when `detached`; `None`

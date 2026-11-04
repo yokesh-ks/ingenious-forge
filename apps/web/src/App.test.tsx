@@ -48,4 +48,14 @@ describe("App", () => {
     render(<App />);
     expect(screen.getByText(/page not found/i)).toBeInTheDocument();
   });
+
+  it("links to Settings from every page and shows it at /settings", async () => {
+    fakeFetch({ "GET /api/projects": [], "GET /api/settings/providers": [] });
+    render(<App />);
+    const link = screen.getByRole("link", { name: /settings/i });
+    expect(link).toHaveAttribute("href", "/settings");
+    window.history.replaceState(null, "", "/settings");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    expect(await screen.findByRole("heading", { name: /^settings$/i })).toBeInTheDocument();
+  });
 });

@@ -157,3 +157,19 @@ async fn the_provider_builds_a_client_for_the_chosen_model() {
     let headers = seen.headers.lock().unwrap().clone().unwrap();
     assert_eq!(headers["x-api-key"], "test-key");
 }
+
+#[tokio::test]
+async fn a_key_changed_through_the_handle_is_used_by_new_clients() {
+    use agent::{anthropic::AnthropicProvider, providers::ModelProvider};
+    let (url, seen) = serve(StatusCode::OK, STREAM).await;
+    let provider = AnthropicProvider::new(None).with_base_url(url);
+
+    let mut rx = provider.client("claude-opus-5-5").stream(request());
+    assert_eq!(rx.recv().await, Some(Err(ModelError::MissingApiKey)));
+
+    *provider.key_handle().write().unwrap() = Some("from-settings".into());
+    let mut rx = provider.client("claude-opus-5-5").stream(request());
+    while rx.recv().await.is_some() {}
+    let headers = seen.headers.lock().unwrap().clone().unwrap();
+    assert_eq!(headers["x-api-key"], "from-settings");
+}

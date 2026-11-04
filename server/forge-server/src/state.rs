@@ -7,4 +7,5 @@ pub struct AppState {
     pub events: EventService,
     pub agent: Agent,
     pub terminals: services::terminal::Terminals,
+    pub settings: crate::settings::Settings,
 }

@@ -1,10 +1,13 @@
+import { SettingsIcon } from "lucide-react";
 import { ThemeToggle } from "./components/theme-toggle";
 import { Link, matchPath, usePath } from "./lib/router";
 import HomePage from "./pages/HomePage";
 import ProjectPage from "./pages/ProjectPage";
+import SettingsPage from "./pages/SettingsPage";
 
 function Page({ path }: { path: string }) {
   if (matchPath("/", path)) return <HomePage />;
+  if (matchPath("/settings", path)) return <SettingsPage />;
   const session = matchPath("/projects/:id/sessions/:sessionId", path);
   if (session) {
     return <ProjectPage key={session.id} projectId={session.id} sessionId={session.sessionId} />;
@@ -28,6 +31,12 @@ export default function App() {
             Ingenious <span className="text-primary">Forge</span>
           </Link>
         </h1>
+        <Link
+          to="/settings"
+          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <SettingsIcon className="size-4" aria-hidden /> Settings
+        </Link>
         <ThemeToggle />
       </header>
       <Page path={path} />

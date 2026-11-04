@@ -53,6 +53,10 @@ pub fn router() -> Router<Arc<AppState>> {
 pub struct ApiFailure(StatusCode, String);
 
 impl ApiFailure {
+    pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
+        Self(status, message.into())
+    }
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self(StatusCode::INTERNAL_SERVER_ERROR, message.into())
     }
@@ -415,6 +419,7 @@ mod tests {
             agent: Agent::new(model, events.clone()),
             events,
             terminals: Default::default(),
+            settings: Default::default(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -537,6 +542,7 @@ mod tests {
             agent: Agent::with_providers(providers, events.clone()),
             events,
             terminals: Default::default(),
+            settings: Default::default(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -722,6 +728,7 @@ mod tests {
             events: EventService::new(),
             agent: Agent::new(Arc::new(NoModel), EventService::new()),
             terminals: Default::default(),
+            settings: Default::default(),
         };
         crate::routes::ensure_open(&restarted, &sid).await;
         assert_eq!(

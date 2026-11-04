@@ -239,6 +239,32 @@ pub struct CommitMessageDraft {
     pub message: String,
 }
 
+/// Where a provider's API key comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum KeySource {
+    /// Saved in Settings, encrypted on this machine.
+    Settings,
+    /// Taken from an environment variable such as `ANTHROPIC_API_KEY`.
+    Environment,
+}
+
+/// A model provider's API key as Settings shows it: never the key itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ProviderKeyStatus {
+    pub provider: String,
+    pub name: String,
+    /// The key's last four characters, when one is set.
+    pub hint: Option<String>,
+    pub source: Option<KeySource>,
+}
+
+/// Body of `PUT /api/settings/providers/{id}/key`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SetProviderKeyRequest {
+    pub key: String,
+}
+
 /// What the browser sends on a project's terminal socket.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -457,6 +483,9 @@ pub fn typescript_bindings() -> String {
         DirListing::decl(&cfg),
         FileList::decl(&cfg),
         FileContent::decl(&cfg),
+        KeySource::decl(&cfg),
+        ProviderKeyStatus::decl(&cfg),
+        SetProviderKeyRequest::decl(&cfg),
         GitStatus::decl(&cfg),
         CreateBranchRequest::decl(&cfg),
         CommitRequest::decl(&cfg),

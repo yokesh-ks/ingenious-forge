@@ -18,7 +18,10 @@ use crate::state::AppState;
 /// The API and WebSocket routes, without the static SPA fallback.
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
-        .nest("/api", crate::projects::router())
+        .nest(
+            "/api",
+            crate::projects::router().merge(crate::settings::router()),
+        )
         .route("/ws", get(ws_handler))
 }
 
@@ -207,6 +210,7 @@ mod tests {
             agent,
             events,
             terminals: Default::default(),
+            settings: Default::default(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -304,6 +308,7 @@ mod tests {
             agent,
             events,
             terminals: Default::default(),
+            settings: Default::default(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
