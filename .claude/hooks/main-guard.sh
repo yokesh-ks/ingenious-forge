@@ -17,7 +17,12 @@ case "$COMMAND" in
   *) exit 0 ;;
 esac
 
-BRANCH=$(git symbolic-ref --short -q HEAD 2>/dev/null) || exit 0
+# Use the folder the command runs in (the payload's cwd): the harness may
+# start this hook in the main checkout while the agent works in a worktree.
+CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
+[ -n "$CWD" ] && [ -d "$CWD" ] || CWD=.
+
+BRANCH=$(git -C "$CWD" symbolic-ref --short -q HEAD 2>/dev/null) || exit 0
 
 case "$BRANCH" in
   main | master)
