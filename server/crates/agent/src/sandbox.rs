@@ -33,6 +33,8 @@ pub enum Sandbox {
     Off,
     /// macOS `sandbox-exec` with a generated profile.
     SandboxExec,
+    /// Linux bubblewrap (`bwrap`) at this path.
+    Bubblewrap(PathBuf),
     /// A sandbox is required but cannot be used; commands are refused
     /// with this reason.
     Unavailable(String),
@@ -49,6 +51,8 @@ impl Sandbox {
                     "{SANDBOX_EXEC} is missing, so commands cannot be sandboxed"
                 ))
             }
+        } else if cfg!(target_os = "linux") {
+            linux_sandbox(find_on_path("bwrap"), probe_bwrap)
         } else {
             Sandbox::Unavailable(
                 "Forge has no command sandbox for this operating system yet".into(),
@@ -61,6 +65,7 @@ impl Sandbox {
         match self {
             Sandbox::Off => "none",
             Sandbox::SandboxExec => "sandbox-exec",
+            Sandbox::Bubblewrap(_) => "bubblewrap",
             Sandbox::Unavailable(_) => "unavailable",
         }
     }
@@ -80,10 +85,81 @@ impl Sandbox {
                 args.extend(shell());
                 Ok((SANDBOX_EXEC.into(), args))
             }
+            Sandbox::Bubblewrap(bwrap) => {
+                let mut args = bwrap_args(policy);
+                args.extend(shell());
+                Ok((bwrap.clone(), args))
+            }
             Sandbox::Unavailable(reason) => Err(format!(
                 "Commands are not run because the sandbox is unavailable: {reason}"
             )),
         }
+    }
+}
+
+/// The Linux sandbox: bubblewrap at `bwrap` when `probe` shows it can
+/// start a sandbox here, otherwise unavailable with what to do about it.
+pub fn linux_sandbox(
+    bwrap: Option<PathBuf>,
+    probe: impl Fn(&Path) -> Result<(), String>,
+) -> Sandbox {
+    let Some(bwrap) = bwrap else {
+        return Sandbox::Unavailable(
+            "bubblewrap (bwrap) is not installed; install it, for example with \
+             `sudo apt install bubblewrap` or `sudo dnf install bubblewrap`, and restart Forge"
+                .into(),
+        );
+    };
+    match probe(&bwrap) {
+        Ok(()) => Sandbox::Bubblewrap(bwrap),
+        Err(err) => Sandbox::Unavailable(format!(
+            "bubblewrap cannot start a sandbox here ({err}); this system may restrict \
+             unprivileged user namespaces"
+        )),
+    }
+}
+
+/// bubblewrap options: the root file system read-only, each writable
+/// folder bound read-write, fresh /dev and /proc, no network unless
+/// allowed, and the sandbox ends with Forge. The command follows `--`.
+pub fn bwrap_args(policy: &Policy) -> Vec<String> {
+    let mut args: Vec<String> = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
+        .map(String::from)
+        .to_vec();
+    for folder in &policy.writable {
+        let folder = folder.to_string_lossy().into_owned();
+        args.extend(["--bind".to_string(), folder.clone(), folder]);
+    }
+    if !policy.network {
+        args.push("--unshare-net".into());
+    }
+    args.extend(["--die-with-parent".to_string(), "--".into()]);
+    args
+}
+
+fn find_on_path(program: &str) -> Option<PathBuf> {
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join(program))
+            .find(|path| path.is_file())
+    })
+}
+
+/// Runs `true` in a minimal bubblewrap sandbox to check it works.
+fn probe_bwrap(bwrap: &Path) -> Result<(), String> {
+    let out = std::process::Command::new(bwrap)
+        .args(bwrap_args(&Policy {
+            writable: Vec::new(),
+            network: false,
+        }))
+        .arg("/bin/true")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
     }
 }
 
