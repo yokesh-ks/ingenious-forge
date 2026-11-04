@@ -297,3 +297,60 @@ fn user_message_event_serializes() {
         json!({ "type": "user_message", "session_id": "s1", "text": "hi" })
     );
 }
+
+#[test]
+fn session_model_and_catalog_serialize_as_the_frontend_expects() {
+    use api_types::{
+        CreateSessionRequest, ModelCatalog, ModelOption, ProviderOption, ReasoningEffort,
+        SessionModel,
+    };
+    let model = SessionModel {
+        provider: "anthropic".into(),
+        model: "claude-opus-5-5".into(),
+        effort: ReasoningEffort::Xhigh,
+    };
+    assert_eq!(
+        serde_json::to_value(&model).unwrap(),
+        json!({ "provider": "anthropic", "model": "claude-opus-5-5", "effort": "xhigh" })
+    );
+    assert_eq!(ReasoningEffort::default(), ReasoningEffort::High);
+    assert_eq!(ReasoningEffort::ALL.len(), 5);
+    assert_eq!(ReasoningEffort::Max.as_str(), "max");
+    assert_eq!(
+        "medium".parse::<ReasoningEffort>(),
+        Ok(ReasoningEffort::Medium)
+    );
+    assert!("huge".parse::<ReasoningEffort>().is_err());
+
+    // A request without a body field picks the default model.
+    let empty: CreateSessionRequest = serde_json::from_value(json!({})).unwrap();
+    assert_eq!(empty.model, None);
+
+    let catalog = ModelCatalog {
+        providers: vec![ProviderOption {
+            id: "anthropic".into(),
+            name: "Anthropic".into(),
+            models: vec![ModelOption {
+                id: "claude-opus-5-5".into(),
+                name: "Claude Opus 5.5".into(),
+            }],
+        }],
+        efforts: ReasoningEffort::ALL.to_vec(),
+        default: Some(model),
+    };
+    let value = serde_json::to_value(&catalog).unwrap();
+    assert_eq!(
+        value["efforts"],
+        json!(["low", "medium", "high", "xhigh", "max"])
+    );
+    assert_eq!(
+        value["providers"][0]["models"][0]["name"],
+        "Claude Opus 5.5"
+    );
+
+    let ts = typescript_bindings();
+    assert!(ts.contains("export type ReasoningEffort"), "{ts}");
+    assert!(ts.contains("export type ModelCatalog"), "{ts}");
+    assert!(ts.contains("export type CreateSessionRequest"), "{ts}");
+    assert!(ts.contains("model: SessionModel | null"), "{ts}");
+}

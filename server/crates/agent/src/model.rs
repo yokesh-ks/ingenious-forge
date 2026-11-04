@@ -78,6 +78,8 @@ pub struct ModelRequest {
     /// Instructions sent ahead of the conversation, such as the project's
     /// `AGENTS.md`.
     pub system: Option<String>,
+    /// How hard the model should think; the provider's default when `None`.
+    pub effort: Option<api_types::ReasoningEffort>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

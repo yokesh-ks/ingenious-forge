@@ -110,6 +110,10 @@ pub(crate) fn request_body(model: &str, request: &ModelRequest) -> Value {
     if let Some(system) = &request.system {
         body["system"] = json!(system);
     }
+    // Thinking is left out so it stays adaptive; effort sets its depth.
+    if let Some(effort) = request.effort {
+        body["output_config"] = json!({ "effort": effort.as_str() });
+    }
     body
 }
 
@@ -506,6 +510,7 @@ mod tests {
             ],
             tools: ToolBox::new(".").specs(),
             system: None,
+            effort: None,
         };
         let body = request_body("claude-opus-5-5", &req);
         assert_eq!(body["model"], "claude-opus-5-5");
@@ -536,10 +541,12 @@ mod tests {
             messages: vec![ChatMessage::user_text("hi")],
             tools: vec![],
             system: None,
+            effort: None,
         };
         let body = request_body("m", &req);
         assert!(body.get("tools").is_none());
         assert!(body.get("system").is_none());
+        assert!(body.get("output_config").is_none());
     }
 
     #[test]
@@ -548,11 +555,26 @@ mod tests {
             messages: vec![ChatMessage::user_text("hi")],
             tools: vec![],
             system: Some("Always respond in French.".into()),
+            effort: None,
         };
         assert_eq!(
             request_body("m", &req)["system"],
             "Always respond in French."
         );
+    }
+
+    #[test]
+    fn request_body_sets_the_reasoning_effort() {
+        let req = ModelRequest {
+            messages: vec![ChatMessage::user_text("hi")],
+            tools: vec![],
+            system: None,
+            effort: Some(api_types::ReasoningEffort::Xhigh),
+        };
+        let body = request_body("m", &req);
+        assert_eq!(body["output_config"], json!({"effort": "xhigh"}));
+        // Adaptive thinking stays on: the thinking field is left out.
+        assert!(body.get("thinking").is_none());
     }
 
     #[test]

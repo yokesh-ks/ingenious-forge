@@ -1,10 +1,12 @@
 import type {
   ApiError,
   DirListing,
+  ModelCatalog,
   OpenProjectRequest,
   Project,
   Session,
   SessionEnvelope,
+  SessionModel,
 } from "./types";
 
 /** A failed API call, carrying the server's message for the user. */
@@ -50,8 +52,13 @@ export const api = {
   getProject: (id: string) => request<Project>(`/api/projects/${encodeURIComponent(id)}`),
   listSessions: (projectId: string) =>
     request<Session[]>(`/api/projects/${encodeURIComponent(projectId)}/sessions`),
-  createSession: (projectId: string) =>
-    post<Session>(`/api/projects/${encodeURIComponent(projectId)}/sessions`, {}),
+  /** Creates a session with `model`, or the server's default without one. */
+  createSession: (projectId: string, model?: SessionModel) =>
+    post<Session>(
+      `/api/projects/${encodeURIComponent(projectId)}/sessions`,
+      model ? { model } : {},
+    ),
+  modelCatalog: () => request<ModelCatalog>("/api/models"),
   /** A session's logged events with a sequence number above `after`. */
   sessionEvents: (sessionId: string, after = 0) =>
     request<SessionEnvelope[]>(

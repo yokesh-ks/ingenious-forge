@@ -2,6 +2,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SessionModel } from "@/api/types";
+import { catalog } from "@/test/catalog";
 import { fakeFetch } from "@/test/fake-fetch";
 import { FakeSocket, openSocket } from "@/test/fake-socket";
 import ProjectPage from "./ProjectPage";
@@ -17,13 +19,14 @@ afterEach(() => {
 });
 
 const project = { id: "p1", name: "forge", path: "/code/forge", last_opened_at: 1 };
-const session = (id: string, title: string) => ({
+const session = (id: string, title: string, model: SessionModel | null = null) => ({
   id,
   project_id: "p1",
   title,
   created_at: 1,
   updated_at: Date.now(),
   running: false,
+  model,
 });
 
 describe("ProjectPage", () => {
@@ -97,6 +100,7 @@ describe("ProjectPage", () => {
     let list = [session("s1", "Older")];
     fakeFetch({
       "GET /api/projects/p1": project,
+      "GET /api/models": catalog,
       "GET /api/projects/p1/sessions": () => ({ body: list }),
       "POST /api/projects/p1/sessions": () => {
         list = [session("s3", "New session"), ...list];
@@ -105,6 +109,7 @@ describe("ProjectPage", () => {
     });
     const { rerender } = render(<ProjectPage projectId="p1" sessionId="s1" />);
     await userEvent.click(await screen.findByRole("button", { name: /new session/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /start session/i }));
 
     await waitFor(() => expect(window.location.pathname).toBe("/projects/p1/sessions/s3"));
     expect(await screen.findByRole("link", { name: /new session/i })).toBeInTheDocument();
@@ -116,10 +121,12 @@ describe("ProjectPage", () => {
     fakeFetch({
       "GET /api/projects/p1": project,
       "GET /api/projects/p1/sessions": [session("s1", "Older")],
+      "GET /api/models": catalog,
       "POST /api/projects/p1/sessions": () => ({ status: 500, body: { error: "disk full" } }),
     });
     render(<ProjectPage projectId="p1" sessionId="s1" />);
     await userEvent.click(await screen.findByRole("button", { name: /new session/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /start session/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
     expect(window.location.pathname).toBe("/projects/p1");
   });
@@ -183,5 +190,67 @@ describe("ProjectPage", () => {
     });
     render(<ProjectPage projectId="zz" sessionId={null} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("project not found");
+  });
+
+  it("New session asks for a model and effort and sends the choice", async () => {
+    const fetch = fakeFetch({
+      "GET /api/projects/p1": project,
+      "GET /api/models": catalog,
+      "GET /api/projects/p1/sessions": [session("s1", "Older")],
+      "POST /api/projects/p1/sessions": session("s4", "New session"),
+    });
+    render(<ProjectPage projectId="p1" sessionId="s1" />);
+    await userEvent.click(await screen.findByRole("button", { name: /new session/i }));
+    await userEvent.selectOptions(await screen.findByLabelText(/^model$/i), "claude-sonnet-5-5");
+    await userEvent.selectOptions(screen.getByLabelText(/reasoning effort/i), "low");
+    await userEvent.click(screen.getByRole("button", { name: /start session/i }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/projects/p1/sessions/s4"));
+    const post = fetch.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      model: { provider: "anthropic", model: "claude-sonnet-5-5", effort: "low" },
+    });
+  });
+
+  it("cancelling the new-session form creates nothing", async () => {
+    const fetch = fakeFetch({
+      "GET /api/projects/p1": project,
+      "GET /api/models": catalog,
+      "GET /api/projects/p1/sessions": [session("s1", "Older")],
+    });
+    render(<ProjectPage projectId="p1" sessionId="s1" />);
+    await userEvent.click(await screen.findByRole("button", { name: /new session/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /cancel/i }));
+    expect(screen.queryByRole("button", { name: /start session/i })).not.toBeInTheDocument();
+    expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+  });
+
+  it("the header shows each session's own model", async () => {
+    fakeFetch({
+      "GET /api/projects/p1": project,
+      "GET /api/models": catalog,
+      "GET /api/projects/p1/sessions": [
+        session("s2", "Second", {
+          provider: "anthropic",
+          model: "claude-sonnet-5-5",
+          effort: "low",
+        }),
+        session("s1", "First", { provider: "anthropic", model: "claude-opus-5-5", effort: "max" }),
+      ],
+    });
+    const { rerender } = render(<ProjectPage projectId="p1" sessionId="s1" />);
+    const header = await screen.findByRole("group", { name: /session settings/i });
+    await waitFor(() => expect(header).toHaveTextContent("Claude Opus 5.5"));
+    expect(header).toHaveTextContent("Max effort");
+
+    rerender(<ProjectPage projectId="p1" sessionId="s2" />);
+    await waitFor(() =>
+      expect(screen.getByRole("group", { name: /session settings/i })).toHaveTextContent(
+        "Claude Sonnet 5.5",
+      ),
+    );
+    expect(screen.getByRole("group", { name: /session settings/i })).toHaveTextContent(
+      "Low effort",
+    );
   });
 });

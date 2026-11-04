@@ -73,7 +73,7 @@ async fn unknown_projects_are_not_found() {
         Err(ProjectError::NotFound)
     ));
     assert!(matches!(
-        projects::create_session(&pool, "nope").await,
+        projects::create_session(&pool, "nope", None).await,
         Err(ProjectError::NotFound)
     ));
 }
@@ -86,7 +86,9 @@ async fn a_new_session_belongs_to_its_project_folder() {
         .await
         .unwrap();
 
-    let (session, folder) = projects::create_session(&pool, &project.id).await.unwrap();
+    let (session, folder) = projects::create_session(&pool, &project.id, None)
+        .await
+        .unwrap();
 
     assert_eq!(session.project_id, project.id);
     assert_eq!(session.title, "New session");
@@ -104,7 +106,9 @@ async fn the_first_message_names_the_session_and_every_message_bumps_activity() 
     let project = projects::open_project(&pool, repo("named").to_str().unwrap())
         .await
         .unwrap();
-    let (session, _) = projects::create_session(&pool, &project.id).await.unwrap();
+    let (session, _) = projects::create_session(&pool, &project.id, None)
+        .await
+        .unwrap();
 
     projects::record_message(&pool, &session.id, "  Fix the login bug\nwith details  ")
         .await
@@ -135,4 +139,41 @@ async fn listing_sessions_of_an_unknown_project_is_not_found() {
         projects::list_sessions(&pool, "nope").await,
         Err(ProjectError::NotFound)
     ));
+}
+
+#[tokio::test]
+async fn a_session_keeps_its_model_choice_and_old_sessions_have_none() {
+    use api_types::{ReasoningEffort, SessionModel};
+    let pool = pool().await;
+    let path = repo("models");
+    let project = projects::open_project(&pool, path.to_str().unwrap())
+        .await
+        .unwrap();
+    let choice = SessionModel {
+        provider: "anthropic".into(),
+        model: "claude-haiku-5-5".into(),
+        effort: ReasoningEffort::Low,
+    };
+
+    let (picked, _) = projects::create_session(&pool, &project.id, Some(&choice))
+        .await
+        .unwrap();
+    let (plain, _) = projects::create_session(&pool, &project.id, None)
+        .await
+        .unwrap();
+
+    assert_eq!(picked.model, Some(choice.clone()));
+    assert_eq!(plain.model, None);
+    assert_eq!(
+        projects::session_settings(&pool, &picked.id).await.unwrap(),
+        Some((path.clone(), Some(choice)))
+    );
+    assert_eq!(
+        projects::session_settings(&pool, &plain.id).await.unwrap(),
+        Some((path, None))
+    );
+    assert_eq!(
+        projects::session_settings(&pool, "nope").await.unwrap(),
+        None
+    );
 }

@@ -1,10 +1,13 @@
 import { ArrowLeftIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { Project } from "@/api/types";
+import type { Project, SessionModel } from "@/api/types";
+import NewSessionForm from "@/components/NewSessionForm";
+import SessionHeader from "@/components/SessionHeader";
 import SessionSidebar from "@/components/SessionSidebar";
 import SessionWorkspace from "@/components/SessionWorkspace";
 import { Link, navigate } from "@/lib/router";
+import { useModelCatalog } from "@/session/use-model-catalog";
 import { useProjectSessions } from "@/session/use-project-sessions";
 
 interface ProjectPageProps {
@@ -18,6 +21,10 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
   const [error, setError] = useState<string | null>(null);
   const { sessions, error: sessionsError, reload } = useProjectSessions(projectId);
   const [creatingNew, setCreatingNew] = useState(false);
+  /** True while the new-session form is shown. */
+  const [picking, setPicking] = useState(false);
+  const models = useModelCatalog();
+  const active = sessions?.find((s) => s.id === sessionId) ?? null;
   // Guards against creating a second first session when the effect below
   // runs again before the first request returns.
   const creating = useRef(false);
@@ -53,11 +60,12 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
     );
   }, [projectId, sessionId, sessions]);
 
-  async function newSession() {
+  async function newSession(model: SessionModel) {
     setCreatingNew(true);
     setError(null);
     try {
-      const created = await api.createSession(projectId);
+      const created = await api.createSession(projectId, model);
+      setPicking(false);
       reload();
       navigate(`/projects/${projectId}/sessions/${created.id}`);
     } catch (err) {
@@ -96,11 +104,28 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
             projectId={projectId}
             sessions={sessions}
             activeId={sessionId}
-            onNewSession={newSession}
+            onNewSession={() => setPicking(true)}
             creating={creatingNew}
           />
         </aside>
-        {sessionId && <SessionWorkspace key={sessionId} sessionId={sessionId} />}
+        {picking ? (
+          <div className="flex min-w-0 flex-1 items-start justify-center">
+            <NewSessionForm
+              catalog={models.catalog}
+              error={models.error}
+              onStart={newSession}
+              onCancel={() => setPicking(false)}
+              starting={creatingNew}
+            />
+          </div>
+        ) : (
+          sessionId && (
+            <div className="flex min-w-0 flex-1 flex-col gap-3">
+              <SessionHeader model={active?.model ?? null} catalog={models.catalog} />
+              <SessionWorkspace key={sessionId} sessionId={sessionId} />
+            </div>
+          )
+        )}
       </div>
     </div>
   );

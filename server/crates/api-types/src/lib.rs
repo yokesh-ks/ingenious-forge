@@ -12,6 +12,87 @@ pub struct Project {
     pub last_opened_at: i64,
 }
 
+/// How hard the model thinks before answering (PRD §6.1 Models and
+/// reasoning effort), from least to most.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningEffort {
+    Low,
+    Medium,
+    #[default]
+    High,
+    Xhigh,
+    Max,
+}
+
+impl ReasoningEffort {
+    pub const ALL: [Self; 5] = [Self::Low, Self::Medium, Self::High, Self::Xhigh, Self::Max];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Xhigh => "xhigh",
+            Self::Max => "max",
+        }
+    }
+}
+
+impl std::str::FromStr for ReasoningEffort {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|e| e.as_str() == s)
+            .ok_or_else(|| format!("unknown reasoning effort: {s}"))
+    }
+}
+
+/// The provider, model and reasoning effort a session talks to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SessionModel {
+    pub provider: String,
+    pub model: String,
+    pub effort: ReasoningEffort,
+}
+
+/// A model offered by a provider.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ModelOption {
+    pub id: String,
+    pub name: String,
+}
+
+/// A model provider and the models it offers, the default first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ProviderOption {
+    pub id: String,
+    pub name: String,
+    pub models: Vec<ModelOption>,
+}
+
+/// Body of `GET /api/models`: what a new session can pick from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ModelCatalog {
+    pub providers: Vec<ProviderOption>,
+    pub efforts: Vec<ReasoningEffort>,
+    /// The choice used when a session is created without one; `None` when
+    /// no provider is configured.
+    pub default: Option<SessionModel>,
+}
+
+/// Body of `POST /api/projects/{id}/sessions`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct CreateSessionRequest {
+    /// The model to use; the catalog default when left out.
+    #[serde(default)]
+    pub model: Option<SessionModel>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct Session {
     pub id: String,
@@ -23,6 +104,9 @@ pub struct Session {
     pub updated_at: i64,
     /// True while the agent is working in this session.
     pub running: bool,
+    /// The model the session was started with; `None` for sessions created
+    /// before models could be picked.
+    pub model: Option<SessionModel>,
 }
 
 /// Body of `POST /api/projects`.
@@ -159,6 +243,12 @@ pub fn typescript_bindings() -> String {
     let decls = [
         serde_json::Value::decl(&cfg),
         Project::decl(&cfg),
+        ReasoningEffort::decl(&cfg),
+        SessionModel::decl(&cfg),
+        ModelOption::decl(&cfg),
+        ProviderOption::decl(&cfg),
+        ModelCatalog::decl(&cfg),
+        CreateSessionRequest::decl(&cfg),
         Session::decl(&cfg),
         OpenProjectRequest::decl(&cfg),
         DirEntry::decl(&cfg),

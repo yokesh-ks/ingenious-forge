@@ -1,4 +1,4 @@
-use db::{ProjectRow, SessionRow};
+use db::{ProjectRow, SessionModelRow, SessionRow};
 
 async fn pool() -> sqlx::SqlitePool {
     db::connect(":memory:").await.unwrap()
@@ -62,6 +62,7 @@ async fn sessions_are_created_in_a_project_and_found_by_id() {
             title: "New session".into(),
             created_at: 5,
             updated_at: 5,
+            model: None,
         }
     );
     assert_eq!(db::get_session(&pool, &s.id).await.unwrap(), Some(s));
@@ -113,4 +114,27 @@ async fn touch_session_can_set_the_title() {
 
     let row = db::get_session(&pool, &s.id).await.unwrap().unwrap();
     assert_eq!((row.title.as_str(), row.updated_at), ("Fix the bug", 5));
+}
+
+#[tokio::test]
+async fn a_session_keeps_the_model_it_was_created_with() {
+    let pool = pool().await;
+    let p = db::upsert_project(&pool, "/a", "a", 1).await.unwrap();
+    let model = SessionModelRow {
+        provider: "anthropic".into(),
+        model: "claude-sonnet-5-5".into(),
+        effort: "xhigh".into(),
+    };
+
+    let s = db::create_session_with(&pool, &p.id, "t", 1, Some(&model))
+        .await
+        .unwrap();
+
+    assert_eq!(s.model.as_ref(), Some(&model));
+    let found = db::get_session(&pool, &s.id).await.unwrap().unwrap();
+    assert_eq!(found.model, Some(model.clone()));
+    assert_eq!(
+        db::list_sessions(&pool, &p.id).await.unwrap()[0].model,
+        Some(model)
+    );
 }

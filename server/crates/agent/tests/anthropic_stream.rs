@@ -48,6 +48,7 @@ fn request() -> ModelRequest {
         messages: vec![ChatMessage::user_text("Say hi")],
         tools: vec![],
         system: None,
+        effort: None,
     }
 }
 
