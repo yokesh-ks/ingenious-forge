@@ -139,6 +139,36 @@ commit pass "new skill with symlink"
 echo more >"$repo/.agents/skills/demo/notes.md" && (cd "$repo" && git add .agents)
 commit pass "file added to existing skill"
 
+# The Claude Code main-guard hook (.claude/hooks/main-guard.sh) decides by
+# the branch of the folder the command runs in: the payload's cwd, not the
+# folder the hook process starts in (the harness may start it in the main
+# checkout while the agent works in a worktree).
+guard_repo=$tmp/guard
+git init -q -b main "$guard_repo"
+(cd "$guard_repo" && git -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m first)
+git -C "$guard_repo" worktree add -q -b feat/guard-test "$tmp/guard-wt" 2>/dev/null
+
+# guard <expected allow|deny> <name> <hook start dir> <payload cwd> [command]
+guard() {
+	payload=$(jq -n --arg cwd "$4" --arg cmd "${5:-git commit -m x}" \
+		'{cwd: $cwd, tool_input: {command: $cmd}}')
+	(cd "$3" && printf '%s' "$payload" | FORGE_ALLOW_MAIN= "$root/.claude/hooks/main-guard.sh") >"$tmp/out" 2>&1
+	if grep -q '"deny"' "$tmp/out"; then code=1; else code=0; fi
+	if [ "$1" = allow ]; then want=pass; else want=fail; fi
+	result "$want" "main-guard: $2" "$code"
+}
+
+if command -v jq >/dev/null 2>&1; then
+	guard allow "feature branch in a worktree, hook started in main checkout" "$guard_repo" "$tmp/guard-wt"
+	guard deny "main checkout on main" "$guard_repo" "$guard_repo"
+	guard deny "main checkout on main, hook started in the worktree" "$tmp/guard-wt" "$guard_repo"
+	guard allow "push from the feature worktree" "$guard_repo" "$tmp/guard-wt" "git push"
+	guard allow "not a commit or push" "$guard_repo" "$guard_repo" "git status"
+	guard allow "payload without cwd falls back to the hook folder" "$tmp/guard-wt" ""
+else
+	echo "skip  main-guard cases: jq is not installed"
+fi
+
 echo
 echo "$passed passed, $failed failed"
 [ "$failed" -eq 0 ]

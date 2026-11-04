@@ -46,9 +46,11 @@ AI attribution blocked (AGENTS.md Principle VII). Remove these lines:
 
 **Trigger:** `git commit`, `git push`.
 
-**What it checks:** Reads the current branch with
-`git symbolic-ref --short HEAD`. If the branch is `main` or `master`, it
-denies the command.
+**What it checks:** Reads the branch of the folder the command runs in
+(the hook payload's `cwd`, so a worktree on a feature branch is not
+mistaken for the main checkout the harness started in) with
+`git -C <cwd> symbolic-ref --short HEAD`. If the branch is `main` or
+`master`, it denies the command.
 
 **Deny message example:**
 
@@ -124,7 +126,7 @@ for each hook.
 | Hook | Trigger | Input | Decision |
 | --- | --- | --- | --- |
 | Commit guard | Before running a shell command that starts with `git commit`, `gh pr create` or `gh pr edit` | The full command string | **Block** if `forge_attribution_hits` (from `.githooks/lib/checks.sh`) returns any matches against the command text. Report the matched lines. |
-| Main-branch guard | Before running a shell command that starts with `git commit` or `git push` | The current git branch (`git symbolic-ref --short HEAD`) | **Block** if the branch is `main` or `master`. Suggest `workspace-setup`. |
+| Main-branch guard | Before running a shell command that starts with `git commit` or `git push` | The git branch of the folder the command runs in, not the folder the hook starts in (`git -C <cwd> symbolic-ref --short HEAD`) | **Block** if the branch is `main` or `master`. Suggest `workspace-setup`. |
 | Bypass guard | Before running a shell command containing `--no-verify`, `-c core.hooksPath=`, or `-n` on a `git commit` | The full command string | **Block** unconditionally (the trigger conditions are the violation). Explain why the flag is not allowed. |
 | Verify nudge | When the agent is about to finish / stop | Git diff status and the session transcript (or equivalent log of commands run) | **Advisory only** (never block). If tracked files have uncommitted changes and no verification command ran during the session, remind the agent to run `scripts/check-all.sh` or `verify-before-done`. |
 
