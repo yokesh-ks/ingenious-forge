@@ -1,4 +1,5 @@
 import { memo } from "react";
+import type { ApprovalDecision } from "@/api/types";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Message, MessageContent } from "@/components/ui/message";
 import {
@@ -16,6 +17,8 @@ interface SessionViewProps {
   messages: SessionItem[];
   running: boolean;
   error: string | null;
+  /** Answers a tool call's approval card. */
+  onAnswerApproval?: (callId: string, decision: ApprovalDecision) => void;
 }
 
 function ErrorAlert({ message }: { message: string }) {
@@ -34,11 +37,17 @@ function ErrorAlert({ message }: { message: string }) {
  * identity, so while a reply streams only its own entry re-renders, which
  * keeps sessions with thousands of entries responsive.
  */
-const TimelineItem = memo(function TimelineItem({ item }: { item: SessionItem }) {
+const TimelineItem = memo(function TimelineItem({
+  item,
+  onAnswerApproval,
+}: {
+  item: SessionItem;
+  onAnswerApproval?: (callId: string, decision: ApprovalDecision) => void;
+}) {
   return (
     <MessageScrollerItem messageId={item.id} scrollAnchor={item.role === "user"}>
       {item.role === "tool" ? (
-        <ToolCallCard tool={item} />
+        <ToolCallCard tool={item} onAnswer={onAnswerApproval} />
       ) : item.role === "notice" ? (
         <p className="text-center text-xs text-muted-foreground">{item.text}</p>
       ) : (
@@ -56,7 +65,12 @@ const TimelineItem = memo(function TimelineItem({ item }: { item: SessionItem })
   );
 });
 
-export default function SessionView({ messages, running, error }: SessionViewProps) {
+export default function SessionView({
+  messages,
+  running,
+  error,
+  onAnswerApproval,
+}: SessionViewProps) {
   if (messages.length === 0) {
     return (
       <section
@@ -81,7 +95,7 @@ export default function SessionView({ messages, running, error }: SessionViewPro
         <MessageScrollerViewport>
           <MessageScrollerContent className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-6">
             {messages.map((message) => (
-              <TimelineItem key={message.id} item={message} />
+              <TimelineItem key={message.id} item={message} onAnswerApproval={onAnswerApproval} />
             ))}
             {waitingForReply && (
               <p role="status" className="text-sm text-muted-foreground">

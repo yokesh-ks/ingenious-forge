@@ -5,9 +5,70 @@ import {
   SquareTerminalIcon,
   WrenchIcon,
 } from "lucide-react";
-import type { JsonValue } from "@/api/types";
+import type { ApprovalDecision, JsonValue } from "@/api/types";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { ToolItem } from "@/session/session-reducer";
+import type { Approval, ToolItem } from "@/session/session-reducer";
+import DiffView from "./DiffView";
+
+const ANSWERS: Record<ApprovalDecision, string> = {
+  approve: "Approved",
+  deny: "Denied",
+  always_allow: "Always allowed",
+};
+
+/** The approval card: the exact command or diff, and the answer buttons. */
+function ApprovalPanel({
+  approval,
+  onAnswer,
+}: {
+  approval: Approval;
+  onAnswer?: (decision: ApprovalDecision) => void;
+}) {
+  if (approval.status !== "pending") {
+    return (
+      <p
+        className={cn(
+          "mb-1.5 text-xs font-medium",
+          approval.status === "deny" ? "text-destructive" : "text-muted-foreground",
+        )}
+      >
+        {ANSWERS[approval.status]}
+      </p>
+    );
+  }
+  const what = approval.kind === "command" ? "Run this command?" : "Apply this edit?";
+  return (
+    <section
+      aria-label="Approval needed"
+      className="mb-1.5 flex flex-col gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2"
+    >
+      <p className="text-xs font-medium">{what}</p>
+      {approval.command !== null && (
+        <pre className="overflow-x-auto rounded bg-muted px-2 py-1 font-mono text-xs">
+          {approval.command}
+        </pre>
+      )}
+      {approval.path !== null && (
+        <code className="font-mono text-xs text-muted-foreground">{approval.path}</code>
+      )}
+      {approval.diff !== null && <DiffView diff={approval.diff} />}
+      {onAnswer && (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => onAnswer("approve")}>
+            Approve
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => onAnswer("deny")}>
+            Deny
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onAnswer("always_allow")}>
+            Always allow
+          </Button>
+        </div>
+      )}
+    </section>
+  );
+}
 
 const PREVIEW_LINES = 12;
 
@@ -138,7 +199,15 @@ function ToolOutput({ tool }: { tool: ToolItem }) {
 }
 
 /** One tool call and its result, shown inline in the session. */
-export default function ToolCallCard({ tool }: { tool: ToolItem }) {
+export default function ToolCallCard({
+  tool,
+  onAnswer,
+}: {
+  tool: ToolItem;
+  /** Answers this call's approval card. */
+  onAnswer?: (callId: string, decision: ApprovalDecision) => void;
+}) {
+  const waiting = tool.approval?.status === "pending";
   const known = TOOLS[tool.name];
   const Icon = known?.icon ?? WrenchIcon;
   const path =
@@ -162,7 +231,13 @@ export default function ToolCallCard({ tool }: { tool: ToolItem }) {
           <span className="ml-auto text-xs font-medium text-destructive">Failed</span>
         )}
       </header>
-      <ToolOutput tool={tool} />
+      {tool.approval && (
+        <ApprovalPanel
+          approval={tool.approval}
+          onAnswer={onAnswer && ((decision) => onAnswer(tool.callId, decision))}
+        />
+      )}
+      {!waiting && <ToolOutput tool={tool} />}
     </article>
   );
 }

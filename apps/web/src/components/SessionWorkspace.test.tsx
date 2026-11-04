@@ -115,4 +115,45 @@ describe("SessionWorkspace", () => {
     expect(screen.getByText("Reverted 1 file")).toBeInTheDocument();
     expect(screen.getByText(/no changes yet/i)).toBeInTheDocument();
   });
+
+  it("answers an approval card from the session view", async () => {
+    render(<SessionWorkspace sessionId="s1" />);
+    const socket = FakeSocket.latest();
+    await openSocket(socket);
+    act(() => {
+      socket.emit({ type: "turn_started", session_id: "s1" });
+      socket.emit({
+        type: "tool_call",
+        session_id: "s1",
+        call_id: "t1",
+        name: "run_shell",
+        args: { command: "ls" },
+      });
+      socket.emit({
+        type: "approval_requested",
+        session_id: "s1",
+        call_id: "t1",
+        kind: "command",
+        command: "ls",
+        path: null,
+        diff: null,
+      });
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(JSON.parse(socket.sent[socket.sent.length - 1])).toEqual({
+      type: "answer_approval",
+      session_id: "s1",
+      call_id: "t1",
+      decision: "approve",
+    });
+    act(() =>
+      socket.emit({
+        type: "approval_resolved",
+        session_id: "s1",
+        call_id: "t1",
+        decision: "approve",
+      }),
+    );
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+  });
 });

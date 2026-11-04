@@ -1,4 +1,10 @@
-import type { JsonValue, OutputStream, SessionEvent } from "@/api/types";
+import type {
+  ApprovalDecision,
+  ApprovalKind,
+  JsonValue,
+  OutputStream,
+  SessionEvent,
+} from "@/api/types";
 import { approvalModeLabel } from "@/lib/approval-modes";
 
 export interface SessionMessage {
@@ -22,6 +28,17 @@ export interface ToolItem {
   hiddenLines: number;
   /** A shell command's exit code once it finished normally. */
   exitCode: number | null;
+  /** The approval card for this call, when one was shown. */
+  approval: Approval | null;
+}
+
+/** An approval card: what it asks about and, once answered, the answer. */
+export interface Approval {
+  kind: ApprovalKind;
+  command: string | null;
+  path: string | null;
+  diff: string | null;
+  status: "pending" | ApprovalDecision;
 }
 
 /** Shell lines kept per tool call, so long output stays fast to render. */
@@ -149,8 +166,31 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
         lines: [],
         hiddenLines: 0,
         exitCode: null,
+        approval: null,
       });
       return true;
+    case "approval_requested": {
+      const i = findTool(items, event.call_id);
+      if (i === -1) return false;
+      items[i] = {
+        ...(items[i] as ToolItem),
+        approval: {
+          kind: event.kind,
+          command: event.command,
+          path: event.path,
+          diff: event.diff,
+          status: "pending",
+        },
+      };
+      return true;
+    }
+    case "approval_resolved": {
+      const i = findTool(items, event.call_id);
+      const item = items[i] as ToolItem | undefined;
+      if (!item?.approval) return false;
+      items[i] = { ...item, approval: { ...item.approval, status: event.decision } };
+      return true;
+    }
     case "tool_output": {
       const i = findTool(items, event.call_id);
       if (i === -1) return false;

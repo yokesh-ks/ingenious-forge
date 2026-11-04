@@ -426,3 +426,44 @@ fn approval_modes_serialize_in_snake_case() {
     assert_eq!(changed.session_id(), "s");
     assert!(typescript_bindings().contains("export type ApprovalMode"));
 }
+
+#[test]
+fn approval_requests_and_answers_serialize() {
+    use api_types::{ApprovalDecision, ApprovalKind};
+    let request = SessionEvent::ApprovalRequested {
+        session_id: "s".into(),
+        call_id: "t1".into(),
+        kind: ApprovalKind::Command,
+        command: Some("ls".into()),
+        path: None,
+        diff: None,
+    };
+    assert_eq!(
+        serde_json::to_value(&request).unwrap(),
+        json!({ "type": "approval_requested", "session_id": "s", "call_id": "t1",
+                "kind": "command", "command": "ls", "path": null, "diff": null })
+    );
+    let resolved = SessionEvent::ApprovalResolved {
+        session_id: "s".into(),
+        call_id: "t1".into(),
+        decision: ApprovalDecision::AlwaysAllow,
+    };
+    assert_eq!(
+        serde_json::to_value(&resolved).unwrap()["decision"],
+        "always_allow"
+    );
+    assert_eq!(resolved.session_id(), "s");
+
+    let answer: ClientMessage = serde_json::from_value(json!({
+        "type": "answer_approval", "session_id": "s", "call_id": "t1", "decision": "deny"
+    }))
+    .unwrap();
+    assert_eq!(
+        answer,
+        ClientMessage::AnswerApproval {
+            session_id: "s".into(),
+            call_id: "t1".into(),
+            decision: ApprovalDecision::Deny
+        }
+    );
+}

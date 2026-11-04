@@ -131,6 +131,7 @@ describe("sessionReducer", () => {
       lines: [],
       hiddenLines: 0,
       exitCode: null,
+      approval: null,
     });
   });
 
@@ -290,6 +291,44 @@ describe("sessionReducer", () => {
       mode: "full_auto",
     });
     expect(state.messages[1]).toMatchObject({ role: "notice", text: "Approval mode: Full-auto" });
+  });
+
+  it("puts a pending approval on the tool call, then its answer", () => {
+    const asked = apply(
+      sent("go"),
+      { type: "tool_call", session_id: S, call_id: "t1", name: "run_shell", args: {} },
+      {
+        type: "approval_requested",
+        session_id: S,
+        call_id: "t1",
+        kind: "command",
+        command: "rm -rf build",
+        path: null,
+        diff: null,
+      },
+    );
+    expect(asked.messages[1]).toMatchObject({
+      approval: { kind: "command", command: "rm -rf build", status: "pending" },
+    });
+    const answered = apply(asked, {
+      type: "approval_resolved",
+      session_id: S,
+      call_id: "t1",
+      decision: "deny",
+    });
+    expect(answered.messages[1]).toMatchObject({ approval: { status: "deny" } });
+  });
+
+  it("ignores an approval for an unknown tool call", () => {
+    const state = sent("go");
+    expect(
+      apply(state, {
+        type: "approval_resolved",
+        session_id: S,
+        call_id: "zz",
+        decision: "approve",
+      }),
+    ).toEqual(state);
   });
 
   it("ignores output for an unknown tool call", () => {

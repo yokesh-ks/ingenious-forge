@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 import type { ToolItem } from "@/session/session-reducer";
 import ToolCallCard from "./ToolCallCard";
 
@@ -15,6 +16,7 @@ function tool(overrides: Partial<ToolItem>): ToolItem {
     lines: [],
     hiddenLines: 0,
     exitCode: null,
+    approval: null,
     ...overrides,
   };
 }
@@ -162,6 +164,81 @@ describe("ToolCallCard", () => {
       );
       expect(screen.getByText("Failed")).toBeInTheDocument();
       expect(screen.getByText(/missing string argument/)).toBeInTheDocument();
+    });
+  });
+
+  describe("approval cards", () => {
+    const pending = (overrides: Partial<ToolItem>) =>
+      tool({ status: "running", output: null, ...overrides });
+
+    it("shows the exact command with Approve, Deny and Always allow", async () => {
+      const onAnswer = vi.fn();
+      render(
+        <ToolCallCard
+          tool={pending({
+            name: "run_shell",
+            args: { command: "npm test" },
+            approval: {
+              kind: "command",
+              command: "npm test",
+              path: null,
+              diff: null,
+              status: "pending",
+            },
+          })}
+          onAnswer={onAnswer}
+        />,
+      );
+      const card = screen.getByRole("region", { name: /approval needed/i });
+      expect(card).toHaveTextContent("npm test");
+      await userEvent.click(screen.getByRole("button", { name: "Approve" }));
+      expect(onAnswer).toHaveBeenCalledWith("t1", "approve");
+      await userEvent.click(screen.getByRole("button", { name: "Deny" }));
+      expect(onAnswer).toHaveBeenCalledWith("t1", "deny");
+      await userEvent.click(screen.getByRole("button", { name: /always allow/i }));
+      expect(onAnswer).toHaveBeenCalledWith("t1", "always_allow");
+    });
+
+    it("shows the diff an edit would make", () => {
+      render(
+        <ToolCallCard
+          tool={pending({
+            name: "edit_file",
+            approval: {
+              kind: "edit",
+              command: null,
+              path: "src/main.rs",
+              diff: "@@ -1 +1 @@\n-old\n+new\n",
+              status: "pending",
+            },
+          })}
+          onAnswer={vi.fn()}
+        />,
+      );
+      const card = screen.getByRole("region", { name: /approval needed/i });
+      expect(card).toHaveTextContent("src/main.rs");
+      expect(card).toHaveTextContent("+new");
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    });
+
+    it("shows the answer once the card is resolved", () => {
+      render(
+        <ToolCallCard
+          tool={pending({
+            name: "run_shell",
+            approval: {
+              kind: "command",
+              command: "ls",
+              path: null,
+              diff: null,
+              status: "always_allow",
+            },
+          })}
+          onAnswer={vi.fn()}
+        />,
+      );
+      expect(screen.queryByRole("region", { name: /approval needed/i })).not.toBeInTheDocument();
+      expect(screen.getByText(/always allowed/i)).toBeInTheDocument();
     });
   });
 });

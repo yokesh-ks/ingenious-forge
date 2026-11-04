@@ -46,6 +46,7 @@ describe("SessionView", () => {
             lines: [],
             hiddenLines: 0,
             exitCode: null,
+            approval: null,
           },
         ]}
         running={false}
@@ -72,6 +73,7 @@ describe("SessionView", () => {
             lines: [],
             hiddenLines: 0,
             exitCode: null,
+            approval: null,
           },
         ]}
         running

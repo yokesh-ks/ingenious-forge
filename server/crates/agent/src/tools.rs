@@ -191,7 +191,14 @@ impl ToolBox {
         ))
     }
 
-    fn edit_file(&self, input: &Value) -> Result<String, String> {
+    /// What an `edit_file` call would do, without writing: the file's
+    /// content before (`None` when it would be created) and after.
+    pub fn preview_edit(&self, input: &Value) -> Result<(Option<String>, String), String> {
+        self.plan_edit(input)
+            .map(|plan| (plan.original, plan.content))
+    }
+
+    fn plan_edit(&self, input: &Value) -> Result<EditPlan, String> {
         let rel = str_arg(input, "path")?;
         let old = str_arg(input, "old_string")?;
         let new = str_arg(input, "new_string")?;
@@ -204,11 +211,12 @@ impl ToolBox {
                     "{rel} already exists; pass the text to replace as old_string"
                 ));
             }
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).map_err(|e| format!("cannot create {rel}: {e}"))?;
-            }
-            fs::write(&path, new).map_err(|e| format!("cannot write {rel}: {e}"))?;
-            return Ok(format!("Created {rel} (+{} lines)", new.lines().count()));
+            return Ok(EditPlan {
+                summary: format!("Created {rel} (+{} lines)", new.lines().count()),
+                path,
+                original: None,
+                content: new.to_string(),
+            });
         }
 
         let text = fs::read_to_string(&path).map_err(|e| format!("cannot read {rel}: {e}"))?;
@@ -221,17 +229,33 @@ impl ToolBox {
                 "old_string appears {count} times in {rel}; add context to make it unique or set replace_all"
             ));
         }
-        fs::write(&path, text.replace(old, new)).map_err(|e| format!("cannot write {rel}: {e}"))?;
         let noun = if count == 1 {
             "occurrence"
         } else {
             "occurrences"
         };
-        Ok(format!(
-            "Edited {rel}: replaced {count} {noun} (+{} −{} lines)",
-            new.lines().count(),
-            old.lines().count()
-        ))
+        Ok(EditPlan {
+            summary: format!(
+                "Edited {rel}: replaced {count} {noun} (+{} −{} lines)",
+                new.lines().count(),
+                old.lines().count()
+            ),
+            path,
+            content: text.replace(old, new),
+            original: Some(text),
+        })
+    }
+
+    fn edit_file(&self, input: &Value) -> Result<String, String> {
+        let plan = self.plan_edit(input)?;
+        let rel = str_arg(input, "path")?;
+        if plan.original.is_none() {
+            if let Some(parent) = plan.path.parent() {
+                fs::create_dir_all(parent).map_err(|e| format!("cannot create {rel}: {e}"))?;
+            }
+        }
+        fs::write(&plan.path, &plan.content).map_err(|e| format!("cannot write {rel}: {e}"))?;
+        Ok(plan.summary)
     }
 
     fn list_directory(&self, input: &Value) -> Result<String, String> {
@@ -298,6 +322,15 @@ impl ToolBox {
         }
         Ok(joined)
     }
+}
+
+/// A checked edit: where it writes, the content before and after, and a
+/// summary for the model.
+struct EditPlan {
+    path: PathBuf,
+    original: Option<String>,
+    content: String,
+    summary: String,
 }
 
 fn str_arg<'a>(input: &'a Value, key: &str) -> Result<&'a str, String> {
