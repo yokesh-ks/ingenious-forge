@@ -12,6 +12,7 @@
  *
  * Usage:
  *   node scripts/check-links.mjs
+ * Tests: node --test scripts/check-links.test.mjs
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -35,11 +36,14 @@ function markdownFiles() {
 }
 
 // Yield [lineNumber, target] for each link outside code blocks and spans.
-function* links(text) {
+export function* links(text) {
   let fence = null;
-  // Track indented-code-block state: a run of lines indented by 4+ spaces
-  // that is not part of a list item is treated as a code block.
+  // An indented code block starts with a line indented by 4+ spaces after
+  // a blank line, and runs on through indented and blank lines until a
+  // line indented less. List state is not tracked, so an indented list
+  // continuation after a blank line also counts as code.
   let blankBefore = true; // conservatively treat start-of-file as a blank
+  let indentedCode = false;
   const lines = text.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -55,10 +59,11 @@ function* links(text) {
       continue;
     }
     const isBlank = /^\s*$/.test(line);
-    // An indented code block starts with 4+ spaces after a blank line and
-    // is not a continuation of a list (we do not track list state, so we
-    // skip any line that starts with 4+ spaces preceded by a blank).
-    if (!isBlank && blankBefore && /^ {4}/.test(line)) {
+    const indented = /^ {4}/.test(line);
+    if (indentedCode && (isBlank || indented)) continue;
+    indentedCode = false;
+    if (!isBlank && blankBefore && indented) {
+      indentedCode = true;
       blankBefore = false;
       continue;
     }
@@ -85,20 +90,24 @@ function resolve(file, target) {
   return path.startsWith("/") ? join(ROOT, path) : join(ROOT, dirname(file), path);
 }
 
-const files = markdownFiles();
-let count = 0;
-let broken = 0;
-for (const file of files) {
-  const text = readFileSync(join(ROOT, file), "utf8");
-  for (const [line, target] of links(text)) {
-    if (!isLocal(target)) continue;
-    count++;
-    if (!existsSync(resolve(file, target))) {
-      broken++;
-      console.log(`FAIL  ${file}:${line}: ${target}`);
+function main() {
+  const files = markdownFiles();
+  let count = 0;
+  let broken = 0;
+  for (const file of files) {
+    const text = readFileSync(join(ROOT, file), "utf8");
+    for (const [line, target] of links(text)) {
+      if (!isLocal(target)) continue;
+      count++;
+      if (!existsSync(resolve(file, target))) {
+        broken++;
+        console.log(`FAIL  ${file}:${line}: ${target}`);
+      }
     }
   }
+  console.log(`links: ${count} relative links checked in ${files.length} files, ${broken} broken`);
+  process.exit(broken === 0 ? 0 : 1);
 }
 
-console.log(`links: ${count} relative links checked in ${files.length} files, ${broken} broken`);
-process.exit(broken === 0 ? 0 : 1);
+// Run when invoked as a script; tests import `links` without running it.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
