@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { SessionEvent } from "@/api/types";
-import { initialSessionState, type SessionState, sessionReducer } from "./session-reducer";
+import {
+  initialSessionState,
+  MAX_SHELL_LINES,
+  type SessionState,
+  sessionReducer,
+  type ToolItem,
+} from "./session-reducer";
 
 const S = "s1";
 
@@ -123,6 +129,7 @@ describe("sessionReducer", () => {
       status: "running",
       output: null,
       lines: [],
+      hiddenLines: 0,
       exitCode: null,
     });
   });
@@ -234,6 +241,46 @@ describe("sessionReducer", () => {
       old,
     );
     expect(state.messages[1]).toMatchObject({ status: "done", exitCode: null });
+  });
+
+  it("keeps only the newest shell lines and counts the rest", () => {
+    const events: SessionEvent[] = [
+      { type: "tool_call", session_id: S, call_id: "t1", name: "run_shell", args: {} },
+    ];
+    for (let i = 1; i <= MAX_SHELL_LINES + 500; i++) {
+      events.push({
+        type: "tool_output",
+        session_id: S,
+        call_id: "t1",
+        stream: "stdout",
+        text: `line ${i}`,
+      });
+    }
+    const state = sessionReducer(sent("go"), { kind: "events", events });
+    const item = state.messages[1] as ToolItem;
+    expect(item.lines).toHaveLength(MAX_SHELL_LINES);
+    expect(item.lines[0].text).toBe("line 501");
+    expect(item.lines[item.lines.length - 1].text).toBe(`line ${MAX_SHELL_LINES + 500}`);
+    expect(item.hiddenLines).toBe(500);
+  });
+
+  it("applies a long stream of shell lines quickly", () => {
+    let state = apply(sent("go"), {
+      type: "tool_call",
+      session_id: S,
+      call_id: "t1",
+      name: "run_shell",
+      args: {},
+    });
+    const started = performance.now();
+    for (let i = 0; i < 20_000; i++) {
+      state = sessionReducer(state, {
+        kind: "event",
+        event: { type: "tool_output", session_id: S, call_id: "t1", stream: "stdout", text: "x" },
+      });
+    }
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect((state.messages[1] as ToolItem).hiddenLines).toBe(20_000 - MAX_SHELL_LINES);
   });
 
   it("ignores output for an unknown tool call", () => {

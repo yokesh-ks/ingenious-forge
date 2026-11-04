@@ -15,11 +15,16 @@ export interface ToolItem {
   args: JsonValue;
   status: "running" | "done" | "error";
   output: string | null;
-  /** Output lines a shell command streamed, in arrival order. */
+  /** The newest output lines a shell command streamed, oldest first. */
   lines: OutputLine[];
+  /** Earlier lines dropped to keep at most `MAX_SHELL_LINES`. */
+  hiddenLines: number;
   /** A shell command's exit code once it finished normally. */
   exitCode: number | null;
 }
+
+/** Shell lines kept per tool call, so long output stays fast to render. */
+export const MAX_SHELL_LINES = 1000;
 
 export interface OutputLine {
   stream: OutputStream;
@@ -141,6 +146,7 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
         status: "running",
         output: null,
         lines: [],
+        hiddenLines: 0,
         exitCode: null,
       });
       return true;
@@ -148,7 +154,10 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
       const i = findTool(items, event.call_id);
       if (i === -1) return false;
       const item = items[i] as ToolItem;
-      items[i] = { ...item, lines: [...item.lines, { stream: event.stream, text: event.text }] };
+      const full = item.lines.length >= MAX_SHELL_LINES;
+      const lines = full ? item.lines.slice(1) : item.lines.slice();
+      lines.push({ stream: event.stream, text: event.text });
+      items[i] = { ...item, lines, hiddenLines: item.hiddenLines + (full ? 1 : 0) };
       return true;
     }
     case "tool_result": {

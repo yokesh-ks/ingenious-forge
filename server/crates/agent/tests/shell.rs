@@ -139,6 +139,114 @@ async fn long_output_is_cut_for_the_model_but_keeps_its_end() {
     );
 }
 
+// ---- stopping ----
+
+fn alive(pid: &str) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", pid])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[tokio::test]
+async fn stopping_kills_the_command_and_everything_it_started() {
+    let root = project();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let (stop, stopped) = watch::channel(false);
+    let dir = root.clone();
+    let started = std::time::Instant::now();
+    let handle = tokio::spawn(async move {
+        shell::run(
+            &dir,
+            "sleep 30 & echo $! > child.pid; echo started; wait; echo never",
+            move |l| {
+                let _ = tx.send(l);
+            },
+            stopped,
+        )
+        .await
+    });
+    let first = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.text, "started");
+
+    stop.send_replace(true);
+    let outcome = tokio::time::timeout(Duration::from_secs(5), handle)
+        .await
+        .expect("the command should stop promptly")
+        .unwrap();
+
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert!(outcome.interrupted);
+    assert!(
+        outcome.exit_code.is_some(),
+        "an exit code is reported even when stopped"
+    );
+    assert!(
+        outcome.output.contains("Stopped by the user"),
+        "{}",
+        outcome.output
+    );
+    assert!(!outcome.output.contains("never"));
+    let pid = std::fs::read_to_string(root.join("child.pid")).unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(!alive(pid.trim()), "the background child should be gone");
+}
+
+#[tokio::test]
+async fn a_command_that_ignores_sigterm_is_killed() {
+    let root = project();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let (stop, stopped) = watch::channel(false);
+    let handle = tokio::spawn(async move {
+        shell::run(
+            &root,
+            "trap '' TERM; echo ready; while true; do sleep 1; done",
+            move |l| {
+                let _ = tx.send(l);
+            },
+            stopped,
+        )
+        .await
+    });
+    rx.recv().await.unwrap();
+    stop.send_replace(true);
+    let outcome = tokio::time::timeout(Duration::from_secs(10), handle)
+        .await
+        .expect("SIGKILL follows when SIGTERM is ignored")
+        .unwrap();
+    assert!(outcome.interrupted);
+    assert!(outcome.exit_code.is_some());
+}
+
+#[tokio::test]
+async fn a_signal_exit_reports_the_shell_style_exit_code() {
+    let (outcome, _) = run(&project(), "kill -9 $$").await;
+    assert_eq!(outcome.exit_code, Some(137));
+    assert!(!outcome.interrupted);
+}
+
+#[tokio::test]
+async fn a_stop_requested_before_the_command_starts_runs_nothing() {
+    let root = project();
+    let (_stop, stopped) = watch::channel(true);
+    let outcome = shell::run(&root, "touch ran", |_| {}, stopped).await;
+    assert!(outcome.interrupted);
+    assert!(!root.join("ran").exists());
+}
+
+#[tokio::test]
+async fn a_background_process_left_running_does_not_hold_the_tool_open() {
+    let started = std::time::Instant::now();
+    let (outcome, lines) = run(&project(), "sleep 30 & echo bg").await;
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert_eq!(outcome.exit_code, Some(0));
+    assert_eq!(lines, [line(OutputStream::Stdout, "bg")]);
+}
+
 // ---- in a session ----
 
 #[derive(Default)]
@@ -298,4 +406,54 @@ async fn other_tools_report_no_exit_code() {
             ..
         }
     )));
+}
+
+#[tokio::test]
+async fn stopping_the_turn_stops_a_running_command() {
+    let (agent, _, mut rx) = setup(vec![
+        shell_call(json!({"command": "echo started; sleep 30; echo late"})),
+        vec![ModelEvent::TextDelta("unused".into())],
+    ]);
+    agent.send_message("s1", "run").unwrap();
+
+    // Wait for the command's first line, then stop the turn.
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap()
+            .event;
+        if matches!(event, SessionEvent::ToolOutput { .. }) {
+            break;
+        }
+    }
+    let stopped_at = std::time::Instant::now();
+    assert!(agent.interrupt("s1"));
+
+    let mut rest = Vec::new();
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("the turn should end promptly")
+            .unwrap()
+            .event;
+        let end = matches!(event, SessionEvent::Interrupted { .. });
+        rest.push(event);
+        if end {
+            break;
+        }
+    }
+    assert!(stopped_at.elapsed() < Duration::from_secs(5));
+    assert!(rest.iter().any(|e| matches!(
+        e,
+        SessionEvent::ToolResult {
+            exit_code: Some(_),
+            ..
+        }
+    )));
+    assert!(!rest.iter().any(|e| matches!(
+        e,
+        SessionEvent::ToolOutput { text, .. } if text == "late"
+    )));
+    assert!(!agent.is_running("s1"));
 }
