@@ -427,3 +427,107 @@ mod linux {
         assert_ne!(blocked.exit_code, Some(52), "{}", blocked.output);
     }
 }
+
+// ---- what the session header shows ----
+
+#[test]
+fn a_session_reports_its_sandbox_and_writable_folders() {
+    let root = folder("info");
+    let agent = Agent::new(Arc::new(FakeModel::default()), EventService::new())
+        .with_sandbox(Sandbox::SandboxExec);
+    agent.open_session("s1", ToolBox::new(&root));
+
+    let info = agent.sandbox_info("s1").unwrap();
+
+    assert_eq!(info.name, "sandbox-exec");
+    assert!(info.active);
+    assert_eq!(info.writable, vec![root.to_string_lossy().into_owned()]);
+    assert!(!info.network);
+    assert_eq!(info.problem, None);
+    assert!(agent.sandbox_info("unknown").is_none());
+}
+
+#[test]
+fn an_unavailable_sandbox_is_reported_with_its_reason() {
+    let agent = Agent::new(Arc::new(FakeModel::default()), EventService::new())
+        .with_sandbox(Sandbox::Unavailable("install bubblewrap".into()));
+    agent.open_session("s1", ToolBox::new(folder("na")));
+    let info = agent.sandbox_info("s1").unwrap();
+    assert!(!info.active);
+    assert_eq!(info.problem.as_deref(), Some("install bubblewrap"));
+}
+
+#[tokio::test]
+async fn changing_the_writable_folders_is_announced() {
+    let root = folder("change");
+    let extra = folder("extra");
+    let events = EventService::new();
+    let mut rx = events.subscribe();
+    let agent =
+        Agent::new(Arc::new(FakeModel::default()), events).with_sandbox(Sandbox::SandboxExec);
+    agent.open_session("s1", ToolBox::new(&root));
+
+    assert!(agent.set_sandbox_policy(
+        "s1",
+        Policy {
+            writable: vec![root.clone(), extra.clone()],
+            network: false
+        }
+    ));
+
+    let event = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .unwrap()
+        .unwrap()
+        .event;
+    let SessionEvent::SandboxChanged { sandbox, .. } = event else {
+        panic!("expected sandbox_changed, got {event:?}")
+    };
+    assert_eq!(sandbox.writable.len(), 2);
+    assert_eq!(
+        agent.sandbox_info("s1").unwrap().writable[1],
+        extra.to_string_lossy()
+    );
+    assert!(!agent.set_sandbox_policy("unknown", Policy::project(&root)));
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn commands_follow_the_session_policy() {
+    let root = folder("policy");
+    let extra = folder("policy-extra");
+    let model = FakeModel(Mutex::new(
+        vec![
+            vec![ModelEvent::Message(vec![ContentBlock::ToolUse {
+                id: "t1".into(),
+                name: RUN_SHELL.into(),
+                input: json!({ "command": format!("touch '{}/ok'", extra.display()) }),
+            }])],
+            vec![ModelEvent::TextDelta("done".into())],
+        ]
+        .into(),
+    ));
+    let events = EventService::new();
+    let mut rx = events.subscribe();
+    let agent = Agent::new(Arc::new(model), events).with_sandbox(Sandbox::SandboxExec);
+    agent.open_session("s1", ToolBox::new(&root));
+    agent.set_sandbox_policy(
+        "s1",
+        Policy {
+            writable: vec![root.clone(), extra.clone()],
+            network: false,
+        },
+    );
+    agent.send_message("s1", "go").unwrap();
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap()
+            .event;
+        if matches!(event, SessionEvent::Done { .. }) {
+            break;
+        }
+    }
+    assert!(extra.join("ok").exists());
+}

@@ -13,6 +13,7 @@ import type {
   Project,
   ProviderKeyStatus,
   PushResult,
+  SandboxInfo,
   Session,
   SessionDefaults,
   SessionEnvelope,
@@ -97,6 +98,8 @@ export const api = {
   connectGitHub: (token: string) =>
     post<GitHubConnection>("/api/settings/github", { token }, "PUT"),
   disconnectGitHub: () => request<GitHubConnection>("/api/settings/github", { method: "DELETE" }),
+  sessionSandbox: (sessionId: string) =>
+    request<SandboxInfo>(`/api/sessions/${encodeURIComponent(sessionId)}/sandbox`),
   push: (projectId: string) =>
     post<PushResult>(`/api/projects/${encodeURIComponent(projectId)}/git/push`, {}),
   draftCommitMessage: (sessionId: string) =>
