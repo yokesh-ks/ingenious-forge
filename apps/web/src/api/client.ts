@@ -4,6 +4,7 @@ import type {
   DirListing,
   FileContent,
   FileList,
+  GitStatus,
   ModelCatalog,
   OpenProjectRequest,
   Project,
@@ -68,6 +69,8 @@ export const api = {
     request<FileContent>(
       `/api/projects/${encodeURIComponent(projectId)}/file?${new URLSearchParams({ path })}`,
     ),
+  gitStatus: (projectId: string) =>
+    request<GitStatus>(`/api/projects/${encodeURIComponent(projectId)}/git/status`),
   modelCatalog: () => request<ModelCatalog>("/api/models"),
   setApprovalMode: (sessionId: string, mode: ApprovalMode) =>
     post<Session>(

@@ -7,6 +7,7 @@ import SessionHeader from "@/components/SessionHeader";
 import SessionSidebar from "@/components/SessionSidebar";
 import SessionWorkspace from "@/components/SessionWorkspace";
 import { Link, navigate } from "@/lib/router";
+import { useGitStatus } from "@/session/use-git-status";
 import { useModelCatalog } from "@/session/use-model-catalog";
 import { useProjectSessions } from "@/session/use-project-sessions";
 
@@ -24,6 +25,7 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
   /** True while the new-session form is shown. */
   const [picking, setPicking] = useState(false);
   const models = useModelCatalog();
+  const git = useGitStatus(projectId);
   const [savingMode, setSavingMode] = useState(false);
   const active = sessions?.find((s) => s.id === sessionId) ?? null;
   // Guards against creating a second first session when the effect below
@@ -142,6 +144,7 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
                 approvalMode={active?.approval_mode ?? "ask"}
                 onApprovalModeChange={changeApprovalMode}
                 savingMode={savingMode}
+                git={git.status}
               />
               <SessionWorkspace key={sessionId} sessionId={sessionId} projectId={projectId} />
             </div>

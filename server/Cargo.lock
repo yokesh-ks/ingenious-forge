@@ -646,6 +646,7 @@ dependencies = [
  "clap",
  "db",
  "futures-util",
+ "git",
  "reqwest",
  "serde",
  "serde_json",
@@ -808,6 +809,9 @@ dependencies = [
 [[package]]
 name = "git"
 version = "0.1.0"
+dependencies = [
+ "api-types",
+]
 
 [[package]]
 name = "hashbrown"
