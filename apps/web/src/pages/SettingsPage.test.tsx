@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProviderKeyStatus } from "@/api/types";
+import { catalog } from "@/test/catalog";
 import { fakeFetch } from "@/test/fake-fetch";
 import SettingsPage from "./SettingsPage";
 
@@ -90,6 +91,92 @@ describe("SettingsPage — model providers", () => {
       "GET /api/settings/providers": () => ({ status: 500, body: { error: "boom" } }),
     });
     render(<SettingsPage />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("boom");
+    const providers = screen.getByRole("region", { name: /model providers/i });
+    expect(await within(providers).findByRole("alert")).toHaveTextContent("boom");
+  });
+});
+
+describe("SettingsPage — new session defaults", () => {
+  const routes = (defaults: unknown, extra: Record<string, unknown> = {}) => ({
+    "GET /api/settings/providers": [none],
+    "GET /api/models": catalog,
+    "GET /api/settings/defaults": defaults,
+    ...extra,
+  });
+
+  it("shows the saved defaults", async () => {
+    fakeFetch(
+      routes({
+        model: { provider: "anthropic", model: "claude-sonnet-5-5", effort: "low" },
+        approval_mode: "full_auto",
+      }),
+    );
+    render(<SettingsPage />);
+    const form = await screen.findByRole("form", { name: /new session defaults/i });
+    await waitFor(() =>
+      expect(within(form).getByLabelText(/^model$/i)).toHaveValue("claude-sonnet-5-5"),
+    );
+    expect(within(form).getByLabelText(/reasoning effort/i)).toHaveValue("low");
+    expect(within(form).getByLabelText(/approval mode/i)).toHaveValue("full_auto");
+  });
+
+  it("starts from the catalog default when no model is saved", async () => {
+    fakeFetch(routes({ model: null, approval_mode: "ask" }));
+    render(<SettingsPage />);
+    const form = await screen.findByRole("form", { name: /new session defaults/i });
+    await waitFor(() =>
+      expect(within(form).getByLabelText(/^model$/i)).toHaveValue("claude-opus-5-5"),
+    );
+    expect(within(form).getByLabelText(/approval mode/i)).toHaveValue("ask");
+  });
+
+  it("saves the chosen defaults", async () => {
+    const fetch = fakeFetch(
+      routes(
+        { model: null, approval_mode: "ask" },
+        {
+          "PUT /api/settings/defaults": (init: RequestInit | undefined) => ({
+            body: JSON.parse(String(init?.body)),
+          }),
+        },
+      ),
+    );
+    render(<SettingsPage />);
+    const form = await screen.findByRole("form", { name: /new session defaults/i });
+    await waitFor(() =>
+      expect(within(form).getByLabelText(/^model$/i)).toHaveValue("claude-opus-5-5"),
+    );
+    await userEvent.selectOptions(within(form).getByLabelText(/^model$/i), "claude-sonnet-5-5");
+    await userEvent.selectOptions(within(form).getByLabelText(/reasoning effort/i), "max");
+    await userEvent.selectOptions(within(form).getByLabelText(/approval mode/i), "auto_edit");
+    await userEvent.click(within(form).getByRole("button", { name: /save defaults/i }));
+
+    expect(await within(form).findByText(/saved/i)).toBeInTheDocument();
+    const put = fetch.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(String(put?.[1]?.body))).toEqual({
+      model: { provider: "anthropic", model: "claude-sonnet-5-5", effort: "max" },
+      approval_mode: "auto_edit",
+    });
+  });
+
+  it("shows why the defaults could not be saved", async () => {
+    fakeFetch(
+      routes(
+        { model: null, approval_mode: "ask" },
+        {
+          "PUT /api/settings/defaults": () => ({
+            status: 400,
+            body: { error: "anthropic has no model x" },
+          }),
+        },
+      ),
+    );
+    render(<SettingsPage />);
+    const form = await screen.findByRole("form", { name: /new session defaults/i });
+    await waitFor(() =>
+      expect(within(form).getByLabelText(/^model$/i)).toHaveValue("claude-opus-5-5"),
+    );
+    await userEvent.click(within(form).getByRole("button", { name: /save defaults/i }));
+    expect(await within(form).findByRole("alert")).toHaveTextContent("no model x");
   });
 });

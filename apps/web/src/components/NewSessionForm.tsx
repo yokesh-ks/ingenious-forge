@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from "react";
-import type { ModelCatalog, ReasoningEffort, SessionModel } from "@/api/types";
+import type { ModelCatalog, SessionModel } from "@/api/types";
 import { Button } from "@/components/ui/button";
-import { effortLabel } from "@/lib/models";
+import ModelFields from "./ModelFields";
 
 interface NewSessionFormProps {
   /** `null` while the catalog loads. */
@@ -13,9 +13,6 @@ interface NewSessionFormProps {
   /** True while the session is being created. */
   starting?: boolean;
 }
-
-const selectClass =
-  "h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /** Picks the provider, model and reasoning effort for a new session. */
 export default function NewSessionForm({
@@ -78,12 +75,6 @@ function ModelPicker({
   starting: boolean;
 }) {
   const [choice, setChoice] = useState<SessionModel>(initial);
-  const provider = catalog.providers.find((p) => p.id === choice.provider);
-
-  function changeProvider(id: string) {
-    const next = catalog.providers.find((p) => p.id === id);
-    setChoice((c) => ({ ...c, provider: id, model: next?.models[0]?.id ?? "" }));
-  }
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -97,48 +88,7 @@ function ModelPicker({
       onSubmit={submit}
     >
       <h3 className="text-base font-semibold">Start a new session</h3>
-      <label className="flex flex-col gap-1 text-sm">
-        Provider
-        <select
-          className={selectClass}
-          value={choice.provider}
-          onChange={(e) => changeProvider(e.target.value)}
-        >
-          {catalog.providers.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        Model
-        <select
-          className={selectClass}
-          value={choice.model}
-          onChange={(e) => setChoice((c) => ({ ...c, model: e.target.value }))}
-        >
-          {provider?.models.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        Reasoning effort
-        <select
-          className={selectClass}
-          value={choice.effort}
-          onChange={(e) => setChoice((c) => ({ ...c, effort: e.target.value as ReasoningEffort }))}
-        >
-          {catalog.efforts.map((effort) => (
-            <option key={effort} value={effort}>
-              {effortLabel(effort)}
-            </option>
-          ))}
-        </select>
-      </label>
+      <ModelFields catalog={catalog} value={choice} onChange={setChoice} />
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={starting || !choice.model}>
           Start session

@@ -1,8 +1,11 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { api } from "@/api/client";
-import type { ProviderKeyStatus } from "@/api/types";
+import type { ApprovalMode, ProviderKeyStatus, SessionDefaults, SessionModel } from "@/api/types";
+import ModelFields, { selectClass } from "@/components/ModelFields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { APPROVAL_MODES } from "@/lib/approval-modes";
+import { useModelCatalog } from "@/session/use-model-catalog";
 
 /** Settings (PRD §6.2 Settings). */
 export default function SettingsPage() {
@@ -10,6 +13,7 @@ export default function SettingsPage() {
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6">
       <h2 className="text-xl font-semibold">Settings</h2>
       <ProviderKeys />
+      <SessionDefaultsForm />
     </main>
   );
 }
@@ -126,5 +130,92 @@ function ProviderKeyRow({ initial }: { initial: ProviderKeyStatus }) {
         </p>
       )}
     </div>
+  );
+}
+
+/** The model, effort and approval mode new sessions start with. */
+function SessionDefaultsForm() {
+  const { catalog, error: catalogError } = useModelCatalog();
+  const [defaults, setDefaults] = useState<SessionDefaults | null>(null);
+  const [model, setModel] = useState<SessionModel | null>(null);
+  const [mode, setMode] = useState<ApprovalMode>("ask");
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.sessionDefaults().then(
+      (found) => {
+        if (cancelled) return;
+        setDefaults(found);
+        setMode(found.approval_mode);
+      },
+      (err: Error) => !cancelled && setError(err.message),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // The saved model, or the catalog's default when none is saved.
+  useEffect(() => {
+    if (defaults && catalog && model === null) setModel(defaults.model ?? catalog.default);
+  }, [defaults, catalog, model]);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await api.setSessionDefaults({ model, approval_mode: mode });
+      setSaved(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const loadError = catalogError;
+  return (
+    <form
+      aria-label="New session defaults"
+      className="flex flex-col gap-3 rounded-lg border p-3"
+      onSubmit={save}
+    >
+      <h3 className="text-base font-semibold">New session defaults</h3>
+      <p className="text-sm text-muted-foreground">
+        New sessions start with these; sessions already open keep their own.
+      </p>
+      {loadError && <p className="text-sm text-destructive">{loadError}</p>}
+      {catalog && model && <ModelFields catalog={catalog} value={model} onChange={setModel} />}
+      <label className="flex flex-col gap-1 text-sm">
+        Approval mode
+        <select
+          className={selectClass}
+          value={mode}
+          onChange={(e) => setMode(e.target.value as ApprovalMode)}
+        >
+          {APPROVAL_MODES.map((option) => (
+            <option key={option.mode} value={option.mode}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      <div className="flex items-center gap-2">
+        <Button type="submit" size="sm" disabled={busy || !defaults}>
+          Save defaults
+        </Button>
+        {saved && <span className="text-sm text-muted-foreground">Saved</span>}
+      </div>
+    </form>
   );
 }

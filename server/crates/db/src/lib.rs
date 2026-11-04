@@ -233,3 +233,24 @@ pub async fn touch_session(
         .await?;
     Ok(())
 }
+
+/// The setting `name`, `None` when unset.
+pub async fn get_setting(pool: &SqlitePool, name: &str) -> Result<Option<String>, DbError> {
+    let row: Option<(String,)> = sqlx::query_as("SELECT value FROM settings WHERE name = ?1")
+        .bind(name)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.map(|(value,)| value))
+}
+
+pub async fn set_setting(pool: &SqlitePool, name: &str, value: &str) -> Result<(), DbError> {
+    sqlx::query(
+        "INSERT INTO settings (name, value) VALUES (?1, ?2)
+         ON CONFLICT(name) DO UPDATE SET value = ?2",
+    )
+    .bind(name)
+    .bind(value)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
