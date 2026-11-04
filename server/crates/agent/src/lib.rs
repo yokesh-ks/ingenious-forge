@@ -7,6 +7,7 @@ pub mod commands;
 pub mod instructions;
 pub mod model;
 pub mod providers;
+pub mod sandbox;
 pub mod shell;
 mod sse;
 pub mod tools;
@@ -92,6 +93,8 @@ struct Reply {
 #[derive(Clone)]
 pub struct Agent {
     providers: Arc<Providers>,
+    /// Confines shell commands (ADR 0006).
+    sandbox: sandbox::Sandbox,
     events: EventService,
     sessions: Arc<Mutex<HashMap<String, SessionState>>>,
 }
@@ -108,9 +111,21 @@ impl Agent {
     pub fn with_providers(providers: Providers, events: EventService) -> Self {
         Self {
             providers: Arc::new(providers),
+            sandbox: sandbox::Sandbox::Off,
             events,
             sessions: Arc::default(),
         }
+    }
+
+    /// Runs shell commands under `sandbox`. Without this, commands are
+    /// not confined; the server always sets a detected sandbox.
+    pub fn with_sandbox(mut self, sandbox: sandbox::Sandbox) -> Self {
+        self.sandbox = sandbox;
+        self
+    }
+
+    pub fn sandbox(&self) -> &sandbox::Sandbox {
+        &self.sandbox
     }
 
     pub fn providers(&self) -> &Providers {
@@ -951,7 +966,9 @@ impl Agent {
             Some(command) => {
                 let events = self.events.clone();
                 let (sid, cid) = (session_id.to_string(), call_id.clone());
-                shell::run(
+                shell::run_in(
+                    &self.sandbox,
+                    &sandbox::Policy::project(tools.root()),
                     tools.root(),
                     command,
                     move |line| {

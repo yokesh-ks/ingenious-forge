@@ -98,7 +98,9 @@ async fn main() -> anyhow::Result<()> {
     providers.register(Arc::new(anthropic));
     let state = Arc::new(AppState {
         db: pool,
-        agent: Agent::with_providers(providers, events.clone()),
+        // Shell commands run in the OS sandbox, or not at all (ADR 0006).
+        agent: Agent::with_providers(providers, events.clone())
+            .with_sandbox(agent::sandbox::Sandbox::detect()),
         terminals: services::terminal::Terminals::default(),
         settings,
         events,

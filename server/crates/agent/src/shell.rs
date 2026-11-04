@@ -10,6 +10,8 @@ use std::{
 };
 
 use api_types::OutputStream;
+
+use crate::sandbox::{Policy, Sandbox};
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, BufReader},
     process::Command,
@@ -44,14 +46,39 @@ pub struct ShellOutcome {
     pub interrupted: bool,
 }
 
-/// Runs `command` in `root`, calling `on_line` for every line of stdout
-/// and stderr as it is produced.
+/// Runs `command` in `root` without a sandbox, calling `on_line` for
+/// every line of stdout and stderr as it is produced.
 pub async fn run(
+    root: &Path,
+    command: &str,
+    on_line: impl FnMut(Line) + Send,
+    stop: watch::Receiver<bool>,
+) -> ShellOutcome {
+    run_in(
+        &Sandbox::Off,
+        &Policy::project(root),
+        root,
+        command,
+        on_line,
+        stop,
+    )
+    .await
+}
+
+/// Like [`run`], confined by `sandbox` to what `policy` allows. An
+/// unavailable sandbox runs nothing.
+pub async fn run_in(
+    sandbox: &Sandbox,
+    policy: &Policy,
     root: &Path,
     command: &str,
     mut on_line: impl FnMut(Line) + Send,
     mut stop: watch::Receiver<bool>,
 ) -> ShellOutcome {
+    let (program, args) = match sandbox.command(policy, command) {
+        Ok(launch) => launch,
+        Err(reason) => return failed(reason),
+    };
     if *stop.borrow() {
         return ShellOutcome {
             output: "Stopped by the user before it started.".into(),
@@ -61,9 +88,8 @@ pub async fn run(
         };
     }
     // Its own process group, so stopping it reaches everything it starts.
-    let mut child = match Command::new("/bin/sh")
-        .arg("-c")
-        .arg(command)
+    let mut child = match Command::new(&program)
+        .args(&args)
         .current_dir(root)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
