@@ -301,4 +301,22 @@ describe("ProjectPage", () => {
     expect(badge).toHaveTextContent("main");
     expect(badge).toHaveTextContent("1 staged");
   });
+
+  it("the header shows the session's sandbox and writable folders", async () => {
+    fakeFetch({
+      "GET /api/projects/p1": project,
+      "GET /api/projects/p1/sessions": [session("s1", "Older")],
+      "GET /api/sessions/s1/sandbox": {
+        name: "sandbox-exec",
+        active: true,
+        writable: ["/code/forge"],
+        network: false,
+        problem: null,
+      },
+    });
+    render(<ProjectPage projectId="p1" sessionId="s1" />);
+    const badge = await screen.findByRole("group", { name: /sandbox/i });
+    expect(badge).toHaveTextContent("sandbox-exec");
+    expect(badge).toHaveTextContent("forge");
+  });
 });

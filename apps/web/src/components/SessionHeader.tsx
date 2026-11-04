@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
-import type { ApprovalMode, GitStatus, ModelCatalog, SessionModel } from "@/api/types";
+import type { ApprovalMode, GitStatus, ModelCatalog, SandboxInfo, SessionModel } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { describeModel } from "@/lib/models";
 import ApprovalModePicker from "./ApprovalModePicker";
 import GitBadge from "./GitBadge";
+import SandboxBadge from "./SandboxBadge";
 
 interface SessionHeaderProps {
   model: SessionModel | null;
@@ -13,6 +14,7 @@ interface SessionHeaderProps {
   /** True while an approval mode change is being saved. */
   savingMode?: boolean;
   git?: GitStatus | null;
+  sandbox?: SandboxInfo | null;
   /** Git actions shown under the header. */
   actions?: ReactNode;
 }
@@ -25,6 +27,7 @@ export default function SessionHeader({
   onApprovalModeChange,
   savingMode = false,
   git = null,
+  sandbox = null,
   actions,
 }: SessionHeaderProps) {
   const names = model ? describeModel(model, catalog) : null;
@@ -33,6 +36,7 @@ export default function SessionHeader({
       {/* biome-ignore lint/a11y/useSemanticElements: a fieldset would imply form controls */}
       <div role="group" aria-label="Session settings" className="flex flex-wrap items-center gap-2">
         <GitBadge status={git} />
+        <SandboxBadge sandbox={sandbox} />
         {names && (
           <>
             <Badge variant="outline" title={names.provider}>

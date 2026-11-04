@@ -6,7 +6,7 @@ use agent::tools::ToolBox;
 use api_types::{
     ApiError, CommitMessageDraft, CommitRequest, CommitResult, CreateBranchRequest,
     CreateSessionRequest, DirListing, FileContent, FileList, GitStatus, ModelCatalog,
-    OpenProjectRequest, Project, PushResult, Session, SessionEnvelope, SessionEvent,
+    OpenProjectRequest, Project, PushResult, SandboxInfo, Session, SessionEnvelope, SessionEvent,
     SetApprovalModeRequest,
 };
 use axum::{
@@ -45,6 +45,7 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route("/sessions/{id}/events", get(session_events))
         .route("/sessions/{id}/approval-mode", put(set_approval_mode))
+        .route("/sessions/{id}/sandbox", get(session_sandbox))
         .route("/fs/dirs", get(list_dirs))
         .route("/models", get(model_catalog))
 }
@@ -293,6 +294,19 @@ async fn create_session(
         .agent
         .set_approval_mode(&session.id, session.approval_mode);
     Ok(Json(session))
+}
+
+/// The sandbox and writable folders of a session's commands.
+async fn session_sandbox(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<SandboxInfo> {
+    crate::routes::ensure_open(&state, &id).await;
+    state
+        .agent
+        .sandbox_info(&id)
+        .map(Json)
+        .ok_or_else(|| ApiFailure(StatusCode::NOT_FOUND, "session not found".into()))
 }
 
 /// Changes a session's approval mode; the agent uses it from its next
@@ -1062,6 +1076,25 @@ mod tests {
 
         let (status, _) =
             post_json(&format!("{api}/sessions/nope/commit-message"), json!({})).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn a_session_reports_its_sandbox() {
+        let (api, _) = start().await;
+        let id = new_project(&api).await;
+        let (_, session) = post_json(&format!("{api}/projects/{id}/sessions"), json!({})).await;
+        let sid = session["id"].as_str().unwrap();
+
+        let (status, body) = get_json(&format!("{api}/sessions/{sid}/sandbox")).await;
+
+        assert_eq!(status, StatusCode::OK);
+        // Test servers run without a sandbox.
+        assert_eq!(body["name"], "none");
+        assert_eq!(body["writable"].as_array().unwrap().len(), 1);
+        assert_eq!(body["network"], false);
+
+        let (status, _) = get_json(&format!("{api}/sessions/nope/sandbox")).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
     }
 

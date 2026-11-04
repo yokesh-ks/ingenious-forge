@@ -76,6 +76,9 @@ struct SessionState {
     approvals: HashMap<String, tokio::sync::oneshot::Sender<ApprovalDecision>>,
     /// Commands and edited files the user always allows this session.
     allowed: BTreeSet<String>,
+    /// What the session's commands may write and reach; the project
+    /// folder only, without network, until changed.
+    policy: Option<sandbox::Policy>,
 }
 
 /// How a turn that did not fail came to an end.
@@ -126,6 +129,56 @@ impl Agent {
 
     pub fn sandbox(&self) -> &sandbox::Sandbox {
         &self.sandbox
+    }
+
+    /// The sandbox and writable folders of an open session.
+    pub fn sandbox_info(&self, session_id: &str) -> Option<api_types::SandboxInfo> {
+        let policy = self.policy(session_id)?;
+        Some(self.describe_sandbox(&policy))
+    }
+
+    /// Changes what a session's commands may write and reach, from its
+    /// next command, and tells every tab. False when it is not open.
+    pub fn set_sandbox_policy(&self, session_id: &str, policy: sandbox::Policy) -> bool {
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            match sessions.get_mut(session_id).filter(|s| s.tools.is_some()) {
+                Some(session) => session.policy = Some(policy.clone()),
+                None => return false,
+            }
+        }
+        self.events.publish(SessionEvent::SandboxChanged {
+            session_id: session_id.to_string(),
+            sandbox: self.describe_sandbox(&policy),
+        });
+        true
+    }
+
+    fn policy(&self, session_id: &str) -> Option<sandbox::Policy> {
+        let sessions = self.sessions.lock().unwrap();
+        let session = sessions.get(session_id).filter(|s| s.tools.is_some())?;
+        Some(session.policy.clone().unwrap_or_else(|| {
+            sandbox::Policy::project(session.tools.as_ref().map_or(".".as_ref(), |t| t.root()))
+        }))
+    }
+
+    fn describe_sandbox(&self, policy: &sandbox::Policy) -> api_types::SandboxInfo {
+        let (active, problem) = match &self.sandbox {
+            sandbox::Sandbox::Off => (false, None),
+            sandbox::Sandbox::Unavailable(reason) => (false, Some(reason.clone())),
+            _ => (true, None),
+        };
+        api_types::SandboxInfo {
+            name: self.sandbox.name().to_string(),
+            active,
+            writable: policy
+                .writable
+                .iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect(),
+            network: policy.network,
+            problem,
+        }
     }
 
     pub fn providers(&self) -> &Providers {
@@ -966,9 +1019,12 @@ impl Agent {
             Some(command) => {
                 let events = self.events.clone();
                 let (sid, cid) = (session_id.to_string(), call_id.clone());
+                let policy = self
+                    .policy(session_id)
+                    .unwrap_or_else(|| sandbox::Policy::project(tools.root()));
                 shell::run_in(
                     &self.sandbox,
-                    &sandbox::Policy::project(tools.root()),
+                    &policy,
                     tools.root(),
                     command,
                     move |line| {

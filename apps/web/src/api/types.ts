@@ -138,16 +138,34 @@ export type ClientMessage = { "type": "send_message", session_id: string, text: 
 
 export type OutputStream = "stdout" | "stderr";
 
+export type SandboxInfo = { 
+/**
+ * `sandbox-exec`, `bubblewrap`, `none` or `unavailable`.
+ */
+name: string, 
+/**
+ * True when commands are confined.
+ */
+active: boolean, 
+/**
+ * Folders commands may write to.
+ */
+writable: Array<string>, network: boolean, 
+/**
+ * Why commands cannot run, when the sandbox is unavailable.
+ */
+problem: string | null, };
+
 export type SessionEvent = { "type": "user_message", session_id: string, text: string, } | { "type": "turn_started", session_id: string, } | { "type": "output", session_id: string, chunk: string, } | { "type": "tool_call", session_id: string, call_id: string, name: string, args: JsonValue, } | { "type": "tool_output", session_id: string, call_id: string, stream: OutputStream, text: string, } | { "type": "tool_result", session_id: string, call_id: string, output: string, is_error: boolean, 
 /**
  * The exit code of a shell command; `None` for other tools and
  * for a command that did not exit normally.
  */
-exit_code: number | null, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, } | { "type": "approval_mode_changed", session_id: string, mode: ApprovalMode, } | { "type": "approval_requested", session_id: string, call_id: string, kind: ApprovalKind, command: string | null, path: string | null, diff: string | null, } | { "type": "approval_resolved", session_id: string, call_id: string, decision: ApprovalDecision, };
+exit_code: number | null, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, } | { "type": "approval_mode_changed", session_id: string, mode: ApprovalMode, } | { "type": "approval_requested", session_id: string, call_id: string, kind: ApprovalKind, command: string | null, path: string | null, diff: string | null, } | { "type": "approval_resolved", session_id: string, call_id: string, decision: ApprovalDecision, } | { "type": "sandbox_changed", session_id: string, sandbox: SandboxInfo, };
 
 export type SessionEnvelope = { seq: number, } & ({ "type": "user_message", session_id: string, text: string, } | { "type": "turn_started", session_id: string, } | { "type": "output", session_id: string, chunk: string, } | { "type": "tool_call", session_id: string, call_id: string, name: string, args: JsonValue, } | { "type": "tool_output", session_id: string, call_id: string, stream: OutputStream, text: string, } | { "type": "tool_result", session_id: string, call_id: string, output: string, is_error: boolean, 
 /**
  * The exit code of a shell command; `None` for other tools and
  * for a command that did not exit normally.
  */
-exit_code: number | null, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, } | { "type": "approval_mode_changed", session_id: string, mode: ApprovalMode, } | { "type": "approval_requested", session_id: string, call_id: string, kind: ApprovalKind, command: string | null, path: string | null, diff: string | null, } | { "type": "approval_resolved", session_id: string, call_id: string, decision: ApprovalDecision, });
+exit_code: number | null, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, } | { "type": "approval_mode_changed", session_id: string, mode: ApprovalMode, } | { "type": "approval_requested", session_id: string, call_id: string, kind: ApprovalKind, command: string | null, path: string | null, diff: string | null, } | { "type": "approval_resolved", session_id: string, call_id: string, decision: ApprovalDecision, } | { "type": "sandbox_changed", session_id: string, sandbox: SandboxInfo, });

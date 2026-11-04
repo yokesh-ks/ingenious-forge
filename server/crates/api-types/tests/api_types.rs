@@ -511,3 +511,28 @@ fn terminal_input_and_exit_serialize() {
     );
     assert!(typescript_bindings().contains("export type TerminalInput"));
 }
+
+#[test]
+fn sandbox_info_serializes() {
+    use api_types::SandboxInfo;
+    let info = SandboxInfo {
+        name: "bubblewrap".into(),
+        active: true,
+        writable: vec!["/work/app".into()],
+        network: false,
+        problem: None,
+    };
+    assert_eq!(
+        serde_json::to_value(&info).unwrap(),
+        json!({ "name": "bubblewrap", "active": true, "writable": ["/work/app"], "network": false, "problem": null })
+    );
+    let changed = SessionEvent::SandboxChanged {
+        session_id: "s".into(),
+        sandbox: info,
+    };
+    assert_eq!(
+        serde_json::to_value(&changed).unwrap()["type"],
+        "sandbox_changed"
+    );
+    assert_eq!(changed.session_id(), "s");
+}

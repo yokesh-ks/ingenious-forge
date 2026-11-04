@@ -358,6 +358,21 @@ pub enum ApprovalDecision {
     AlwaysAllow,
 }
 
+/// The sandbox a session's commands run in, as the session header shows
+/// it (PRD §6.1 Sandbox).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SandboxInfo {
+    /// `sandbox-exec`, `bubblewrap`, `none` or `unavailable`.
+    pub name: String,
+    /// True when commands are confined.
+    pub active: bool,
+    /// Folders commands may write to.
+    pub writable: Vec<String>,
+    pub network: bool,
+    /// Why commands cannot run, when the sandbox is unavailable.
+    pub problem: Option<String>,
+}
+
 /// Which output stream of a command a line came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
@@ -453,6 +468,11 @@ pub enum SessionEvent {
         call_id: String,
         decision: ApprovalDecision,
     },
+    /// The session's sandbox or writable folders changed.
+    SandboxChanged {
+        session_id: String,
+        sandbox: SandboxInfo,
+    },
 }
 
 /// A session event as sent to the browser: the event's fields plus its
@@ -482,7 +502,8 @@ impl SessionEvent {
             | Self::Interrupted { session_id }
             | Self::ApprovalModeChanged { session_id, .. }
             | Self::ApprovalRequested { session_id, .. }
-            | Self::ApprovalResolved { session_id, .. } => session_id,
+            | Self::ApprovalResolved { session_id, .. }
+            | Self::SandboxChanged { session_id, .. } => session_id,
         }
     }
 }
@@ -527,6 +548,7 @@ pub fn typescript_bindings() -> String {
         ApprovalDecision::decl(&cfg),
         ClientMessage::decl(&cfg),
         OutputStream::decl(&cfg),
+        SandboxInfo::decl(&cfg),
         SessionEvent::decl(&cfg),
         SessionEnvelope::decl(&cfg),
     ];
