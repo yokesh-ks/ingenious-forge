@@ -2,6 +2,7 @@ import { ArrowLeftIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { ApprovalMode, Project, SessionModel } from "@/api/types";
+import GitActions from "@/components/GitActions";
 import NewSessionForm from "@/components/NewSessionForm";
 import SessionHeader from "@/components/SessionHeader";
 import SessionSidebar from "@/components/SessionSidebar";
@@ -145,6 +146,16 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
                 onApprovalModeChange={changeApprovalMode}
                 savingMode={savingMode}
                 git={git.status}
+                actions={
+                  git.status && (
+                    <GitActions
+                      projectId={projectId}
+                      sessionId={sessionId}
+                      status={git.status}
+                      onChanged={git.reload}
+                    />
+                  )
+                }
               />
               <SessionWorkspace key={sessionId} sessionId={sessionId} projectId={projectId} />
             </div>

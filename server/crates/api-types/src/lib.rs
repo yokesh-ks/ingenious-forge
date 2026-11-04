@@ -203,6 +203,33 @@ pub struct GitStatus {
     pub changed: u32,
 }
 
+/// Body of `POST /api/projects/{id}/git/branch`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct CreateBranchRequest {
+    pub name: String,
+}
+
+/// Body of `POST /api/projects/{id}/git/commit`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct CommitRequest {
+    pub message: String,
+}
+
+/// A commit just made.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct CommitResult {
+    /// The short commit id.
+    pub sha: String,
+    /// The first line of the message.
+    pub summary: String,
+}
+
+/// Body of `POST /api/sessions/{id}/commit-message`: the agent's draft.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct CommitMessageDraft {
+    pub message: String,
+}
+
 /// What the browser sends on a project's terminal socket.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -422,6 +449,10 @@ pub fn typescript_bindings() -> String {
         FileList::decl(&cfg),
         FileContent::decl(&cfg),
         GitStatus::decl(&cfg),
+        CreateBranchRequest::decl(&cfg),
+        CommitRequest::decl(&cfg),
+        CommitResult::decl(&cfg),
+        CommitMessageDraft::decl(&cfg),
         TerminalInput::decl(&cfg),
         TerminalNotice::decl(&cfg),
         ApiError::decl(&cfg),

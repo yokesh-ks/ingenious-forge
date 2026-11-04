@@ -4,14 +4,15 @@ use std::{path::PathBuf, sync::Arc};
 
 use agent::tools::ToolBox;
 use api_types::{
-    ApiError, CreateSessionRequest, DirListing, FileContent, FileList, GitStatus, ModelCatalog,
+    ApiError, CommitMessageDraft, CommitRequest, CommitResult, CreateBranchRequest,
+    CreateSessionRequest, DirListing, FileContent, FileList, GitStatus, ModelCatalog,
     OpenProjectRequest, Project, Session, SessionEnvelope, SessionEvent, SetApprovalModeRequest,
 };
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, put},
+    routing::{get, post, put},
     Json, Router,
 };
 use serde::Deserialize;
@@ -29,6 +30,9 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/projects/{id}/files", get(project_files))
         .route("/projects/{id}/file", get(project_file))
         .route("/projects/{id}/git/status", get(git_status))
+        .route("/projects/{id}/git/branch", post(create_branch))
+        .route("/projects/{id}/git/commit", post(commit))
+        .route("/sessions/{id}/commit-message", post(draft_commit_message))
         .route(
             "/projects/{id}/terminal",
             get(crate::terminal::terminal_socket),
@@ -119,6 +123,68 @@ async fn git_status(
         .map_err(|e| ApiFailure::internal(e.to_string()))?
         .map(Json)
         .map_err(|message| ApiFailure(StatusCode::BAD_REQUEST, message))
+}
+
+/// Runs a git operation on project `id` off the async runtime; a git
+/// failure is the user's to fix, so it is a bad request.
+async fn in_project<T: Send + 'static>(
+    state: &AppState,
+    id: &str,
+    op: impl FnOnce(&std::path::Path) -> Result<T, String> + Send + 'static,
+) -> Result<T, ApiFailure> {
+    let project = projects::get_project(&state.db, id).await?;
+    tokio::task::spawn_blocking(move || op(std::path::Path::new(&project.path)))
+        .await
+        .map_err(|e| ApiFailure::internal(e.to_string()))?
+        .map_err(|message| ApiFailure(StatusCode::BAD_REQUEST, message))
+}
+
+/// Creates and checks out a branch; returns the new status.
+async fn create_branch(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<CreateBranchRequest>,
+) -> ApiResult<GitStatus> {
+    in_project(&state, &id, move |dir| {
+        git::create_branch(dir, &body.name)?;
+        git::status(dir)
+    })
+    .await
+    .map(Json)
+}
+
+/// Commits every change with the user's message.
+async fn commit(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<CommitRequest>,
+) -> ApiResult<CommitResult> {
+    in_project(&state, &id, move |dir| git::commit(dir, &body.message))
+        .await
+        .map(Json)
+}
+
+/// Most of the diff the agent reads to draft a commit message.
+const MAX_DRAFT_DIFF_BYTES: usize = 40_000;
+
+/// Has the session's agent draft a commit message for the project's
+/// uncommitted changes.
+async fn draft_commit_message(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<CommitMessageDraft> {
+    let session = projects::get_session(&state.db, &id).await?;
+    crate::routes::ensure_open(&state, &id).await;
+    let changes = in_project(&state, &session.project_id, |dir| {
+        git::describe_changes(dir, MAX_DRAFT_DIFF_BYTES)
+    })
+    .await?;
+    let message = state
+        .agent
+        .draft_commit_message(&id, &changes)
+        .await
+        .map_err(|err| ApiFailure(StatusCode::BAD_GATEWAY, err.to_string()))?;
+    Ok(Json(CommitMessageDraft { message }))
 }
 
 /// Largest file the viewer shows.
@@ -753,6 +819,122 @@ mod tests {
         let (status, body) = get_json(&format!("{api}/projects/{pid}/git/status")).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(body["error"].is_string());
+    }
+
+    /// A real repository with one commit, opened as a project.
+    async fn git_project(api: &str) -> (String, PathBuf) {
+        let repo = folders().join("gitrepo");
+        fs::create_dir_all(&repo).unwrap();
+        for args in [
+            &["init", "-q", "-b", "main"][..],
+            &["config", "user.name", "Test"],
+            &["config", "user.email", "test@example.com"],
+        ] {
+            assert!(std::process::Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .status()
+                .unwrap()
+                .success());
+        }
+        fs::write(repo.join("a.txt"), "a\n").unwrap();
+        for args in [&["add", "."][..], &["commit", "-q", "-m", "first"]] {
+            assert!(std::process::Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .status()
+                .unwrap()
+                .success());
+        }
+        let (_, project) = post_json(&format!("{api}/projects"), json!({ "path": repo })).await;
+        (project["id"].as_str().unwrap().to_string(), repo)
+    }
+
+    #[tokio::test]
+    async fn a_branch_is_created_and_shown_in_the_status() {
+        let (api, _) = start().await;
+        let (pid, _) = git_project(&api).await;
+
+        let (status, body) = post_json(
+            &format!("{api}/projects/{pid}/git/branch"),
+            json!({ "name": "feat/x" }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["branch"], "feat/x");
+
+        let (status, body) = post_json(
+            &format!("{api}/projects/{pid}/git/branch"),
+            json!({ "name": "bad name" }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body["error"].as_str().unwrap().contains("not a valid"));
+    }
+
+    #[tokio::test]
+    async fn committing_from_the_browser_lands_in_the_log() {
+        let (api, _) = start().await;
+        let (pid, repo) = git_project(&api).await;
+        fs::write(repo.join("a.txt"), "b\n").unwrap();
+
+        let (status, body) = post_json(
+            &format!("{api}/projects/{pid}/git/commit"),
+            json!({ "message": "fix: change a" }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["summary"], "fix: change a");
+        let log = std::process::Command::new("git")
+            .args(["log", "-1", "--format=%s"])
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&log.stdout).trim(), "fix: change a");
+
+        let (status, body) = post_json(
+            &format!("{api}/projects/{pid}/git/commit"),
+            json!({ "message": "again" }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body["error"]
+            .as_str()
+            .unwrap()
+            .contains("nothing to commit"));
+    }
+
+    /// Replies with a fixed commit message.
+    struct Drafter;
+    impl ModelClient for Drafter {
+        fn stream(&self, _: ModelRequest) -> mpsc::Receiver<Result<ModelEvent, ModelError>> {
+            let (tx, rx) = mpsc::channel(1);
+            tokio::spawn(async move {
+                let _ = tx
+                    .send(Ok(ModelEvent::TextDelta("feat: draft".into())))
+                    .await;
+            });
+            rx
+        }
+    }
+
+    #[tokio::test]
+    async fn the_agent_drafts_a_commit_message_for_a_session() {
+        let (api, _) = start_with(Arc::new(Drafter)).await;
+        let (pid, repo) = git_project(&api).await;
+        fs::write(repo.join("a.txt"), "changed\n").unwrap();
+        let (_, session) = post_json(&format!("{api}/projects/{pid}/sessions"), json!({})).await;
+        let sid = session["id"].as_str().unwrap();
+
+        let (status, body) =
+            post_json(&format!("{api}/sessions/{sid}/commit-message"), json!({})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, json!({ "message": "feat: draft" }));
+
+        let (status, _) =
+            post_json(&format!("{api}/sessions/nope/commit-message"), json!({})).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

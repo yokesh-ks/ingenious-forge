@@ -74,6 +74,22 @@ staged: number,
  */
 changed: number, };
 
+export type CreateBranchRequest = { name: string, };
+
+export type CommitRequest = { message: string, };
+
+export type CommitResult = { 
+/**
+ * The short commit id.
+ */
+sha: string, 
+/**
+ * The first line of the message.
+ */
+summary: string, };
+
+export type CommitMessageDraft = { message: string, };
+
 export type TerminalInput = { "type": "input", data: string, } | { "type": "resize", cols: number, rows: number, };
 
 export type TerminalNotice = { "type": "exit" };
