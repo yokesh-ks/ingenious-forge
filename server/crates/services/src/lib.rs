@@ -1,6 +1,7 @@
 pub mod folders;
 pub mod log;
 pub mod projects;
+pub mod workspace;
 
 use std::{
     collections::HashMap,

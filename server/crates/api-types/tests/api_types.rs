@@ -467,3 +467,26 @@ fn approval_requests_and_answers_serialize() {
         }
     );
 }
+
+#[test]
+fn file_list_and_content_serialize() {
+    use api_types::{FileContent, FileList};
+    let list = FileList {
+        files: vec!["a.rs".into()],
+        truncated: false,
+    };
+    assert_eq!(
+        serde_json::to_value(&list).unwrap(),
+        json!({ "files": ["a.rs"], "truncated": false })
+    );
+    let file = FileContent {
+        path: "a.rs".into(),
+        content: "x".into(),
+    };
+    assert_eq!(
+        serde_json::to_value(&file).unwrap(),
+        json!({ "path": "a.rs", "content": "x" })
+    );
+    let ts = typescript_bindings();
+    assert!(ts.contains("export type FileList") && ts.contains("export type FileContent"));
+}

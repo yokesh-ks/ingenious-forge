@@ -47,6 +47,18 @@ export type DirEntry = { name: string, path: string, is_git_repo: boolean, };
 
 export type DirListing = { path: string, parent: string | null, is_git_repo: boolean, entries: Array<DirEntry>, };
 
+export type FileList = { 
+/**
+ * `/`-separated paths relative to the project folder, sorted.
+ */
+files: Array<string>, 
+/**
+ * True when the project has more files than were listed.
+ */
+truncated: boolean, };
+
+export type FileContent = { path: string, content: string, };
+
 export type ApiError = { error: string, };
 
 export type ApprovalKind = "edit" | "command";

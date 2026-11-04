@@ -173,6 +173,23 @@ pub struct DirListing {
     pub entries: Vec<DirEntry>,
 }
 
+/// Body of `GET /api/projects/{id}/files`: the project's files for the
+/// workspace file tree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FileList {
+    /// `/`-separated paths relative to the project folder, sorted.
+    pub files: Vec<String>,
+    /// True when the project has more files than were listed.
+    pub truncated: bool,
+}
+
+/// Body of `GET /api/projects/{id}/file?path=`: one text file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FileContent {
+    pub path: String,
+    pub content: String,
+}
+
 /// The body of every failed API response.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ApiError {
@@ -366,6 +383,8 @@ pub fn typescript_bindings() -> String {
         OpenProjectRequest::decl(&cfg),
         DirEntry::decl(&cfg),
         DirListing::decl(&cfg),
+        FileList::decl(&cfg),
+        FileContent::decl(&cfg),
         ApiError::decl(&cfg),
         ApprovalKind::decl(&cfg),
         ApprovalDecision::decl(&cfg),
