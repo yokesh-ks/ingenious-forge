@@ -75,6 +75,9 @@ impl ChatMessage {
 pub struct ModelRequest {
     pub messages: Vec<ChatMessage>,
     pub tools: Vec<ToolSpec>,
+    /// Instructions sent ahead of the conversation, such as the project's
+    /// `AGENTS.md`.
+    pub system: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

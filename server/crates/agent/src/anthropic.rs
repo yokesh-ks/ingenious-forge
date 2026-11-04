@@ -53,6 +53,9 @@ pub(crate) fn request_body(model: &str, request: &ModelRequest) -> Value {
     if !request.tools.is_empty() {
         body["tools"] = json!(request.tools);
     }
+    if let Some(system) = &request.system {
+        body["system"] = json!(system);
+    }
     body
 }
 
@@ -448,6 +451,7 @@ mod tests {
                 }]),
             ],
             tools: ToolBox::new(".").specs(),
+            system: None,
         };
         let body = request_body("claude-opus-5-5", &req);
         assert_eq!(body["model"], "claude-opus-5-5");
@@ -477,8 +481,24 @@ mod tests {
         let req = ModelRequest {
             messages: vec![ChatMessage::user_text("hi")],
             tools: vec![],
+            system: None,
         };
-        assert!(request_body("m", &req).get("tools").is_none());
+        let body = request_body("m", &req);
+        assert!(body.get("tools").is_none());
+        assert!(body.get("system").is_none());
+    }
+
+    #[test]
+    fn request_body_sends_the_system_prompt() {
+        let req = ModelRequest {
+            messages: vec![ChatMessage::user_text("hi")],
+            tools: vec![],
+            system: Some("Always respond in French.".into()),
+        };
+        assert_eq!(
+            request_body("m", &req)["system"],
+            "Always respond in French."
+        );
     }
 
     #[test]
