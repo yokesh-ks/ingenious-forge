@@ -3,6 +3,7 @@
 
 pub mod anthropic;
 pub mod changes;
+pub mod commands;
 pub mod instructions;
 pub mod model;
 mod sse;
@@ -191,9 +192,15 @@ impl Agent {
             return Ok(());
         }
         self.events.publish(user_message());
+        // A slash command is shown as typed; the model gets what it stands for.
+        let prompt = session
+            .tools
+            .as_ref()
+            .and_then(|tools| commands::expand(text, tools))
+            .unwrap_or_else(|| text.to_string());
         let mut conversation = session.history.clone();
         let mut content = text_blocks(std::mem::take(&mut session.notes));
-        content.push(ContentBlock::Text { text: text.into() });
+        content.push(ContentBlock::Text { text: prompt });
         conversation.push(ChatMessage::user(content));
         self.start_turn(session, session_id.to_string(), conversation);
         Ok(())
