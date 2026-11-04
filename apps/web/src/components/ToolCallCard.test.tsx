@@ -13,6 +13,7 @@ function tool(overrides: Partial<ToolItem>): ToolItem {
     status: "done",
     output: "fn main() {}",
     lines: [],
+    hiddenLines: 0,
     exitCode: null,
     ...overrides,
   };
@@ -118,6 +119,15 @@ describe("ToolCallCard", () => {
       expect(output).toHaveTextContent("total 8");
       expect(screen.getByText("warning: slow disk")).toHaveAttribute("data-stream", "stderr");
       expect(screen.getByRole("status")).toHaveTextContent(/running/i);
+    });
+
+    it("says how many earlier lines are hidden", () => {
+      render(
+        <ToolCallCard
+          tool={shell({ lines: [{ stream: "stdout", text: "tail" }], hiddenLines: 1500 })}
+        />,
+      );
+      expect(screen.getByText("… 1500 earlier lines not shown")).toBeInTheDocument();
     });
 
     it("shows the exit code when the command finishes", () => {

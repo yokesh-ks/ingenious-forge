@@ -37,6 +37,11 @@ function ShellOutput({ tool }: { tool: ToolItem }) {
   }
   return (
     <>
+      {tool.hiddenLines > 0 && (
+        <p className="mb-1 text-xs text-muted-foreground">
+          … {tool.hiddenLines} earlier lines not shown
+        </p>
+      )}
       {tool.lines.length > 0 ? (
         <pre
           data-testid="shell-output"

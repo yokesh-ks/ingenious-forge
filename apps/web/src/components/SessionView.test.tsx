@@ -44,6 +44,7 @@ describe("SessionView", () => {
             status: "done",
             output: "# Forge",
             lines: [],
+            hiddenLines: 0,
             exitCode: null,
           },
         ]}
@@ -69,6 +70,7 @@ describe("SessionView", () => {
             status: "done",
             output: "a",
             lines: [],
+            hiddenLines: 0,
             exitCode: null,
           },
         ]}

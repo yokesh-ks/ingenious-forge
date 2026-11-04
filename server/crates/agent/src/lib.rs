@@ -454,7 +454,8 @@ impl Agent {
                         is_error: true,
                     }
                 } else {
-                    self.run_tool(session_id, tools, call_id, name, input).await
+                    self.run_tool(session_id, tools, call_id, name, input, cancelled.clone())
+                        .await
                 });
             }
             next.extend(text_blocks(self.take_pending(session_id)));
@@ -555,6 +556,7 @@ impl Agent {
         call_id: String,
         name: String,
         input: serde_json::Value,
+        cancelled: watch::Receiver<bool>,
     ) -> ContentBlock {
         self.events.publish(SessionEvent::ToolCall {
             session_id: session_id.to_string(),
@@ -563,7 +565,9 @@ impl Agent {
             args: input.clone(),
         });
         if name == tools::RUN_SHELL {
-            return self.run_shell(session_id, tools, call_id, &input).await;
+            return self
+                .run_shell(session_id, tools, call_id, &input, cancelled)
+                .await;
         }
         // An edit is diffed against the file as it was before the agent's
         // first edit to it in this session.
@@ -687,12 +691,12 @@ impl Agent {
         tools: &ToolBox,
         call_id: String,
         input: &serde_json::Value,
+        cancelled: watch::Receiver<bool>,
     ) -> ContentBlock {
         let outcome = match input["command"].as_str().filter(|c| !c.trim().is_empty()) {
             Some(command) => {
                 let events = self.events.clone();
                 let (sid, cid) = (session_id.to_string(), call_id.clone());
-                let (_stop, stopped) = watch::channel(false);
                 shell::run(
                     tools.root(),
                     command,
@@ -704,7 +708,7 @@ impl Agent {
                             text: line.text,
                         });
                     },
-                    stopped,
+                    cancelled,
                 )
                 .await
             }
@@ -712,6 +716,7 @@ impl Agent {
                 output: "missing string argument: command".into(),
                 exit_code: None,
                 is_error: true,
+                interrupted: false,
             },
         };
         self.events.publish(SessionEvent::ToolResult {
