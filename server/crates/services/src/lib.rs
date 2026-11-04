@@ -1,6 +1,7 @@
 pub mod folders;
 pub mod log;
 pub mod projects;
+pub mod secrets;
 pub mod terminal;
 pub mod workspace;
 

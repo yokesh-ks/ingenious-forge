@@ -1,0 +1,323 @@
+//! Settings (PRD §6.2 Settings): model provider API keys, stored
+//! encrypted (ADR 0008) and never sent back to the browser.
+
+use std::{collections::BTreeMap, sync::Arc};
+
+use agent::anthropic::KeyHandle;
+use api_types::{KeySource, ProviderKeyStatus, SetProviderKeyRequest};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    routing::{get, put},
+    Json, Router,
+};
+use services::secrets::{hint, SecretStore};
+
+use crate::{projects::ApiFailure, state::AppState};
+
+/// A provider whose key can be set in Settings.
+#[derive(Clone)]
+pub struct ProviderKey {
+    pub name: String,
+    /// The key the provider's clients read.
+    pub handle: KeyHandle,
+    /// The key from the environment, used when none is saved.
+    pub env: Option<String>,
+}
+
+/// Settings state: where secrets are kept and each provider's key.
+#[derive(Clone, Default)]
+pub struct Settings {
+    pub secrets: Option<SecretStore>,
+    pub providers: BTreeMap<String, ProviderKey>,
+}
+
+/// The name a provider's key is stored under.
+fn secret_name(provider: &str) -> String {
+    format!("provider-key:{provider}")
+}
+
+impl Settings {
+    /// Points each provider at its saved key, or its environment key.
+    pub async fn load(&self) {
+        for (id, provider) in &self.providers {
+            let saved = match &self.secrets {
+                Some(store) => store.get(&secret_name(id)).await.unwrap_or_else(|err| {
+                    tracing::warn!(%err, provider = %id, "ignoring a stored key");
+                    None
+                }),
+                None => None,
+            };
+            if let Ok(mut key) = provider.handle.write() {
+                *key = saved.or_else(|| provider.env.clone());
+            }
+        }
+    }
+
+    async fn status(&self, id: &str, provider: &ProviderKey) -> ProviderKeyStatus {
+        let saved = match &self.secrets {
+            Some(store) => store.get(&secret_name(id)).await.ok().flatten(),
+            None => None,
+        };
+        let (key, source) = match (saved, &provider.env) {
+            (Some(key), _) => (Some(key), Some(KeySource::Settings)),
+            (None, Some(env)) => (Some(env.clone()), Some(KeySource::Environment)),
+            (None, None) => (None, None),
+        };
+        ProviderKeyStatus {
+            provider: id.to_string(),
+            name: provider.name.clone(),
+            hint: key.as_deref().map(hint),
+            source,
+        }
+    }
+}
+
+pub fn router() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/settings/providers", get(list_providers))
+        .route(
+            "/settings/providers/{id}/key",
+            put(set_key).delete(remove_key),
+        )
+}
+
+async fn list_providers(State(state): State<Arc<AppState>>) -> Json<Vec<ProviderKeyStatus>> {
+    let settings = &state.settings;
+    let mut out = Vec::new();
+    for (id, provider) in &settings.providers {
+        out.push(settings.status(id, provider).await);
+    }
+    Json(out)
+}
+
+fn provider<'a>(state: &'a AppState, id: &str) -> Result<&'a ProviderKey, ApiFailure> {
+    state
+        .settings
+        .providers
+        .get(id)
+        .ok_or_else(|| ApiFailure::new(StatusCode::NOT_FOUND, format!("unknown provider: {id}")))
+}
+
+fn store(state: &AppState) -> Result<&SecretStore, ApiFailure> {
+    state
+        .settings
+        .secrets
+        .as_ref()
+        .ok_or_else(|| ApiFailure::internal("secret storage is not available"))
+}
+
+/// Saves a provider's API key, encrypted; sessions opened afterwards use it.
+async fn set_key(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<SetProviderKeyRequest>,
+) -> Result<Json<ProviderKeyStatus>, ApiFailure> {
+    let provider = provider(&state, &id)?;
+    let key = body.key.trim();
+    if key.is_empty() {
+        return Err(ApiFailure::new(StatusCode::BAD_REQUEST, "enter an API key"));
+    }
+    store(&state)?
+        .set(&secret_name(&id), key)
+        .await
+        .map_err(ApiFailure::internal)?;
+    if let Ok(mut handle) = provider.handle.write() {
+        *handle = Some(key.to_string());
+    }
+    Ok(Json(state.settings.status(&id, provider).await))
+}
+
+/// Forgets a saved key; the provider falls back to its environment key.
+async fn remove_key(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ProviderKeyStatus>, ApiFailure> {
+    let provider = provider(&state, &id)?;
+    store(&state)?
+        .remove(&secret_name(&id))
+        .await
+        .map_err(ApiFailure::internal)?;
+    if let Ok(mut handle) = provider.handle.write() {
+        *handle = provider.env.clone();
+    }
+    Ok(Json(state.settings.status(&id, provider).await))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::RwLock;
+
+    use agent::Agent;
+    use serde_json::{json, Value};
+    use services::EventService;
+
+    use super::*;
+
+    struct NoModel;
+    impl agent::model::ModelClient for NoModel {
+        fn stream(
+            &self,
+            _: agent::model::ModelRequest,
+        ) -> tokio::sync::mpsc::Receiver<Result<agent::model::ModelEvent, agent::model::ModelError>>
+        {
+            tokio::sync::mpsc::channel(1).1
+        }
+    }
+
+    fn temp() -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "forge-settings-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    async fn settings(dir: &std::path::Path, env: Option<&str>) -> (Settings, KeyHandle) {
+        let pool = db::connect(dir.join("forge.db").to_str().unwrap())
+            .await
+            .unwrap();
+        let handle: KeyHandle = Arc::new(RwLock::new(None));
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "anthropic".to_string(),
+            ProviderKey {
+                name: "Anthropic".into(),
+                handle: handle.clone(),
+                env: env.map(String::from),
+            },
+        );
+        let settings = Settings {
+            secrets: Some(SecretStore::open(pool, &dir.join("secret.key")).unwrap()),
+            providers,
+        };
+        settings.load().await;
+        (settings, handle)
+    }
+
+    async fn start(settings: Settings) -> String {
+        let events = EventService::new();
+        let state = Arc::new(AppState {
+            db: db::connect(":memory:").await.unwrap(),
+            agent: Agent::new(Arc::new(NoModel), events.clone()),
+            events,
+            terminals: Default::default(),
+            settings,
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new().nest("/api", router()).with_state(state);
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        format!("http://{addr}/api/settings/providers")
+    }
+
+    async fn call(method: reqwest::Method, url: &str, body: Option<Value>) -> (u16, String) {
+        let mut req = reqwest::Client::new().request(method, url);
+        if let Some(body) = body {
+            req = req.json(&body);
+        }
+        let res = req.send().await.unwrap();
+        (res.status().as_u16(), res.text().await.unwrap())
+    }
+
+    #[tokio::test]
+    async fn a_saved_key_is_used_and_never_sent_back() {
+        let dir = temp();
+        let (settings, handle) = settings(&dir, None).await;
+        let api = start(settings).await;
+
+        let (status, body) = call(
+            reqwest::Method::PUT,
+            &format!("{api}/anthropic/key"),
+            Some(json!({ "key": "  sk-ant-secret-9876  " })),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        assert!(!body.contains("secret"), "{body}");
+        let body: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            body,
+            json!({ "provider": "anthropic", "name": "Anthropic", "hint": "…9876", "source": "settings" })
+        );
+        assert_eq!(
+            handle.read().unwrap().as_deref(),
+            Some("sk-ant-secret-9876")
+        );
+
+        let (_, listed) = call(reqwest::Method::GET, &api, None).await;
+        assert!(!listed.contains("secret"), "{listed}");
+        assert!(listed.contains("…9876"));
+    }
+
+    #[tokio::test]
+    async fn a_saved_key_survives_a_restart() {
+        let dir = temp();
+        let (settings, _) = settings(&dir, None).await;
+        let api = start(settings).await;
+        call(
+            reqwest::Method::PUT,
+            &format!("{api}/anthropic/key"),
+            Some(json!({ "key": "sk-1234" })),
+        )
+        .await;
+
+        let (_, handle) = self::settings(&dir, None).await;
+        assert_eq!(handle.read().unwrap().as_deref(), Some("sk-1234"));
+    }
+
+    #[tokio::test]
+    async fn removing_the_key_falls_back_to_the_environment() {
+        let dir = temp();
+        let (settings, handle) = settings(&dir, Some("env-key-0000")).await;
+        assert_eq!(handle.read().unwrap().as_deref(), Some("env-key-0000"));
+        let api = start(settings).await;
+        call(
+            reqwest::Method::PUT,
+            &format!("{api}/anthropic/key"),
+            Some(json!({ "key": "saved-1111" })),
+        )
+        .await;
+
+        let (status, body) = call(
+            reqwest::Method::DELETE,
+            &format!("{api}/anthropic/key"),
+            None,
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        let body: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(body["source"], "environment");
+        assert_eq!(body["hint"], "…0000");
+        assert_eq!(handle.read().unwrap().as_deref(), Some("env-key-0000"));
+    }
+
+    #[tokio::test]
+    async fn a_blank_key_or_unknown_provider_is_refused() {
+        let dir = temp();
+        let (settings, _) = settings(&dir, None).await;
+        let api = start(settings).await;
+        let (status, _) = call(
+            reqwest::Method::PUT,
+            &format!("{api}/anthropic/key"),
+            Some(json!({ "key": "   " })),
+        )
+        .await;
+        assert_eq!(status, 400);
+        let (status, _) = call(
+            reqwest::Method::PUT,
+            &format!("{api}/nope/key"),
+            Some(json!({ "key": "x" })),
+        )
+        .await;
+        assert_eq!(status, 404);
+        let (_, listed) = call(reqwest::Method::GET, &api, None).await;
+        let listed: Value = serde_json::from_str(&listed).unwrap();
+        assert_eq!(listed[0]["source"], Value::Null);
+    }
+}

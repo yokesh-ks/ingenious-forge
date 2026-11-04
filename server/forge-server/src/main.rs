@@ -1,5 +1,6 @@
 mod projects;
 mod routes;
+mod settings;
 mod state;
 mod terminal;
 
@@ -61,22 +62,43 @@ async fn main() -> anyhow::Result<()> {
         }
     }
     // Session logs live beside the database (ADR 0005).
-    let log_dir = std::path::Path::new(&args.db_path)
+    let data_dir = std::path::Path::new(&args.db_path)
         .parent()
         .unwrap_or(std::path::Path::new("."))
-        .join("sessions");
+        .to_path_buf();
+    let log_dir = data_dir.join("sessions");
     let log = services::log::SessionLog::open(&log_dir)?;
     let events = services::EventService::with_log(Arc::new(log));
     // Provider keys move to Settings in a later story (PRD §6.2 Settings).
     // Each provider adapter is registered here; the first is the default.
+    // A key saved in Settings wins over the environment (ADR 0008).
+    let env_key = std::env::var("ANTHROPIC_API_KEY")
+        .ok()
+        .filter(|k| !k.trim().is_empty());
+    let anthropic = AnthropicProvider::new(env_key.clone());
+    let secrets = services::secrets::SecretStore::open(pool.clone(), &data_dir.join("secret.key"))
+        .map_err(anyhow::Error::msg)?;
+    let mut keys = std::collections::BTreeMap::new();
+    keys.insert(
+        "anthropic".to_string(),
+        settings::ProviderKey {
+            name: "Anthropic".into(),
+            handle: anthropic.key_handle(),
+            env: env_key,
+        },
+    );
+    let settings = settings::Settings {
+        secrets: Some(secrets),
+        providers: keys,
+    };
+    settings.load().await;
     let mut providers = Providers::new();
-    providers.register(Arc::new(AnthropicProvider::new(
-        std::env::var("ANTHROPIC_API_KEY").ok(),
-    )));
+    providers.register(Arc::new(anthropic));
     let state = Arc::new(AppState {
         db: pool,
         agent: Agent::with_providers(providers, events.clone()),
         terminals: services::terminal::Terminals::default(),
+        settings,
         events,
     });
 

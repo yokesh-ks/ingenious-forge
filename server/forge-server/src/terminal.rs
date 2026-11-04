@@ -125,6 +125,7 @@ mod tests {
             agent: Agent::new(Arc::new(NoModel), events.clone()),
             events,
             terminals: Terminals::with_shell("/bin/sh"),
+            settings: Default::default(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();

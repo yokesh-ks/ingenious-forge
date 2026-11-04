@@ -15,6 +15,7 @@ serde_json.workspace = true
 db.workspace = true
 sqlx.workspace = true
 portable-pty.workspace = true
+aes-gcm.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

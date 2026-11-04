@@ -53,22 +53,34 @@ const MODELS: &[(&str, &str)] = &[
     ("claude-haiku-5-5", "Claude Haiku 5.5"),
 ];
 
+/// The API key a provider uses, shared so Settings can change it while
+/// the server runs; each new client reads the current value.
+pub type KeyHandle = Arc<std::sync::RwLock<Option<String>>>;
+
 /// The Anthropic provider adapter: builds an [`AnthropicClient`] per model.
 #[derive(Debug, Clone)]
 pub struct AnthropicProvider {
-    client: AnthropicClient,
+    base_url: String,
+    key: KeyHandle,
 }
 
 impl AnthropicProvider {
     pub fn new(api_key: Option<String>) -> Self {
         Self {
-            client: AnthropicClient::new(api_key),
+            base_url: DEFAULT_BASE_URL.into(),
+            key: Arc::new(std::sync::RwLock::new(api_key)),
         }
     }
 
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
-        self.client = self.client.with_base_url(base_url);
+        self.base_url = base_url.into();
         self
+    }
+
+    /// The key this provider uses; writing to it changes the key for
+    /// sessions opened afterwards.
+    pub fn key_handle(&self) -> KeyHandle {
+        self.key.clone()
     }
 }
 
@@ -92,7 +104,12 @@ impl ModelProvider for AnthropicProvider {
     }
 
     fn client(&self, model: &str) -> Arc<dyn ModelClient> {
-        Arc::new(self.client.clone().with_model(model))
+        let key = self.key.read().map(|k| k.clone()).unwrap_or_default();
+        Arc::new(
+            AnthropicClient::new(key)
+                .with_base_url(self.base_url.clone())
+                .with_model(model),
+        )
     }
 }
 

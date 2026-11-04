@@ -25,6 +25,7 @@ tokio-tungstenite = "0.30"
 futures-util = "0.3"
 similar = "3"
 portable-pty = "0.9"
+aes-gcm = "0.10"
 
 api-types = { path = "crates/api-types" }
 db = { path = "crates/db" }
