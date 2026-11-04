@@ -40,6 +40,7 @@ function longSession(steps: number, chunks = 20): SessionEvent[] {
       call_id: `t${i}`,
       output: "ok",
       is_error: false,
+      exit_code: null,
     });
   }
   events.push({ type: "done", session_id: S });

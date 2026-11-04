@@ -108,6 +108,7 @@ fn describe(events: &[SessionEvent]) -> Vec<String> {
                 is_error,
                 ..
             } => format!("result:{call_id}:{is_error}:{output}"),
+            SessionEvent::ToolOutput { text, .. } => format!("line:{text}"),
             SessionEvent::Error { message, .. } => format!("error:{message}"),
             SessionEvent::Done { .. } => "done".to_string(),
             SessionEvent::Interrupted { .. } => "interrupted".to_string(),
@@ -536,7 +537,7 @@ async fn tool_calls_run_and_their_results_go_back_to_the_model() {
 }
 
 #[tokio::test]
-async fn every_request_offers_the_file_tools() {
+async fn every_request_offers_the_file_tools_and_the_shell() {
     let (agent, model, mut rx) = setup(FakeModel::replying(vec![vec![text("hi")]]));
     agent.send_message("s1", "hi").unwrap();
     turn_events(&mut rx, "s1").await;
@@ -545,7 +546,10 @@ async fn every_request_offers_the_file_tools() {
         .iter()
         .map(|t| t.name)
         .collect();
-    assert_eq!(names, ["read_file", "edit_file", "list_directory"]);
+    assert_eq!(
+        names,
+        ["read_file", "edit_file", "list_directory", "run_shell"]
+    );
 }
 
 #[tokio::test]

@@ -12,6 +12,8 @@ function tool(overrides: Partial<ToolItem>): ToolItem {
     args: { path: "src/main.rs" },
     status: "done",
     output: "fn main() {}",
+    lines: [],
+    exitCode: null,
     ...overrides,
   };
 }
@@ -85,5 +87,71 @@ describe("ToolCallCard", () => {
     render(<ToolCallCard tool={tool({ name: "mystery", args: { q: 1 }, output: "raw" })} />);
     expect(screen.getByText("mystery")).toBeInTheDocument();
     expect(screen.getByTestId("tool-output")).toHaveTextContent("raw");
+  });
+
+  describe("shell commands", () => {
+    const shell = (overrides: Partial<ToolItem>) =>
+      tool({
+        name: "run_shell",
+        args: { command: "ls -la" },
+        output: null,
+        status: "running",
+        lines: [],
+        exitCode: null,
+        ...overrides,
+      });
+
+    it("shows the command and streams its lines while it runs", () => {
+      render(
+        <ToolCallCard
+          tool={shell({
+            lines: [
+              { stream: "stdout", text: "total 8" },
+              { stream: "stderr", text: "warning: slow disk" },
+            ],
+          })}
+        />,
+      );
+      expect(screen.getByRole("article", { name: /shell tool call/i })).toBeInTheDocument();
+      expect(screen.getByText("ls -la")).toBeInTheDocument();
+      const output = screen.getByTestId("shell-output");
+      expect(output).toHaveTextContent("total 8");
+      expect(screen.getByText("warning: slow disk")).toHaveAttribute("data-stream", "stderr");
+      expect(screen.getByRole("status")).toHaveTextContent(/running/i);
+    });
+
+    it("shows the exit code when the command finishes", () => {
+      render(
+        <ToolCallCard
+          tool={shell({
+            status: "done",
+            output: "hello\nExit code: 0",
+            lines: [{ stream: "stdout", text: "hello" }],
+            exitCode: 0,
+          })}
+        />,
+      );
+      expect(screen.getByText("Exit code 0")).toBeInTheDocument();
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+      expect(screen.getByTestId("shell-output")).toHaveTextContent("hello");
+    });
+
+    it("marks a non-zero exit code", () => {
+      render(
+        <ToolCallCard tool={shell({ status: "done", output: "Exit code: 2", exitCode: 2 })} />,
+      );
+      expect(screen.getByText("Exit code 2")).toHaveClass("text-destructive");
+      expect(screen.getByText(/no output/i)).toBeInTheDocument();
+    });
+
+    it("shows why a command could not run", () => {
+      render(
+        <ToolCallCard
+          tool={shell({ status: "error", output: "missing string argument: command" })}
+        />,
+      );
+      expect(screen.getByText("Failed")).toBeInTheDocument();
+      expect(screen.getByText(/missing string argument/)).toBeInTheDocument();
+    });
   });
 });

@@ -1,4 +1,4 @@
-import type { JsonValue, SessionEvent } from "@/api/types";
+import type { JsonValue, OutputStream, SessionEvent } from "@/api/types";
 
 export interface SessionMessage {
   id: string;
@@ -15,6 +15,15 @@ export interface ToolItem {
   args: JsonValue;
   status: "running" | "done" | "error";
   output: string | null;
+  /** Output lines a shell command streamed, in arrival order. */
+  lines: OutputLine[];
+  /** A shell command's exit code once it finished normally. */
+  exitCode: number | null;
+}
+
+export interface OutputLine {
+  stream: OutputStream;
+  text: string;
 }
 
 /** A line about the session itself, such as an interrupted turn. */
@@ -131,18 +140,28 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
         args: event.args,
         status: "running",
         output: null,
+        lines: [],
+        exitCode: null,
       });
       return true;
+    case "tool_output": {
+      const i = findTool(items, event.call_id);
+      if (i === -1) return false;
+      const item = items[i] as ToolItem;
+      items[i] = { ...item, lines: [...item.lines, { stream: event.stream, text: event.text }] };
+      return true;
+    }
     case "tool_result": {
-      // Results follow their call closely, so search from the end.
-      for (let i = items.length - 1; i >= 0; i--) {
-        const item = items[i];
-        if (item.role === "tool" && item.callId === event.call_id) {
-          items[i] = { ...item, status: event.is_error ? "error" : "done", output: event.output };
-          return true;
-        }
-      }
-      return false;
+      const i = findTool(items, event.call_id);
+      if (i === -1) return false;
+      items[i] = {
+        ...(items[i] as ToolItem),
+        status: event.is_error ? "error" : "done",
+        output: event.output,
+        // Results logged before exit codes existed have no field.
+        exitCode: event.exit_code ?? null,
+      };
+      return true;
     }
     case "changes_reverted": {
       const count = event.paths.length;
@@ -179,6 +198,16 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
     default:
       return false;
   }
+}
+
+/** The index of the tool call `callId`; results and output follow their
+ * call closely, so the search starts from the end. */
+function findTool(items: SessionItem[], callId: string): number {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.role === "tool" && item.callId === callId) return i;
+  }
+  return -1;
 }
 
 function upsertChange(files: FileChange[], event: FileChange): FileChange[] {

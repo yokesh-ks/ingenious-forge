@@ -7,6 +7,7 @@ pub mod commands;
 pub mod instructions;
 pub mod model;
 pub mod providers;
+pub mod shell;
 mod sse;
 pub mod tools;
 
@@ -561,6 +562,9 @@ impl Agent {
             name: name.clone(),
             args: input.clone(),
         });
+        if name == tools::RUN_SHELL {
+            return self.run_shell(session_id, tools, call_id, &input).await;
+        }
         // An edit is diffed against the file as it was before the agent's
         // first edit to it in this session.
         let edited = (name == tools::EDIT_FILE)
@@ -635,6 +639,7 @@ impl Agent {
             call_id: call_id.clone(),
             output: outcome.output.clone(),
             is_error: outcome.is_error,
+            exit_code: None,
         });
 
         if let (Some(path), Some(current)) = (edited, current) {
@@ -666,6 +671,56 @@ impl Agent {
                 });
             }
         }
+        ContentBlock::ToolResult {
+            tool_use_id: call_id,
+            content: outcome.output,
+            is_error: outcome.is_error,
+        }
+    }
+}
+
+impl Agent {
+    /// Runs a shell command, publishing each output line as it arrives.
+    async fn run_shell(
+        &self,
+        session_id: &str,
+        tools: &ToolBox,
+        call_id: String,
+        input: &serde_json::Value,
+    ) -> ContentBlock {
+        let outcome = match input["command"].as_str().filter(|c| !c.trim().is_empty()) {
+            Some(command) => {
+                let events = self.events.clone();
+                let (sid, cid) = (session_id.to_string(), call_id.clone());
+                let (_stop, stopped) = watch::channel(false);
+                shell::run(
+                    tools.root(),
+                    command,
+                    move |line| {
+                        events.publish(SessionEvent::ToolOutput {
+                            session_id: sid.clone(),
+                            call_id: cid.clone(),
+                            stream: line.stream,
+                            text: line.text,
+                        });
+                    },
+                    stopped,
+                )
+                .await
+            }
+            None => shell::ShellOutcome {
+                output: "missing string argument: command".into(),
+                exit_code: None,
+                is_error: true,
+            },
+        };
+        self.events.publish(SessionEvent::ToolResult {
+            session_id: session_id.to_string(),
+            call_id: call_id.clone(),
+            output: outcome.output.clone(),
+            is_error: outcome.is_error,
+            exit_code: outcome.exit_code,
+        });
         ContentBlock::ToolResult {
             tool_use_id: call_id,
             content: outcome.output,

@@ -4,7 +4,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use agent::tools::{ToolBox, ToolOutcome, EDIT_FILE, LIST_DIRECTORY, READ_FILE};
+use agent::tools::{ToolBox, ToolOutcome, EDIT_FILE, LIST_DIRECTORY, READ_FILE, RUN_SHELL};
 use serde_json::json;
 
 /// A fresh project folder under the system temp dir, removed on drop.
@@ -56,10 +56,10 @@ fn ok(output: &str) -> ToolOutcome {
 }
 
 #[test]
-fn specs_describe_the_three_file_tools() {
+fn specs_describe_the_file_tools_and_the_shell() {
     let project = Project::new();
     let names: Vec<_> = project.tools().specs().iter().map(|s| s.name).collect();
-    assert_eq!(names, [READ_FILE, EDIT_FILE, LIST_DIRECTORY]);
+    assert_eq!(names, [READ_FILE, EDIT_FILE, LIST_DIRECTORY, RUN_SHELL]);
     for spec in project.tools().specs() {
         assert_eq!(spec.input_schema["type"], "object");
         assert!(!spec.description.is_empty());

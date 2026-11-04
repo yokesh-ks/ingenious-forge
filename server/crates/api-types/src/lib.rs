@@ -152,6 +152,14 @@ pub enum ClientMessage {
     RevertAll { session_id: String },
 }
 
+/// Which output stream of a command a line came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum OutputStream {
+    Stdout,
+    Stderr,
+}
+
 /// Events the server streams to the browser while a session runs.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -175,11 +183,22 @@ pub enum SessionEvent {
         name: String,
         args: serde_json::Value,
     },
+    /// A line of output from a running command, sent as it is produced.
+    ToolOutput {
+        session_id: String,
+        call_id: String,
+        stream: OutputStream,
+        text: String,
+    },
     ToolResult {
         session_id: String,
         call_id: String,
         output: String,
         is_error: bool,
+        /// The exit code of a shell command; `None` for other tools and
+        /// for a command that did not exit normally.
+        #[serde(default)]
+        exit_code: Option<i32>,
     },
     /// A file the agent changed this session, as a unified diff from its
     /// content before the agent's first edit.
@@ -226,6 +245,7 @@ impl SessionEvent {
             | Self::TurnStarted { session_id }
             | Self::Output { session_id, .. }
             | Self::ToolCall { session_id, .. }
+            | Self::ToolOutput { session_id, .. }
             | Self::ToolResult { session_id, .. }
             | Self::FileChanged { session_id, .. }
             | Self::ChangesReverted { session_id, .. }
@@ -255,6 +275,7 @@ pub fn typescript_bindings() -> String {
         DirListing::decl(&cfg),
         ApiError::decl(&cfg),
         ClientMessage::decl(&cfg),
+        OutputStream::decl(&cfg),
         SessionEvent::decl(&cfg),
         SessionEnvelope::decl(&cfg),
     ];

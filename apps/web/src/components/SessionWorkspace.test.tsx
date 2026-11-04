@@ -49,6 +49,7 @@ describe("SessionWorkspace", () => {
         call_id: "t1",
         output: "main.tsx",
         is_error: false,
+        exit_code: null,
       });
     });
     expect(screen.getByText("List")).toBeInTheDocument();

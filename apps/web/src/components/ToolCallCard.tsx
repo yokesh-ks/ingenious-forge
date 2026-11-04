@@ -1,4 +1,10 @@
-import { FileTextIcon, FolderOpenIcon, PencilIcon, WrenchIcon } from "lucide-react";
+import {
+  FileTextIcon,
+  FolderOpenIcon,
+  PencilIcon,
+  SquareTerminalIcon,
+  WrenchIcon,
+} from "lucide-react";
 import type { JsonValue } from "@/api/types";
 import { cn } from "@/lib/utils";
 import type { ToolItem } from "@/session/session-reducer";
@@ -9,7 +15,66 @@ const TOOLS: Record<string, { label: string; icon: typeof FileTextIcon }> = {
   read_file: { label: "Read", icon: FileTextIcon },
   edit_file: { label: "Edit", icon: PencilIcon },
   list_directory: { label: "List", icon: FolderOpenIcon },
+  run_shell: { label: "Shell", icon: SquareTerminalIcon },
 };
+
+function commandArg(args: JsonValue): string | null {
+  if (args && typeof args === "object" && !Array.isArray(args)) {
+    const command = args.command;
+    if (typeof command === "string" && command !== "") return command;
+  }
+  return null;
+}
+
+/** A shell command's lines as they stream in, then its exit code. */
+function ShellOutput({ tool }: { tool: ToolItem }) {
+  if (tool.status === "error" && tool.lines.length === 0) {
+    return (
+      <p data-testid="tool-output" className="text-xs text-destructive">
+        {tool.output}
+      </p>
+    );
+  }
+  return (
+    <>
+      {tool.lines.length > 0 ? (
+        <pre
+          data-testid="shell-output"
+          className="max-h-72 overflow-auto font-mono text-xs leading-relaxed"
+        >
+          {tool.lines.map((line, i) => (
+            <div
+              // Lines only append, so their position is stable.
+              // biome-ignore lint/suspicious/noArrayIndexKey: append-only list
+              key={i}
+              data-stream={line.stream}
+              className={cn(line.stream === "stderr" && "text-amber-600 dark:text-amber-400")}
+            >
+              {line.text}
+            </div>
+          ))}
+        </pre>
+      ) : (
+        tool.status !== "running" && <p className="text-xs text-muted-foreground">(no output)</p>
+      )}
+      {tool.status === "running" && (
+        <p role="status" className="mt-1 text-xs text-muted-foreground">
+          Running…
+        </p>
+      )}
+      {tool.exitCode !== null && (
+        <p
+          className={cn(
+            "mt-1 text-xs font-medium",
+            tool.exitCode === 0 ? "text-muted-foreground" : "text-destructive",
+          )}
+        >
+          Exit code {tool.exitCode}
+        </p>
+      )}
+    </>
+  );
+}
 
 function pathArg(args: JsonValue): string | null {
   if (args && typeof args === "object" && !Array.isArray(args)) {
@@ -43,6 +108,7 @@ function Listing({ output }: { output: string }) {
 }
 
 function ToolOutput({ tool }: { tool: ToolItem }) {
+  if (tool.name === "run_shell") return <ShellOutput tool={tool} />;
   if (tool.status === "running" || tool.output === null) {
     return (
       <p role="status" className="text-xs text-muted-foreground">
@@ -70,7 +136,10 @@ function ToolOutput({ tool }: { tool: ToolItem }) {
 export default function ToolCallCard({ tool }: { tool: ToolItem }) {
   const known = TOOLS[tool.name];
   const Icon = known?.icon ?? WrenchIcon;
-  const path = pathArg(tool.args) ?? (tool.name === "list_directory" ? "." : null);
+  const path =
+    tool.name === "run_shell"
+      ? commandArg(tool.args)
+      : (pathArg(tool.args) ?? (tool.name === "list_directory" ? "." : null));
 
   return (
     <article
