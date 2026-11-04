@@ -280,3 +280,150 @@ async fn the_agent_runs_commands_inside_sandbox_exec() {
     assert!(root.join("inside").exists());
     assert!(!outside.exists());
 }
+
+// ---- bubblewrap on Linux: arguments and detection (every platform) ----
+
+#[test]
+fn bubblewrap_mounts_everything_read_only_except_the_writable_folders() {
+    let policy = Policy {
+        writable: vec![PathBuf::from("/work/app"), PathBuf::from("/work/cache")],
+        network: false,
+    };
+    let sandbox = Sandbox::Bubblewrap(PathBuf::from("/usr/bin/bwrap"));
+    let (program, args) = sandbox.command(&policy, "make test").unwrap();
+
+    assert_eq!(program, PathBuf::from("/usr/bin/bwrap"));
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    assert_eq!(
+        args,
+        [
+            "--ro-bind",
+            "/",
+            "/",
+            "--dev",
+            "/dev",
+            "--proc",
+            "/proc",
+            "--bind",
+            "/work/app",
+            "/work/app",
+            "--bind",
+            "/work/cache",
+            "/work/cache",
+            "--unshare-net",
+            "--die-with-parent",
+            "--",
+            "/bin/sh",
+            "-c",
+            "make test",
+        ]
+    );
+    assert_eq!(sandbox.name(), "bubblewrap");
+}
+
+#[test]
+fn bubblewrap_keeps_the_network_when_allowed() {
+    let policy = Policy {
+        writable: vec![PathBuf::from("/w")],
+        network: true,
+    };
+    let (_, args) = Sandbox::Bubblewrap("bwrap".into())
+        .command(&policy, "x")
+        .unwrap();
+    assert!(!args.iter().any(|a| a == "--unshare-net"));
+}
+
+#[test]
+fn linux_without_bubblewrap_is_unavailable_with_install_advice() {
+    let sandbox = agent::sandbox::linux_sandbox(None, |_| Ok(()));
+    let Sandbox::Unavailable(reason) = sandbox else {
+        panic!("expected unavailable, got {sandbox:?}")
+    };
+    assert!(reason.contains("bubblewrap"), "{reason}");
+    assert!(reason.contains("apt install bubblewrap"), "{reason}");
+}
+
+#[test]
+fn bubblewrap_that_cannot_start_a_sandbox_is_unavailable() {
+    let sandbox = agent::sandbox::linux_sandbox(Some("/usr/bin/bwrap".into()), |_| {
+        Err("setting up uid map: Permission denied".into())
+    });
+    let Sandbox::Unavailable(reason) = sandbox else {
+        panic!("expected unavailable, got {sandbox:?}")
+    };
+    assert!(reason.contains("Permission denied"), "{reason}");
+    assert!(reason.contains("user namespaces"), "{reason}");
+}
+
+#[test]
+fn working_bubblewrap_is_used() {
+    let sandbox = agent::sandbox::linux_sandbox(Some("/usr/bin/bwrap".into()), |_| Ok(()));
+    assert_eq!(sandbox, Sandbox::Bubblewrap("/usr/bin/bwrap".into()));
+}
+
+// ---- bubblewrap on Linux: real confinement, when bwrap works here ----
+
+#[cfg(target_os = "linux")]
+mod linux {
+    use super::*;
+
+    /// The detected sandbox, or `None` (with a note) when bubblewrap
+    /// cannot run on this machine, as on CI runners that restrict user
+    /// namespaces.
+    fn bwrap() -> Option<Sandbox> {
+        match Sandbox::detect() {
+            sandbox @ Sandbox::Bubblewrap(_) => Some(sandbox),
+            other => {
+                eprintln!("skipping: bubblewrap is not usable here: {other:?}");
+                None
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_write_outside_the_project_or_to_tmp_is_blocked() {
+        let Some(sandbox) = bwrap() else { return };
+        let root = folder("lin-in");
+        let outside = folder("lin-out").join("x");
+        let tmp = format!("/tmp/forge-sandbox-test-{}", std::process::id());
+        for target in [outside.to_string_lossy().into_owned(), tmp.clone()] {
+            let outcome = run(&sandbox, &root, &format!("echo x > '{target}'")).await;
+            assert_ne!(outcome.exit_code, Some(0), "{}", outcome.output);
+            assert!(!Path::new(&target).exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn writes_inside_the_project_succeed() {
+        let Some(sandbox) = bwrap() else { return };
+        let root = folder("lin-ok");
+        let outcome = run(&sandbox, &root, "mkdir -p sub && echo hi > sub/a.txt").await;
+        assert_eq!(outcome.exit_code, Some(0), "{}", outcome.output);
+        assert_eq!(
+            std::fs::read_to_string(root.join("sub/a.txt")).unwrap(),
+            "hi\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn outbound_network_is_blocked() {
+        let Some(sandbox) = bwrap() else { return };
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let root = folder("lin-net");
+        let command = format!(
+            "curl -s -m 2 -o /dev/null http://127.0.0.1:{port}/ || nc -z -w 2 127.0.0.1 {port}"
+        );
+        let open = run(&Sandbox::Off, &root, &command).await;
+        if open.exit_code != Some(0) && open.exit_code != Some(52) {
+            eprintln!(
+                "skipping: neither curl nor nc can reach a local port: {}",
+                open.output
+            );
+            return;
+        }
+        let blocked = run(&sandbox, &root, &command).await;
+        assert_ne!(blocked.exit_code, Some(0), "{}", blocked.output);
+        assert_ne!(blocked.exit_code, Some(52), "{}", blocked.output);
+    }
+}
