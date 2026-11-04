@@ -1,5 +1,6 @@
 import type {
   ApiError,
+  ApprovalMode,
   DirListing,
   ModelCatalog,
   OpenProjectRequest,
@@ -7,6 +8,7 @@ import type {
   Session,
   SessionEnvelope,
   SessionModel,
+  SetApprovalModeRequest,
 } from "./types";
 
 /** A failed API call, carrying the server's message for the user. */
@@ -37,9 +39,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-function post<T>(path: string, body: unknown): Promise<T> {
+function post<T>(path: string, body: unknown, method = "POST"): Promise<T> {
   return request<T>(path, {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -59,6 +61,12 @@ export const api = {
       model ? { model } : {},
     ),
   modelCatalog: () => request<ModelCatalog>("/api/models"),
+  setApprovalMode: (sessionId: string, mode: ApprovalMode) =>
+    post<Session>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/approval-mode`,
+      { mode } satisfies SetApprovalModeRequest,
+      "PUT",
+    ),
   /** A session's logged events with a sequence number above `after`. */
   sessionEvents: (sessionId: string, after = 0) =>
     request<SessionEnvelope[]>(

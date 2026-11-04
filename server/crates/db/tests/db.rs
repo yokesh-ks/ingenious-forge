@@ -63,6 +63,7 @@ async fn sessions_are_created_in_a_project_and_found_by_id() {
             created_at: 5,
             updated_at: 5,
             model: None,
+            approval_mode: None,
         }
     );
     assert_eq!(db::get_session(&pool, &s.id).await.unwrap(), Some(s));
@@ -137,4 +138,19 @@ async fn a_session_keeps_the_model_it_was_created_with() {
         db::list_sessions(&pool, &p.id).await.unwrap()[0].model,
         Some(model)
     );
+}
+
+#[tokio::test]
+async fn a_session_approval_mode_is_stored_and_changed() {
+    let pool = pool().await;
+    let p = db::upsert_project(&pool, "/a", "a", 1).await.unwrap();
+    let s = db::create_session(&pool, &p.id, "t", 1).await.unwrap();
+    assert_eq!(s.approval_mode, None);
+
+    assert!(db::set_approval_mode(&pool, &s.id, "full_auto")
+        .await
+        .unwrap());
+    let found = db::get_session(&pool, &s.id).await.unwrap().unwrap();
+    assert_eq!(found.approval_mode.as_deref(), Some("full_auto"));
+    assert!(!db::set_approval_mode(&pool, "nope", "ask").await.unwrap());
 }

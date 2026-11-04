@@ -283,6 +283,15 @@ describe("sessionReducer", () => {
     expect((state.messages[1] as ToolItem).hiddenLines).toBe(20_000 - MAX_SHELL_LINES);
   });
 
+  it("notes an approval mode change in the timeline", () => {
+    const state = apply(sent("go"), {
+      type: "approval_mode_changed",
+      session_id: S,
+      mode: "full_auto",
+    });
+    expect(state.messages[1]).toMatchObject({ role: "notice", text: "Approval mode: Full-auto" });
+  });
+
   it("ignores output for an unknown tool call", () => {
     const state = sent("go");
     expect(

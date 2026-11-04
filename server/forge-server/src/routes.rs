@@ -62,6 +62,10 @@ pub(crate) async fn ensure_open(state: &AppState, session_id: &str) {
     if state.agent.is_open(session_id) {
         return;
     }
+    let mode = match services::projects::get_session(&state.db, session_id).await {
+        Ok(session) => session.approval_mode,
+        Err(_) => return,
+    };
     match services::projects::session_settings(&state.db, session_id).await {
         Ok(Some((folder, Some(model)))) => {
             let tools = ToolBox::new(folder);
@@ -79,6 +83,7 @@ pub(crate) async fn ensure_open(state: &AppState, session_id: &str) {
         Ok(None) => {}
         Err(err) => tracing::warn!(%err, %session_id, "cannot look up session"),
     }
+    state.agent.set_approval_mode(session_id, mode);
 }
 
 pub(crate) async fn handle_client_message(state: &AppState, text: &str) {

@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use api_types::{Project, Session, SessionModel};
+use api_types::{ApprovalMode, Project, Session, SessionModel};
 use db::{DbError, ProjectRow, SessionModelRow, SessionRow};
 use sqlx::SqlitePool;
 
@@ -50,6 +50,10 @@ fn session(row: SessionRow) -> Session {
         // Only the agent knows; the API layer fills it in.
         running: false,
         model: row.model.and_then(session_model),
+        approval_mode: row
+            .approval_mode
+            .and_then(|m| m.parse().ok())
+            .unwrap_or_default(),
     }
 }
 
@@ -105,6 +109,26 @@ pub async fn create_session(
     )
     .await?;
     Ok((session(row), PathBuf::from(project.path)))
+}
+
+/// A session by id.
+pub async fn get_session(pool: &SqlitePool, session_id: &str) -> Result<Session, ProjectError> {
+    db::get_session(pool, session_id)
+        .await?
+        .map(session)
+        .ok_or(ProjectError::NotFound)
+}
+
+/// Sets a session's approval mode and returns the updated session.
+pub async fn set_approval_mode(
+    pool: &SqlitePool,
+    session_id: &str,
+    mode: ApprovalMode,
+) -> Result<Session, ProjectError> {
+    if !db::set_approval_mode(pool, session_id, mode.as_str()).await? {
+        return Err(ProjectError::NotFound);
+    }
+    get_session(pool, session_id).await
 }
 
 /// The project folder and model choice of `session_id`, or `None` for an

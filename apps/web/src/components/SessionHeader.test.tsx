@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { catalog } from "@/test/catalog";
 import SessionHeader from "./SessionHeader";
 
@@ -9,6 +9,8 @@ describe("SessionHeader", () => {
       <SessionHeader
         model={{ provider: "anthropic", model: "claude-sonnet-5-5", effort: "xhigh" }}
         catalog={catalog}
+        approvalMode="ask"
+        onApprovalModeChange={vi.fn()}
       />,
     );
     const header = screen.getByRole("group", { name: /session settings/i });
@@ -17,8 +19,16 @@ describe("SessionHeader", () => {
     expect(screen.getByTitle("Anthropic")).toBeInTheDocument();
   });
 
-  it("shows nothing for a session without a recorded model", () => {
-    const { container } = render(<SessionHeader model={null} catalog={catalog} />);
-    expect(container).toBeEmptyDOMElement();
+  it("shows only the approval mode for a session without a recorded model", () => {
+    render(
+      <SessionHeader
+        model={null}
+        catalog={catalog}
+        approvalMode="full_auto"
+        onApprovalModeChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/effort/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /approval mode: full-auto/i })).toBeInTheDocument();
   });
 });

@@ -261,3 +261,22 @@ async fn the_session_effort_is_sent_with_every_request() {
     assert_eq!(reply_text(&agent, "s", &mut rx).await, "ok");
     assert_eq!(*seen.lock().unwrap(), [Some(ReasoningEffort::Low)]);
 }
+
+#[test]
+fn a_session_approval_mode_is_kept_by_the_agent() {
+    use api_types::ApprovalMode;
+    let agent = Agent::new(
+        Arc::new(EchoClient {
+            label: "x".into(),
+            calls: Arc::default(),
+        }),
+        EventService::new(),
+    );
+    agent.open_session("s", ToolBox::new(std::env::temp_dir()));
+    // A session opened without a mode runs without approvals.
+    assert_eq!(agent.approval_mode("s"), Some(ApprovalMode::FullAuto));
+    assert!(agent.set_approval_mode("s", ApprovalMode::Ask));
+    assert_eq!(agent.approval_mode("s"), Some(ApprovalMode::Ask));
+    assert!(!agent.set_approval_mode("unknown", ApprovalMode::Ask));
+    assert_eq!(agent.approval_mode("unknown"), None);
+}

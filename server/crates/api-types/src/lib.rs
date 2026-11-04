@@ -52,6 +52,46 @@ impl std::str::FromStr for ReasoningEffort {
     }
 }
 
+/// How much the agent may do without asking (PRD §6.1 Approval modes).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalMode {
+    /// Approve every edit and command.
+    #[default]
+    Ask,
+    /// Edits apply freely; commands need approval.
+    AutoEdit,
+    /// Everything runs inside the sandbox without prompts.
+    FullAuto,
+}
+
+impl ApprovalMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::AutoEdit => "auto_edit",
+            Self::FullAuto => "full_auto",
+        }
+    }
+}
+
+impl std::str::FromStr for ApprovalMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        [Self::Ask, Self::AutoEdit, Self::FullAuto]
+            .into_iter()
+            .find(|m| m.as_str() == s)
+            .ok_or_else(|| format!("unknown approval mode: {s}"))
+    }
+}
+
+/// Body of `PUT /api/sessions/{id}/approval-mode`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SetApprovalModeRequest {
+    pub mode: ApprovalMode,
+}
+
 /// The provider, model and reasoning effort a session talks to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct SessionModel {
@@ -107,6 +147,7 @@ pub struct Session {
     /// The model the session was started with; `None` for sessions created
     /// before models could be picked.
     pub model: Option<SessionModel>,
+    pub approval_mode: ApprovalMode,
 }
 
 /// Body of `POST /api/projects`.
@@ -225,6 +266,11 @@ pub enum SessionEvent {
     Interrupted {
         session_id: String,
     },
+    /// The session's approval mode changed; it applies to the next action.
+    ApprovalModeChanged {
+        session_id: String,
+        mode: ApprovalMode,
+    },
 }
 
 /// A session event as sent to the browser: the event's fields plus its
@@ -251,7 +297,8 @@ impl SessionEvent {
             | Self::ChangesReverted { session_id, .. }
             | Self::Error { session_id, .. }
             | Self::Done { session_id }
-            | Self::Interrupted { session_id } => session_id,
+            | Self::Interrupted { session_id }
+            | Self::ApprovalModeChanged { session_id, .. } => session_id,
         }
     }
 }
@@ -263,6 +310,8 @@ pub fn typescript_bindings() -> String {
     let decls = [
         serde_json::Value::decl(&cfg),
         Project::decl(&cfg),
+        ApprovalMode::decl(&cfg),
+        SetApprovalModeRequest::decl(&cfg),
         ReasoningEffort::decl(&cfg),
         SessionModel::decl(&cfg),
         ModelOption::decl(&cfg),

@@ -1,4 +1,5 @@
 import type { JsonValue, OutputStream, SessionEvent } from "@/api/types";
+import { approvalModeLabel } from "@/lib/approval-modes";
 
 export interface SessionMessage {
   id: string;
@@ -182,6 +183,13 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
       });
       return true;
     }
+    case "approval_mode_changed":
+      items.push({
+        id: nextId(draft),
+        role: "notice",
+        text: `Approval mode: ${approvalModeLabel(event.mode)}`,
+      });
+      return true;
     case "file_changed":
       draft.changedFiles = upsertChange(draft.changedFiles, event);
       return true;

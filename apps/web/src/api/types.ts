@@ -5,6 +5,10 @@ export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in
 
 export type Project = { id: string, name: string, path: string, last_opened_at: number, };
 
+export type ApprovalMode = "ask" | "auto_edit" | "full_auto";
+
+export type SetApprovalModeRequest = { mode: ApprovalMode, };
+
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export type SessionModel = { provider: string, model: string, effort: ReasoningEffort, };
@@ -35,7 +39,7 @@ running: boolean,
  * The model the session was started with; `None` for sessions created
  * before models could be picked.
  */
-model: SessionModel | null, };
+model: SessionModel | null, approval_mode: ApprovalMode, };
 
 export type OpenProjectRequest = { path: string, };
 
@@ -54,11 +58,11 @@ export type SessionEvent = { "type": "user_message", session_id: string, text: s
  * The exit code of a shell command; `None` for other tools and
  * for a command that did not exit normally.
  */
-exit_code: number | null, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, };
+exit_code: number | null, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, } | { "type": "approval_mode_changed", session_id: string, mode: ApprovalMode, };
 
 export type SessionEnvelope = { seq: number, } & ({ "type": "user_message", session_id: string, text: string, } | { "type": "turn_started", session_id: string, } | { "type": "output", session_id: string, chunk: string, } | { "type": "tool_call", session_id: string, call_id: string, name: string, args: JsonValue, } | { "type": "tool_output", session_id: string, call_id: string, stream: OutputStream, text: string, } | { "type": "tool_result", session_id: string, call_id: string, output: string, is_error: boolean, 
 /**
  * The exit code of a shell command; `None` for other tools and
  * for a command that did not exit normally.
  */
-exit_code: number | null, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, });
+exit_code: number | null, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, } | { "type": "approval_mode_changed", session_id: string, mode: ApprovalMode, });

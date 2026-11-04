@@ -394,3 +394,35 @@ fn tool_output_lines_and_exit_codes_serialize() {
         }
     ));
 }
+
+#[test]
+fn approval_modes_serialize_in_snake_case() {
+    use api_types::{ApprovalMode, SetApprovalModeRequest};
+    assert_eq!(ApprovalMode::default(), ApprovalMode::Ask);
+    assert_eq!(
+        serde_json::to_value(ApprovalMode::AutoEdit).unwrap(),
+        "auto_edit"
+    );
+    assert_eq!(
+        serde_json::to_value(ApprovalMode::FullAuto).unwrap(),
+        "full_auto"
+    );
+    assert_eq!(
+        "full_auto".parse::<ApprovalMode>(),
+        Ok(ApprovalMode::FullAuto)
+    );
+    assert!("never".parse::<ApprovalMode>().is_err());
+    let body: SetApprovalModeRequest = serde_json::from_value(json!({ "mode": "ask" })).unwrap();
+    assert_eq!(body.mode, ApprovalMode::Ask);
+
+    let changed = SessionEvent::ApprovalModeChanged {
+        session_id: "s".into(),
+        mode: ApprovalMode::AutoEdit,
+    };
+    assert_eq!(
+        serde_json::to_value(&changed).unwrap(),
+        json!({ "type": "approval_mode_changed", "session_id": "s", "mode": "auto_edit" })
+    );
+    assert_eq!(changed.session_id(), "s");
+    assert!(typescript_bindings().contains("export type ApprovalMode"));
+}

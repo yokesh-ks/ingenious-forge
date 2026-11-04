@@ -1,7 +1,7 @@
 import { ArrowLeftIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { Project, SessionModel } from "@/api/types";
+import type { ApprovalMode, Project, SessionModel } from "@/api/types";
 import NewSessionForm from "@/components/NewSessionForm";
 import SessionHeader from "@/components/SessionHeader";
 import SessionSidebar from "@/components/SessionSidebar";
@@ -24,6 +24,7 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
   /** True while the new-session form is shown. */
   const [picking, setPicking] = useState(false);
   const models = useModelCatalog();
+  const [savingMode, setSavingMode] = useState(false);
   const active = sessions?.find((s) => s.id === sessionId) ?? null;
   // Guards against creating a second first session when the effect below
   // runs again before the first request returns.
@@ -75,6 +76,20 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
     }
   }
 
+  async function changeApprovalMode(mode: ApprovalMode) {
+    if (!sessionId) return;
+    setSavingMode(true);
+    setError(null);
+    try {
+      await api.setApprovalMode(sessionId, mode);
+      reload();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSavingMode(false);
+    }
+  }
+
   const shownError = error ?? sessionsError;
 
   return (
@@ -121,7 +136,13 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
         ) : (
           sessionId && (
             <div className="flex min-w-0 flex-1 flex-col gap-3">
-              <SessionHeader model={active?.model ?? null} catalog={models.catalog} />
+              <SessionHeader
+                model={active?.model ?? null}
+                catalog={models.catalog}
+                approvalMode={active?.approval_mode ?? "ask"}
+                onApprovalModeChange={changeApprovalMode}
+                savingMode={savingMode}
+              />
               <SessionWorkspace key={sessionId} sessionId={sessionId} />
             </div>
           )

@@ -41,6 +41,15 @@ describe("api client", () => {
     expect(JSON.parse(String(fetch.mock.calls[1][1]?.body))).toEqual({});
   });
 
+  it("sets a session's approval mode", async () => {
+    const fetch = fakeFetch({ "PUT /api/sessions/s%201/approval-mode": {} });
+    await api.setApprovalMode("s 1", "full_auto");
+    const [url, init] = fetch.mock.calls[0];
+    expect(String(url)).toBe("/api/sessions/s%201/approval-mode");
+    expect(init?.method).toBe("PUT");
+    expect(JSON.parse(String(init?.body))).toEqual({ mode: "full_auto" });
+  });
+
   it("encodes the folder picker path as a query parameter", async () => {
     const fetch = fakeFetch({
       "GET /api/fs/dirs": { path: "/a b", parent: "/", is_git_repo: false, entries: [] },

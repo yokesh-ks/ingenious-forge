@@ -47,6 +47,7 @@ pub struct SessionRow {
     pub updated_at: i64,
     /// The model the session was started with, if one was recorded.
     pub model: Option<SessionModelRow>,
+    pub approval_mode: Option<String>,
 }
 
 /// A session's provider, model and reasoning effort, as stored.
@@ -78,13 +79,15 @@ type SessionTuple = (
     Option<String>,
     Option<String>,
     Option<String>,
+    Option<String>,
 );
 
 const SESSION_COLUMNS: &str =
-    "id, project_id, title, created_at, updated_at, provider, model, effort";
+    "id, project_id, title, created_at, updated_at, provider, model, effort, approval_mode";
 
 fn session(row: SessionTuple) -> SessionRow {
-    let (id, project_id, title, created_at, updated_at, provider, model, effort) = row;
+    let (id, project_id, title, created_at, updated_at, provider, model, effort, approval_mode) =
+        row;
     let model = match (provider, model, effort) {
         (Some(provider), Some(model), Some(effort)) => Some(SessionModelRow {
             provider,
@@ -100,7 +103,18 @@ fn session(row: SessionTuple) -> SessionRow {
         created_at,
         updated_at,
         model,
+        approval_mode,
     }
+}
+
+/// Sets a session's approval mode; false when the session does not exist.
+pub async fn set_approval_mode(pool: &SqlitePool, id: &str, mode: &str) -> Result<bool, DbError> {
+    let done = sqlx::query("UPDATE sessions SET approval_mode = ?2 WHERE id = ?1")
+        .bind(id)
+        .bind(mode)
+        .execute(pool)
+        .await?;
+    Ok(done.rows_affected() == 1)
 }
 
 /// Records that the folder at `path` was opened at `now`, creating the

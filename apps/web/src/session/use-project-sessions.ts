@@ -10,7 +10,13 @@ interface Options {
 const defaultCreateSocket = (url: string) => new WebSocket(url);
 
 /** Events after which a session's status, title or activity changed. */
-const REFRESH_ON = new Set(["turn_started", "done", "error", "interrupted"]);
+const REFRESH_ON = new Set([
+  "turn_started",
+  "done",
+  "error",
+  "interrupted",
+  "approval_mode_changed",
+]);
 
 /** A project's sessions, kept current as turns start and end. */
 export function useProjectSessions(
