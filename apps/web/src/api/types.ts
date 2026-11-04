@@ -79,6 +79,14 @@ hint: string | null, source: KeySource | null, };
 
 export type SetProviderKeyRequest = { key: string, };
 
+export type GitHubConnection = { connected: boolean, 
+/**
+ * The connected account's login.
+ */
+login: string | null, };
+
+export type ConnectGitHubRequest = { token: string, };
+
 export type GitStatus = { 
 /**
  * The current branch, or the short commit when `detached`; `None`

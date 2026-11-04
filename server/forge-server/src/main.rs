@@ -1,3 +1,4 @@
+mod github;
 mod projects;
 mod routes;
 mod settings;
@@ -90,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
     let settings = settings::Settings {
         secrets: Some(secrets),
         providers: keys,
+        github_api: None,
     };
     settings.load().await;
     let mut providers = Providers::new();

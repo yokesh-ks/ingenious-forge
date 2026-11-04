@@ -180,3 +180,54 @@ describe("SettingsPage — new session defaults", () => {
     expect(await within(form).findByRole("alert")).toHaveTextContent("no model x");
   });
 });
+
+describe("SettingsPage — GitHub", () => {
+  const base = { "GET /api/settings/providers": [none] };
+
+  it("connects with a token and shows the account", async () => {
+    const fetch = fakeFetch({
+      ...base,
+      "GET /api/settings/github": { connected: false, login: null },
+      "PUT /api/settings/github": { connected: true, login: "octo" },
+    });
+    render(<SettingsPage />);
+    const section = await screen.findByRole("region", { name: /github/i });
+    const input = await within(section).findByLabelText(/github token/i);
+    expect(input).toHaveAttribute("type", "password");
+    await userEvent.type(input, "ghp_abc");
+    await userEvent.click(within(section).getByRole("button", { name: /connect github/i }));
+
+    expect(await within(section).findByText(/connected as @octo/i)).toBeInTheDocument();
+    expect(section).not.toHaveTextContent("ghp_abc");
+    const put = fetch.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(String(put?.[1]?.body))).toEqual({ token: "ghp_abc" });
+  });
+
+  it("shows why a token was refused", async () => {
+    fakeFetch({
+      ...base,
+      "GET /api/settings/github": { connected: false, login: null },
+      "PUT /api/settings/github": () => ({
+        status: 400,
+        body: { error: "GitHub did not accept this token" },
+      }),
+    });
+    render(<SettingsPage />);
+    const section = await screen.findByRole("region", { name: /github/i });
+    await userEvent.type(await within(section).findByLabelText(/github token/i), "bad");
+    await userEvent.click(within(section).getByRole("button", { name: /connect github/i }));
+    expect(await within(section).findByRole("alert")).toHaveTextContent("did not accept");
+  });
+
+  it("disconnects a connected account", async () => {
+    fakeFetch({
+      ...base,
+      "GET /api/settings/github": { connected: true, login: "octo" },
+      "DELETE /api/settings/github": { connected: false, login: null },
+    });
+    render(<SettingsPage />);
+    const section = await screen.findByRole("region", { name: /github/i });
+    await userEvent.click(await within(section).findByRole("button", { name: /disconnect/i }));
+    expect(await within(section).findByLabelText(/github token/i)).toBeInTheDocument();
+  });
+});

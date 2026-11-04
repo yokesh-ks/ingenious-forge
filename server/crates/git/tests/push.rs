@@ -108,3 +108,65 @@ fn a_detached_head_cannot_push() {
     run(&local, &["checkout", "-q", "--detach"]);
     assert!(git::push(&local).unwrap_err().contains("not on a branch"));
 }
+
+#[test]
+fn a_github_token_is_offered_to_git_as_a_credential_for_github_only() {
+    let dir = temp("cred");
+    run(&dir, &["init", "-q"]);
+    let fill = |host: &str| {
+        let mut child = Command::new("git")
+            .args(["credential", "fill"])
+            .current_dir(&dir)
+            .envs(git::token_env("ghp_secret123"))
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        use std::io::Write;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(format!("protocol=https\nhost={host}\n\n").as_bytes())
+            .unwrap();
+        String::from_utf8_lossy(&child.wait_with_output().unwrap().stdout).into_owned()
+    };
+
+    let github = fill("github.com");
+    assert!(github.contains("username=x-access-token"), "{github}");
+    assert!(github.contains("password=ghp_secret123"), "{github}");
+    assert!(!fill("gitlab.com").contains("ghp_secret123"));
+}
+
+#[test]
+fn the_token_never_appears_in_git_arguments() {
+    for (key, value) in git::token_env("ghp_secret123") {
+        if key != "FORGE_GITHUB_TOKEN" {
+            assert!(!value.contains("ghp_secret123"), "{key}={value}");
+        }
+    }
+}
+
+#[test]
+fn a_push_with_a_token_hands_git_the_credential_helper() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_, local) = setup();
+    // A pre-push hook runs inside the push and sees its environment.
+    let hook = local.join(".git/hooks/pre-push");
+    fs::write(
+        &hook,
+        "#!/bin/sh\necho \"$FORGE_GITHUB_TOKEN|$GIT_CONFIG_KEY_1\" > seen\n",
+    )
+    .unwrap();
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::write(local.join("e.txt"), "e").unwrap();
+    run(&local, &["add", "."]);
+    run(&local, &["commit", "-q", "-m", "more"]);
+
+    git::push_with(&local, Some("ghp_tok")).unwrap();
+
+    let seen = fs::read_to_string(local.join("seen")).unwrap();
+    assert_eq!(seen.trim(), "ghp_tok|credential.https://github.com.helper");
+}

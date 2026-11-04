@@ -173,7 +173,12 @@ async fn commit(
 /// Pushes the current branch to its remote with the user's git
 /// credentials.
 async fn push(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> ApiResult<PushResult> {
-    in_project(&state, &id, git::push).await.map(Json)
+    let token = crate::github::token(&state).await;
+    in_project(&state, &id, move |dir| {
+        git::push_with(dir, token.as_deref())
+    })
+    .await
+    .map(Json)
 }
 
 /// Most of the diff the agent reads to draft a commit message.
