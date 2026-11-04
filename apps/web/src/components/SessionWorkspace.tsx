@@ -5,7 +5,7 @@ import SessionView from "./SessionView";
 
 /** One session: the conversation, the composer and the changed files. */
 export default function SessionWorkspace({ sessionId }: { sessionId: string }) {
-  const { state, connected, send, stop, revertAll } = useSession(sessionId);
+  const { state, connected, send, stop, revertAll, answerApproval } = useSession(sessionId);
 
   return (
     <div className="flex min-h-0 flex-1 gap-4">
@@ -16,7 +16,12 @@ export default function SessionWorkspace({ sessionId }: { sessionId: string }) {
           </p>
         )}
         <div className="flex min-h-0 flex-1">
-          <SessionView messages={state.messages} running={state.running} error={state.error} />
+          <SessionView
+            messages={state.messages}
+            running={state.running}
+            error={state.error}
+            onAnswerApproval={answerApproval}
+          />
         </div>
         <Composer onSend={send} busy={state.running} onStop={stop} focusOnMount />
       </div>

@@ -16,7 +16,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use api_types::SessionEvent;
+use api_types::{ApprovalDecision, ApprovalKind, ApprovalMode, SessionEvent};
 use services::{log::LogRecord, EventService};
 use tokio::sync::watch;
 
@@ -69,6 +69,10 @@ struct SessionState {
     /// `None` until set: a session opened without a mode runs without
     /// approvals.
     approval_mode: Option<api_types::ApprovalMode>,
+    /// Approval cards waiting for an answer, by tool call id.
+    approvals: HashMap<String, tokio::sync::oneshot::Sender<ApprovalDecision>>,
+    /// Commands and edited files the user always allows this session.
+    allowed: BTreeSet<String>,
 }
 
 /// How a turn that did not fail came to an end.
@@ -237,6 +241,23 @@ impl Agent {
             }
             None => false,
         }
+    }
+
+    /// Answers the approval card for `call_id`. False when no card for it
+    /// is waiting.
+    pub fn answer_approval(
+        &self,
+        session_id: &str,
+        call_id: &str,
+        decision: ApprovalDecision,
+    ) -> bool {
+        let waiting = {
+            let mut sessions = self.sessions.lock().unwrap();
+            sessions
+                .get_mut(session_id)
+                .and_then(|s| s.approvals.remove(call_id))
+        };
+        waiting.is_some_and(|tx| tx.send(decision).is_ok())
     }
 
     pub fn is_running(&self, session_id: &str) -> bool {
@@ -589,6 +610,19 @@ impl Agent {
             name: name.clone(),
             args: input.clone(),
         });
+        if let Some(denied) = self
+            .approve(
+                session_id,
+                tools,
+                &call_id,
+                &name,
+                &input,
+                cancelled.clone(),
+            )
+            .await
+        {
+            return denied;
+        }
         if name == tools::RUN_SHELL {
             return self
                 .run_shell(session_id, tools, call_id, &input, cancelled)
@@ -709,6 +743,122 @@ impl Agent {
 }
 
 impl Agent {
+    /// Asks the user to approve a tool call when the session's approval
+    /// mode requires it, and waits. Returns the tool result to send the
+    /// model when the call is denied (or the turn is stopped), `None` when
+    /// it may run.
+    async fn approve(
+        &self,
+        session_id: &str,
+        tools: &ToolBox,
+        call_id: &str,
+        name: &str,
+        input: &serde_json::Value,
+        mut cancelled: watch::Receiver<bool>,
+    ) -> Option<ContentBlock> {
+        let (kind, key) = match name {
+            tools::EDIT_FILE => (
+                ApprovalKind::Edit,
+                tools.project_path(input["path"].as_str()?).ok()?,
+            ),
+            tools::RUN_SHELL => (
+                ApprovalKind::Command,
+                input["command"].as_str()?.to_string(),
+            ),
+            _ => return None,
+        };
+        let allowed_key = format!("{kind:?}:{key}");
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            let session = sessions.get_mut(session_id)?;
+            let mode = session.approval_mode.unwrap_or(ApprovalMode::FullAuto);
+            let needed = match kind {
+                ApprovalKind::Edit => mode == ApprovalMode::Ask,
+                ApprovalKind::Command => mode != ApprovalMode::FullAuto,
+            };
+            if !needed || session.allowed.contains(&allowed_key) {
+                return None;
+            }
+            session.approvals.insert(call_id.to_string(), tx);
+        }
+
+        let (command, path, diff) = match kind {
+            ApprovalKind::Command => (Some(key.clone()), None, None),
+            ApprovalKind::Edit => {
+                let preview = {
+                    let (tools, input) = (tools.clone(), input.clone());
+                    tokio::task::spawn_blocking(move || tools.preview_edit(&input))
+                        .await
+                        .ok()
+                };
+                match preview {
+                    Some(Ok((original, content))) => {
+                        let change =
+                            changes::unified_diff(&key, original.as_deref(), Some(&content));
+                        (None, Some(key.clone()), Some(change.diff))
+                    }
+                    // An edit that cannot apply fails without writing, so
+                    // there is nothing to approve.
+                    _ => {
+                        let mut sessions = self.sessions.lock().unwrap();
+                        if let Some(s) = sessions.get_mut(session_id) {
+                            s.approvals.remove(call_id);
+                        }
+                        return None;
+                    }
+                }
+            }
+        };
+        self.events.publish(SessionEvent::ApprovalRequested {
+            session_id: session_id.to_string(),
+            call_id: call_id.to_string(),
+            kind,
+            command,
+            path,
+            diff,
+        });
+
+        let decision = tokio::select! {
+            answer = rx => answer.unwrap_or(ApprovalDecision::Deny),
+            _ = cancelled.wait_for(|stop| *stop) => ApprovalDecision::Deny,
+        };
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            if let Some(session) = sessions.get_mut(session_id) {
+                session.approvals.remove(call_id);
+                if decision == ApprovalDecision::AlwaysAllow {
+                    session.allowed.insert(allowed_key);
+                }
+            }
+        }
+        self.events.publish(SessionEvent::ApprovalResolved {
+            session_id: session_id.to_string(),
+            call_id: call_id.to_string(),
+            decision,
+        });
+        if decision != ApprovalDecision::Deny {
+            return None;
+        }
+        let output = if *cancelled.borrow() {
+            INTERRUPTED_TOOL.to_string()
+        } else {
+            "The user denied this action, so it did not run.".to_string()
+        };
+        self.events.publish(SessionEvent::ToolResult {
+            session_id: session_id.to_string(),
+            call_id: call_id.to_string(),
+            output: output.clone(),
+            is_error: true,
+            exit_code: None,
+        });
+        Some(ContentBlock::ToolResult {
+            tool_use_id: call_id.to_string(),
+            content: output,
+            is_error: true,
+        })
+    }
+
     /// Runs a shell command, publishing each output line as it arrives.
     async fn run_shell(
         &self,

@@ -252,6 +252,18 @@ describe("useSession", () => {
     });
   });
 
+  it("sends an approval answer for its session", async () => {
+    const { result } = setup();
+    await openSocket(FakeSocket.latest());
+    act(() => result.current.answerApproval("t1", "always_allow"));
+    expect(JSON.parse(FakeSocket.latest().sent[0])).toEqual({
+      type: "answer_approval",
+      session_id: "s1",
+      call_id: "t1",
+      decision: "always_allow",
+    });
+  });
+
   it("closes the socket on unmount", async () => {
     const { unmount } = setup();
     const socket = FakeSocket.latest();

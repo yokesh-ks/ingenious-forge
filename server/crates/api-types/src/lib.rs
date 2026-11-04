@@ -191,6 +191,31 @@ pub enum ClientMessage {
     /// Restore every file the agent changed in `session_id` to how it was
     /// before the agent's first edit.
     RevertAll { session_id: String },
+    /// Answer the approval card for tool call `call_id`.
+    AnswerApproval {
+        session_id: String,
+        call_id: String,
+        decision: ApprovalDecision,
+    },
+}
+
+/// What an approval card asks about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalKind {
+    Edit,
+    Command,
+}
+
+/// The user's answer to an approval card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalDecision {
+    Approve,
+    Deny,
+    /// Approve, and approve this exact command (or edits to this file)
+    /// without asking for the rest of the session.
+    AlwaysAllow,
 }
 
 /// Which output stream of a command a line came from.
@@ -271,6 +296,23 @@ pub enum SessionEvent {
         session_id: String,
         mode: ApprovalMode,
     },
+    /// The agent waits for the user to approve tool call `call_id`: the
+    /// exact command, or the file and the diff the edit would make.
+    ApprovalRequested {
+        session_id: String,
+        call_id: String,
+        kind: ApprovalKind,
+        command: Option<String>,
+        path: Option<String>,
+        diff: Option<String>,
+    },
+    /// The approval card for `call_id` was answered (a stopped turn counts
+    /// as denied).
+    ApprovalResolved {
+        session_id: String,
+        call_id: String,
+        decision: ApprovalDecision,
+    },
 }
 
 /// A session event as sent to the browser: the event's fields plus its
@@ -298,7 +340,9 @@ impl SessionEvent {
             | Self::Error { session_id, .. }
             | Self::Done { session_id }
             | Self::Interrupted { session_id }
-            | Self::ApprovalModeChanged { session_id, .. } => session_id,
+            | Self::ApprovalModeChanged { session_id, .. }
+            | Self::ApprovalRequested { session_id, .. }
+            | Self::ApprovalResolved { session_id, .. } => session_id,
         }
     }
 }
@@ -323,6 +367,8 @@ pub fn typescript_bindings() -> String {
         DirEntry::decl(&cfg),
         DirListing::decl(&cfg),
         ApiError::decl(&cfg),
+        ApprovalKind::decl(&cfg),
+        ApprovalDecision::decl(&cfg),
         ClientMessage::decl(&cfg),
         OutputStream::decl(&cfg),
         SessionEvent::decl(&cfg),

@@ -124,6 +124,15 @@ pub(crate) async fn handle_client_message(state: &AppState, text: &str) {
                 }
             });
         }
+        ClientMessage::AnswerApproval {
+            session_id,
+            call_id,
+            decision,
+        } => {
+            if !state.agent.answer_approval(&session_id, &call_id, decision) {
+                tracing::debug!(%session_id, %call_id, "no approval card waiting");
+            }
+        }
         ClientMessage::Interrupt { session_id } => {
             if !state.agent.interrupt(&session_id) {
                 tracing::debug!(%session_id, "interrupt with no running turn");
@@ -253,6 +262,74 @@ mod tests {
 
     fn send_message(session_id: &str, text: &str) -> Value {
         json!({ "type": "send_message", "session_id": session_id, "text": text })
+    }
+
+    /// Asks to run `true`, then replies "ok".
+    struct ShellModel(Mutex<VecDeque<Vec<ModelEvent>>>);
+
+    impl ModelClient for ShellModel {
+        fn stream(&self, _: ModelRequest) -> mpsc::Receiver<Result<ModelEvent, ModelError>> {
+            let steps = self.0.lock().unwrap().pop_front().unwrap_or_default();
+            let (tx, rx) = mpsc::channel(4);
+            tokio::spawn(async move {
+                for step in steps {
+                    let _ = tx.send(Ok(step)).await;
+                }
+            });
+            rx
+        }
+    }
+
+    #[tokio::test]
+    async fn an_approval_card_is_answered_over_the_socket() {
+        use agent::model::ContentBlock;
+        let model = ShellModel(Mutex::new(
+            vec![
+                vec![ModelEvent::Message(vec![ContentBlock::ToolUse {
+                    id: "t1".into(),
+                    name: "run_shell".into(),
+                    input: json!({ "command": "true" }),
+                }])],
+                vec![ModelEvent::TextDelta("ok".into())],
+            ]
+            .into(),
+        ));
+        let events = EventService::new();
+        let agent = Agent::new(Arc::new(model), events.clone());
+        agent.open_session("s1", ToolBox::new(std::env::temp_dir()));
+        agent.set_approval_mode("s1", api_types::ApprovalMode::Ask);
+        let state = Arc::new(AppState {
+            db: db::connect(":memory:").await.unwrap(),
+            agent,
+            events,
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, router().with_state(state))
+                .await
+                .unwrap();
+        });
+        let mut ws = connect(&format!("ws://{addr}/ws")).await;
+
+        send(&mut ws, send_message("s1", "run")).await;
+        loop {
+            if next_event(&mut ws).await["type"] == "approval_requested" {
+                break;
+            }
+        }
+        send(
+            &mut ws,
+            json!({ "type": "answer_approval", "session_id": "s1", "call_id": "t1", "decision": "approve" }),
+        )
+        .await;
+        let rest = until_end(&mut ws).await;
+
+        assert_eq!(rest[0]["type"], "approval_resolved");
+        assert_eq!(rest[0]["decision"], "approve");
+        let result = rest.iter().find(|e| e["type"] == "tool_result").unwrap();
+        assert_eq!(result["exit_code"], 0);
+        assert_eq!(rest.last().unwrap()["type"], "done");
     }
 
     #[tokio::test]
