@@ -204,7 +204,7 @@ async fn ask_mode_shows_the_edit_diff_and_waits_before_writing() {
         std::fs::read_to_string(s.root.join("a.txt")).unwrap(),
         "new\n"
     );
-    assert_eq!(results(&events)[0].0, false);
+    assert!(!results(&events)[0].0);
 }
 
 #[tokio::test]
