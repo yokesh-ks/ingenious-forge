@@ -12,7 +12,8 @@ export class FakeSocket {
   closed = false;
   onopen: (() => void) | null = null;
   onclose: (() => void) | null = null;
-  onmessage: ((event: { data: string }) => void) | null = null;
+  onmessage: ((event: { data: string | ArrayBuffer }) => void) | null = null;
+  binaryType = "blob";
 
   constructor(public url: string) {
     FakeSocket.instances.push(this);
@@ -50,6 +51,14 @@ export class FakeSocket {
 
   emitRaw(data: string) {
     this.onmessage?.({ data });
+  }
+
+  /** Delivers a binary frame, as the terminal socket sends output. */
+  emitBinary(text: string) {
+    const bytes = new TextEncoder().encode(text);
+    this.onmessage?.({
+      data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length),
+    });
   }
 
   static latest(): FakeSocket {

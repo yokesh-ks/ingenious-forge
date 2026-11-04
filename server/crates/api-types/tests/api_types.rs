@@ -490,3 +490,24 @@ fn file_list_and_content_serialize() {
     let ts = typescript_bindings();
     assert!(ts.contains("export type FileList") && ts.contains("export type FileContent"));
 }
+
+#[test]
+fn terminal_input_and_exit_serialize() {
+    use api_types::{TerminalInput, TerminalNotice};
+    let input: TerminalInput =
+        serde_json::from_value(json!({ "type": "input", "data": "ls\r" })).unwrap();
+    assert_eq!(
+        input,
+        TerminalInput::Input {
+            data: "ls\r".into()
+        }
+    );
+    let resize: TerminalInput =
+        serde_json::from_value(json!({ "type": "resize", "cols": 80, "rows": 24 })).unwrap();
+    assert_eq!(resize, TerminalInput::Resize { cols: 80, rows: 24 });
+    assert_eq!(
+        serde_json::to_value(TerminalNotice::Exit).unwrap(),
+        json!({ "type": "exit" })
+    );
+    assert!(typescript_bindings().contains("export type TerminalInput"));
+}

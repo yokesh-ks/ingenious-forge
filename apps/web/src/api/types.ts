@@ -59,6 +59,10 @@ truncated: boolean, };
 
 export type FileContent = { path: string, content: string, };
 
+export type TerminalInput = { "type": "input", data: string, } | { "type": "resize", cols: number, rows: number, };
+
+export type TerminalNotice = { "type": "exit" };
+
 export type ApiError = { error: string, };
 
 export type ApprovalKind = "edit" | "command";

@@ -24,6 +24,7 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 tokio-tungstenite = "0.30"
 futures-util = "0.3"
 similar = "3"
+portable-pty = "0.9"
 
 api-types = { path = "crates/api-types" }
 db = { path = "crates/db" }

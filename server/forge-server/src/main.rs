@@ -1,6 +1,7 @@
 mod projects;
 mod routes;
 mod state;
+mod terminal;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
@@ -75,6 +76,7 @@ async fn main() -> anyhow::Result<()> {
     let state = Arc::new(AppState {
         db: pool,
         agent: Agent::with_providers(providers, events.clone()),
+        terminals: services::terminal::Terminals::default(),
         events,
     });
 

@@ -2,7 +2,7 @@
   "name": "@ingenious-forge/web",
   "version": "0.1.0",
   "private": true,
-  "description": "Forge web UI \u2014 React SPA served by the local server",
+  "description": "Forge web UI — React SPA served by the local server",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
@@ -18,6 +18,8 @@
   "dependencies": {
     "@base-ui/react": "^1.9.0",
     "@shadcn/react": "^0.3.1",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.66.0",
