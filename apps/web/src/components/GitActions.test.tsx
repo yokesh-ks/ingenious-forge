@@ -113,4 +113,37 @@ describe("GitActions", () => {
     setup(clean);
     expect(screen.getByRole("button", { name: /^commit/i })).toBeDisabled();
   });
+
+  it("pushes the branch and shows where it went", async () => {
+    fakeFetch({
+      "POST /api/projects/p1/git/push": {
+        remote: "origin",
+        url: "git@github.com:me/app.git",
+        branch: "feat/x",
+      },
+    });
+    const { onChanged } = setup(clean);
+    await userEvent.click(screen.getByRole("button", { name: /^push/i }));
+    expect(
+      await screen.findByText("Pushed feat/x to git@github.com:me/app.git"),
+    ).toBeInTheDocument();
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it("shows why a push failed", async () => {
+    fakeFetch({
+      "POST /api/projects/p1/git/push": () => ({
+        status: 400,
+        body: { error: "! [rejected] main -> main (fetch first)" },
+      }),
+    });
+    setup(clean);
+    await userEvent.click(screen.getByRole("button", { name: /^push/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("rejected");
+  });
+
+  it("cannot push a detached head", () => {
+    setup({ branch: "abc1234", detached: true, staged: 0, changed: 0 });
+    expect(screen.getByRole("button", { name: /^push/i })).toBeDisabled();
+  });
 });

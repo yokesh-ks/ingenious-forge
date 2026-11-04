@@ -1,4 +1,4 @@
-import { GitBranchPlusIcon, GitCommitHorizontalIcon } from "lucide-react";
+import { ArrowUpFromLineIcon, GitBranchPlusIcon, GitCommitHorizontalIcon } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { GitStatus } from "@/api/types";
@@ -21,7 +21,25 @@ type Panel = "none" | "branch" | "commit";
 export default function GitActions({ projectId, sessionId, status, onChanged }: GitActionsProps) {
   const [panel, setPanel] = useState<Panel>("none");
   const [done, setDone] = useState<string | null>(null);
+  const [pushing, setPushing] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
   const hasChanges = !!status && status.staged + status.changed > 0;
+
+  async function push() {
+    setPanel("none");
+    setDone(null);
+    setPushError(null);
+    setPushing(true);
+    try {
+      const pushed = await api.push(projectId);
+      setDone(`Pushed ${pushed.branch} to ${pushed.url}`);
+      onChanged();
+    } catch (err) {
+      setPushError((err as Error).message);
+    } finally {
+      setPushing(false);
+    }
+  }
 
   function close(message?: string) {
     setPanel("none");
@@ -55,8 +73,17 @@ export default function GitActions({ projectId, sessionId, status, onChanged }: 
         >
           <GitCommitHorizontalIcon aria-hidden /> Commit
         </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={pushing || !status || status.detached}
+          onClick={push}
+        >
+          <ArrowUpFromLineIcon aria-hidden /> {pushing ? "Pushing…" : "Push"}
+        </Button>
         {done && <span className="text-xs text-muted-foreground">{done}</span>}
       </div>
+      {pushError && <ErrorText message={pushError} />}
       {panel === "branch" && (
         <BranchForm projectId={projectId} onDone={close} onCancel={() => close()} />
       )}

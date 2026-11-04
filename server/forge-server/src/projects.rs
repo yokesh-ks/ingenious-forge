@@ -6,7 +6,8 @@ use agent::tools::ToolBox;
 use api_types::{
     ApiError, CommitMessageDraft, CommitRequest, CommitResult, CreateBranchRequest,
     CreateSessionRequest, DirListing, FileContent, FileList, GitStatus, ModelCatalog,
-    OpenProjectRequest, Project, Session, SessionEnvelope, SessionEvent, SetApprovalModeRequest,
+    OpenProjectRequest, Project, PushResult, Session, SessionEnvelope, SessionEvent,
+    SetApprovalModeRequest,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -32,6 +33,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/projects/{id}/git/status", get(git_status))
         .route("/projects/{id}/git/branch", post(create_branch))
         .route("/projects/{id}/git/commit", post(commit))
+        .route("/projects/{id}/git/push", post(push))
         .route("/sessions/{id}/commit-message", post(draft_commit_message))
         .route(
             "/projects/{id}/terminal",
@@ -162,6 +164,12 @@ async fn commit(
     in_project(&state, &id, move |dir| git::commit(dir, &body.message))
         .await
         .map(Json)
+}
+
+/// Pushes the current branch to its remote with the user's git
+/// credentials.
+async fn push(State(state): State<Arc<AppState>>, Path(id): Path<String>) -> ApiResult<PushResult> {
+    in_project(&state, &id, git::push).await.map(Json)
 }
 
 /// Most of the diff the agent reads to draft a commit message.
@@ -903,6 +911,40 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("nothing to commit"));
+    }
+
+    #[tokio::test]
+    async fn pushing_from_the_browser_reports_the_remote_or_the_error() {
+        let (api, _) = start().await;
+        let (pid, repo) = git_project(&api).await;
+
+        // No remote yet: the error says so.
+        let (status, body) = post_json(&format!("{api}/projects/{pid}/git/push"), json!({})).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(
+            body["error"].as_str().unwrap().contains("no remote"),
+            "{body}"
+        );
+
+        let remote = folders().join("remote.git");
+        assert!(std::process::Command::new("git")
+            .args(["init", "-q", "--bare", remote.to_str().unwrap()])
+            .status()
+            .unwrap()
+            .success());
+        assert!(std::process::Command::new("git")
+            .args(["remote", "add", "origin", remote.to_str().unwrap()])
+            .current_dir(&repo)
+            .status()
+            .unwrap()
+            .success());
+
+        let (status, body) = post_json(&format!("{api}/projects/{pid}/git/push"), json!({})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            body,
+            json!({ "remote": "origin", "url": remote.to_str().unwrap(), "branch": "main" })
+        );
     }
 
     /// Replies with a fixed commit message.
