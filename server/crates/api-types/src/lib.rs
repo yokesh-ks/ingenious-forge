@@ -190,6 +190,29 @@ pub struct FileContent {
     pub content: String,
 }
 
+/// What the browser sends on a project's terminal socket.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TerminalInput {
+    /// Keystrokes for the shell.
+    Input {
+        data: String,
+    },
+    Resize {
+        cols: u16,
+        rows: u16,
+    },
+}
+
+/// Text frames the server sends on a terminal socket; output itself
+/// arrives as binary frames.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TerminalNotice {
+    /// The shell exited; reconnect to start a new one.
+    Exit,
+}
+
 /// The body of every failed API response.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ApiError {
@@ -385,6 +408,8 @@ pub fn typescript_bindings() -> String {
         DirListing::decl(&cfg),
         FileList::decl(&cfg),
         FileContent::decl(&cfg),
+        TerminalInput::decl(&cfg),
+        TerminalNotice::decl(&cfg),
         ApiError::decl(&cfg),
         ApprovalKind::decl(&cfg),
         ApprovalDecision::decl(&cfg),

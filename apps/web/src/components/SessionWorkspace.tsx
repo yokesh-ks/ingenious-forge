@@ -5,8 +5,9 @@ import ChangedFilesPanel from "./ChangedFilesPanel";
 import Composer from "./Composer";
 import FilesPanel from "./FilesPanel";
 import SessionView from "./SessionView";
+import TerminalPanel from "./TerminalPanel";
 
-type PanelTab = "changes" | "files";
+type PanelTab = "changes" | "files" | "terminal";
 
 /** One session: the conversation, the composer and the workspace panel. */
 export default function SessionWorkspace({
@@ -18,6 +19,7 @@ export default function SessionWorkspace({
   projectId?: string;
 }) {
   const [tab, setTab] = useState<PanelTab>("changes");
+  const [terminalOpened, setTerminalOpened] = useState(false);
   const { state, connected, send, stop, revertAll, answerApproval } = useSession(sessionId);
 
   return (
@@ -41,7 +43,7 @@ export default function SessionWorkspace({
       <aside className="hidden w-96 shrink-0 overflow-y-auto border-l pl-4 lg:flex lg:flex-col">
         {projectId && (
           <div role="tablist" aria-label="Workspace panel" className="mb-3 flex gap-1 border-b">
-            {(["changes", "files"] as const).map((name) => (
+            {(["changes", "files", "terminal"] as const).map((name) => (
               <button
                 key={name}
                 type="button"
@@ -53,14 +55,23 @@ export default function SessionWorkspace({
                     ? "border-primary font-medium"
                     : "border-transparent text-muted-foreground",
                 )}
-                onClick={() => setTab(name)}
+                onClick={() => {
+                  setTab(name);
+                  if (name === "terminal") setTerminalOpened(true);
+                }}
               >
                 {name}
               </button>
             ))}
           </div>
         )}
-        {projectId && tab === "files" ? (
+        {/* The terminal stays mounted once opened, so switching tabs keeps it. */}
+        {projectId && terminalOpened && (
+          <div className={tab === "terminal" ? "flex min-h-0 flex-1" : "hidden"}>
+            <TerminalPanel projectId={projectId} />
+          </div>
+        )}
+        {tab === "terminal" ? null : projectId && tab === "files" ? (
           <FilesPanel projectId={projectId} />
         ) : (
           <ChangedFilesPanel

@@ -29,6 +29,10 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/projects/{id}/files", get(project_files))
         .route("/projects/{id}/file", get(project_file))
         .route(
+            "/projects/{id}/terminal",
+            get(crate::terminal::terminal_socket),
+        )
+        .route(
             "/projects/{id}/sessions",
             get(list_sessions).post(create_session),
         )
@@ -40,6 +44,12 @@ pub fn router() -> Router<Arc<AppState>> {
 
 /// A failed request: its status and a message for the user.
 pub struct ApiFailure(StatusCode, String);
+
+impl ApiFailure {
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self(StatusCode::INTERNAL_SERVER_ERROR, message.into())
+    }
+}
 
 impl IntoResponse for ApiFailure {
     fn into_response(self) -> Response {
@@ -316,6 +326,7 @@ mod tests {
             db: db::connect(":memory:").await.unwrap(),
             agent: Agent::new(model, events.clone()),
             events,
+            terminals: Default::default(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -437,6 +448,7 @@ mod tests {
             db: db::connect(":memory:").await.unwrap(),
             agent: Agent::with_providers(providers, events.clone()),
             events,
+            terminals: Default::default(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -621,6 +633,7 @@ mod tests {
             db: state.db.clone(),
             events: EventService::new(),
             agent: Agent::new(Arc::new(NoModel), EventService::new()),
+            terminals: Default::default(),
         };
         crate::routes::ensure_open(&restarted, &sid).await;
         assert_eq!(

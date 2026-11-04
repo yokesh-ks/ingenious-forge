@@ -206,6 +206,7 @@ mod tests {
             db: db::connect(":memory:").await.unwrap(),
             agent,
             events,
+            terminals: Default::default(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -302,6 +303,7 @@ mod tests {
             db: db::connect(":memory:").await.unwrap(),
             agent,
             events,
+            terminals: Default::default(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
