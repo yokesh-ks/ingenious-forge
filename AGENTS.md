@@ -109,7 +109,20 @@ working.
 
 - `apps/web/`: the React + TypeScript SPA (Vite, Tailwind CSS, Shadcn UI
   conventions, Biome for lint/format). Builds to `apps/web/dist`, served by
-  the Rust server.
+  the Rust server. `src/` is organized feature-first: each domain lives
+  under `src/features/<domain>/` (currently `session`, `git`, `sandbox`,
+  `terminal`), holding that domain's `components/`, `hooks/` and `api/`
+  as needed. Only genuinely cross-cutting code stays in the top-level
+  shared layers: `components/ui/` (Shadcn primitives), `hooks/`
+  (`use-theme`), `lib/` (utils, time, router, approval-modes,
+  slash-commands, file-tree, models), `api/` (typed client, generated
+  types), `pages/` (route-level composition) and `test/` (test helpers).
+  Tests live in a sibling `__tests__/` folder next to the code they
+  cover, mirroring its subfolders (for example
+  `features/git/__tests__/components/GitBadge.test.tsx` tests
+  `features/git/components/GitBadge.tsx`; `pages/__tests__/HomePage.test.tsx`
+  tests `pages/HomePage.tsx`), rather than sitting beside the source file.
+  See ADR [0009](docs/decisions/0009-feature-based-web-ui-structure.md).
 - `server/`: the Rust backend as a Cargo workspace — `forge-server` (the
   binary, wiring only) and `crates/{api-types,db,services,agent,git,utils}`
   mapping to the PRD §8 module list. `agent` and `git` are stubs until a

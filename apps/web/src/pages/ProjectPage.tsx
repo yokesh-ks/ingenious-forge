@@ -2,16 +2,16 @@ import { ArrowLeftIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { ApprovalMode, Project, SessionModel } from "@/api/types";
-import GitActions from "@/components/GitActions";
-import NewSessionForm from "@/components/NewSessionForm";
-import SessionHeader from "@/components/SessionHeader";
-import SessionSidebar from "@/components/SessionSidebar";
-import SessionWorkspace from "@/components/SessionWorkspace";
+import GitActions from "@/features/git/components/GitActions";
+import { useGitStatus } from "@/features/git/hooks/use-git-status";
+import NewSessionForm from "@/features/sandbox/components/NewSessionForm";
+import { useModelCatalog } from "@/features/sandbox/hooks/use-model-catalog";
+import { useSandbox } from "@/features/sandbox/hooks/use-sandbox";
+import SessionHeader from "@/features/session/components/SessionHeader";
+import SessionSidebar from "@/features/session/components/SessionSidebar";
+import SessionWorkspace from "@/features/session/components/SessionWorkspace";
+import { useProjectSessions } from "@/features/session/hooks/use-project-sessions";
 import { Link, navigate } from "@/lib/router";
-import { useGitStatus } from "@/session/use-git-status";
-import { useModelCatalog } from "@/session/use-model-catalog";
-import { useProjectSessions } from "@/session/use-project-sessions";
-import { useSandbox } from "@/session/use-sandbox";
 
 interface ProjectPageProps {
   projectId: string;
