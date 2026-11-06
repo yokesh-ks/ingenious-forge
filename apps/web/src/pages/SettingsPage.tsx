@@ -7,11 +7,11 @@ import type {
   SessionDefaults,
   SessionModel,
 } from "@/api/types";
-import ModelFields, { selectClass } from "@/components/ModelFields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import ModelFields, { selectClass } from "@/features/sandbox/components/ModelFields";
+import { useModelCatalog } from "@/features/sandbox/hooks/use-model-catalog";
 import { APPROVAL_MODES } from "@/lib/approval-modes";
-import { useModelCatalog } from "@/session/use-model-catalog";
 
 /** Settings (PRD §6.2 Settings). */
 export default function SettingsPage() {

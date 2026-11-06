@@ -2,8 +2,8 @@ import { FolderOpenIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { Project } from "@/api/types";
-import FolderPicker from "@/components/FolderPicker";
 import { Button } from "@/components/ui/button";
+import FolderPicker from "@/features/sandbox/components/FolderPicker";
 import { Link, navigate } from "@/lib/router";
 import { timeAgo } from "@/lib/time";
 

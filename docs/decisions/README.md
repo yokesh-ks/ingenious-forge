@@ -16,3 +16,4 @@ new ADR that supersedes the old one. See
 | [0006](0006-os-sandbox-for-shell-commands.md) | Confine shell commands with sandbox-exec on macOS and bubblewrap on Linux | Accepted | 2026-11-04 |
 | [0007](0007-pty-terminal.md) | Run the workspace terminal on a server PTY and render it with xterm.js | Proposed | 2026-11-04 |
 | [0008](0008-encrypt-stored-secrets.md) | Encrypt stored secrets with AES-256-GCM and a local key file | Proposed | 2026-11-04 |
+| [0009](0009-feature-based-web-ui-structure.md) | Organize `apps/web/src` by feature instead of by file type | Proposed | 2026-11-06 |
