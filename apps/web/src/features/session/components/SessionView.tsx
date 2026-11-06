@@ -1,7 +1,7 @@
 import { memo } from "react";
 import type { ApprovalDecision } from "@/api/types";
-import { Bubble, BubbleContent } from "@/components/ui/bubble";
-import { Message, MessageContent } from "@/components/ui/message";
+import { Bubble, BubbleContent } from "@/components/ai-elements/bubble";
+import { Message, MessageContent } from "@/components/ai-elements/message";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -9,7 +9,7 @@ import {
   MessageScrollerItem,
   MessageScrollerProvider,
   MessageScrollerViewport,
-} from "@/components/ui/message-scroller";
+} from "@/components/ai-elements/message-scroller";
 import type { SessionItem } from "@/features/session/session-reducer";
 import ToolCallCard from "./ToolCallCard";
 

@@ -113,7 +113,11 @@ working.
   under `src/features/<domain>/` (currently `session`, `git`, `sandbox`,
   `terminal`), holding that domain's `components/`, `hooks/` and `api/`
   as needed. Only genuinely cross-cutting code stays in the top-level
-  shared layers: `components/ui/` (Shadcn primitives), `hooks/`
+  shared layers: `components/ui/` (CLI-owned Shadcn primitives),
+  `components/ai-elements/` (the hand-copied chat primitives —
+  `message-scroller`, `message`, `bubble`, `input-group` — kept apart
+  from `ui/` since they are not CLI-managed; see ADR
+  [0002](docs/decisions/0002-shadcn-tailwind-web-ui.md)), `hooks/`
   (`use-theme`), `lib/` (utils, time, router, approval-modes,
   slash-commands, file-tree, models), `api/` (typed client, generated
   types), `pages/` (route-level composition) and `test/` (test helpers).
