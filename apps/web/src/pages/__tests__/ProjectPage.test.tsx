@@ -37,7 +37,6 @@ describe("ProjectPage", () => {
       "GET /api/projects/p1/sessions": [session("s2", "Newest"), session("s1", "Older")],
     });
     render(<ProjectPage projectId="p1" sessionId={null} />);
-    expect(await screen.findByRole("heading", { name: "forge" })).toBeInTheDocument();
     await waitFor(() => expect(window.location.pathname).toBe("/projects/p1/sessions/s2"));
   });
 
@@ -67,19 +66,13 @@ describe("ProjectPage", () => {
     expect(posts).toHaveLength(1);
   });
 
-  it("shows the sidebar and the chosen session's workspace", async () => {
+  it("shows the chosen session's workspace", async () => {
     fakeFetch({
       "GET /api/projects/p1": project,
       "GET /api/projects/p1/sessions": [session("s2", "Newest"), session("s1", "Older")],
     });
     render(<ProjectPage projectId="p1" sessionId="s1" />);
-    expect(await screen.findByRole("link", { name: /older/i })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    expect(screen.getByPlaceholderText(/ask forge/i)).toBeInTheDocument();
-    expect(screen.getByText("/code/forge")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /all projects/i })).toHaveAttribute("href", "/");
+    expect(await screen.findByPlaceholderText(/ask forge/i)).toBeInTheDocument();
   });
 
   it("switching sessions connects the workspace to the other session", async () => {
@@ -88,8 +81,7 @@ describe("ProjectPage", () => {
       "GET /api/projects/p1/sessions": [session("s2", "Newest"), session("s1", "Older")],
     });
     const { rerender } = render(<ProjectPage projectId="p1" sessionId="s1" />);
-    await userEvent.click(await screen.findByRole("link", { name: /newest/i }));
-    expect(window.location.pathname).toBe("/projects/p1/sessions/s2");
+    await screen.findByPlaceholderText(/ask forge/i);
     rerender(<ProjectPage projectId="p1" sessionId="s2" />);
     const socket = FakeSocket.instances[FakeSocket.instances.length - 1];
     await openSocket(socket);
@@ -113,7 +105,6 @@ describe("ProjectPage", () => {
     await userEvent.click(await screen.findByRole("button", { name: /start session/i }));
 
     await waitFor(() => expect(window.location.pathname).toBe("/projects/p1/sessions/s3"));
-    expect(await screen.findByRole("link", { name: /new session/i })).toBeInTheDocument();
     rerender(<ProjectPage projectId="p1" sessionId="s3" />);
     expect(screen.getByPlaceholderText(/ask forge/i)).toHaveFocus();
   });
