@@ -5,7 +5,7 @@ import {
   InputGroupAddon,
   InputGroupButton,
   InputGroupTextarea,
-} from "@/components/ai-elements/input-group";
+} from "@/components/ui/input-group";
 import { matchSlashCommands } from "@/lib/slash-commands";
 
 interface ComposerProps {

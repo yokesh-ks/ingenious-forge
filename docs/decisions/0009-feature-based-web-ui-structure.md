@@ -45,9 +45,11 @@ holding that domain's `components/`, `hooks/` and (when needed) `api/`:
 Keep only genuinely cross-cutting code in the top-level shared layers,
 unchanged in spirit: `components/ui/` (CLI-owned Shadcn primitives),
 `components/ai-elements/` (the hand-copied chat primitives —
-`message-scroller`, `message`, `bubble`, `input-group`, moved out of
-`ui/` in this change to keep them apart from CLI-managed primitives; see
-ADR [0002](0002-shadcn-tailwind-web-ui.md)) plus
+`message-scroller`, `message`, `bubble` — moved out of `ui/` in this
+change to keep them apart from CLI-managed primitives; see ADR
+[0002](0002-shadcn-tailwind-web-ui.md); `input-group` moved back to
+`ui/` once the registry started serving it, see ADR
+[0010](0010-full-shadcn-component-catalog.md)) plus
 `components/theme-toggle.tsx` (used only by the app shell, not any
 feature), `hooks/use-theme.ts`, `lib/` (`utils`, `time`, `router`,
 `approval-modes`, `slash-commands`, `file-tree`, `models` — `models.ts`
