@@ -14,15 +14,17 @@ afterEach(() => {
 });
 
 describe("App", () => {
-  it("shows the home page at /", async () => {
-    fakeFetch({ "GET /api/projects": [] });
+  it("shows the empty placeholder at / with the sidebar's project list", async () => {
+    fakeFetch({ "GET /api/projects": [{ id: "p1", name: "forge", path: "/f" }] });
     render(<App />);
-    expect(await screen.findByRole("heading", { name: /recent projects/i })).toBeInTheDocument();
+    expect(await screen.findByText(/select a project or open a folder/i)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "forge" })).toBeInTheDocument();
   });
 
-  it("shows a project's session at /projects/:id/sessions/:sid", async () => {
+  it("shows a project's session breadcrumb at /projects/:id/sessions/:sid", async () => {
     window.history.replaceState(null, "", "/projects/p1/sessions/s1");
     fakeFetch({
+      "GET /api/projects": [],
       "GET /api/projects/p1": { id: "p1", name: "forge", path: "/f", last_opened_at: 1 },
       "GET /api/projects/p1/sessions": [
         {
@@ -36,23 +38,21 @@ describe("App", () => {
       ],
     });
     render(<App />);
-    expect(await screen.findByRole("heading", { name: "forge" })).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /fix it/i })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    expect(await screen.findByText("forge")).toBeInTheDocument();
+    expect(await screen.findByText("Fix it")).toBeInTheDocument();
   });
 
-  it("shows not found for other paths", () => {
+  it("shows not found for other paths", async () => {
     window.history.replaceState(null, "", "/nowhere");
+    fakeFetch({ "GET /api/projects": [] });
     render(<App />);
-    expect(screen.getByText(/page not found/i)).toBeInTheDocument();
+    expect(await screen.findByText(/page not found/i)).toBeInTheDocument();
   });
 
-  it("links to Settings from every page and shows it at /settings", async () => {
+  it("links to Settings from the sidebar and shows it at /settings", async () => {
     fakeFetch({ "GET /api/projects": [], "GET /api/settings/providers": [] });
     render(<App />);
-    const link = screen.getByRole("link", { name: /settings/i });
+    const link = await screen.findByRole("link", { name: /settings/i });
     expect(link).toHaveAttribute("href", "/settings");
     window.history.replaceState(null, "", "/settings");
     window.dispatchEvent(new PopStateEvent("popstate"));

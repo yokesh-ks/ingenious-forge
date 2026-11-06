@@ -1,12 +1,14 @@
-import { SettingsIcon } from "lucide-react";
-import { ThemeToggle } from "./components/theme-toggle";
-import { Link, matchPath, usePath } from "./lib/router";
-import HomePage from "./pages/HomePage";
-import ProjectPage from "./pages/ProjectPage";
-import SettingsPage from "./pages/SettingsPage";
+import AppBreadcrumb from "@/components/layout/AppBreadcrumb";
+import AppSidebar from "@/components/layout/AppSidebar";
+import { Separator } from "@/components/ui/separator";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { Link, matchPath, usePath } from "@/lib/router";
+import EmptyMainView from "@/pages/EmptyMainView";
+import ProjectPage from "@/pages/ProjectPage";
+import SettingsPage from "@/pages/SettingsPage";
 
 function Page({ path }: { path: string }) {
-  if (matchPath("/", path)) return <HomePage />;
+  if (matchPath("/", path)) return <EmptyMainView />;
   if (matchPath("/settings", path)) return <SettingsPage />;
   const session = matchPath("/projects/:id/sessions/:sessionId", path);
   if (session) {
@@ -24,22 +26,16 @@ function Page({ path }: { path: string }) {
 export default function App() {
   const path = usePath();
   return (
-    <div className="flex h-screen flex-col">
-      <header className="flex items-center gap-3 px-4 py-3">
-        <h1 className="flex-1 text-lg font-bold tracking-tight">
-          <Link to="/">
-            Ingenious <span className="text-primary">Forge</span>
-          </Link>
-        </h1>
-        <Link
-          to="/settings"
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <SettingsIcon className="size-4" aria-hidden /> Settings
-        </Link>
-        <ThemeToggle />
-      </header>
-      <Page path={path} />
-    </div>
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset>
+        <header className="flex items-center gap-2 border-b px-4 py-3">
+          <SidebarTrigger />
+          <Separator orientation="vertical" className="h-4" />
+          <AppBreadcrumb path={path} />
+        </header>
+        <Page path={path} />
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

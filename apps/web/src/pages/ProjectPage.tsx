@@ -1,17 +1,19 @@
-import { ArrowLeftIcon } from "lucide-react";
+import { PlusIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { ApprovalMode, Project, SessionModel } from "@/api/types";
+import type { ApprovalMode, SessionModel } from "@/api/types";
+import { Button } from "@/components/ui/button";
 import GitActions from "@/features/git/components/GitActions";
 import { useGitStatus } from "@/features/git/hooks/use-git-status";
 import NewSessionForm from "@/features/sandbox/components/NewSessionForm";
 import { useModelCatalog } from "@/features/sandbox/hooks/use-model-catalog";
 import { useSandbox } from "@/features/sandbox/hooks/use-sandbox";
 import SessionHeader from "@/features/session/components/SessionHeader";
-import SessionSidebar from "@/features/session/components/SessionSidebar";
+import SessionRightSidebar from "@/features/session/components/SessionRightSidebar";
 import SessionWorkspace from "@/features/session/components/SessionWorkspace";
 import { useProjectSessions } from "@/features/session/hooks/use-project-sessions";
-import { Link, navigate } from "@/lib/router";
+import { useSession } from "@/features/session/hooks/use-session";
+import { navigate } from "@/lib/router";
 
 interface ProjectPageProps {
   projectId: string;
@@ -19,32 +21,89 @@ interface ProjectPageProps {
   sessionId: string | null;
 }
 
+/** The project's open session: header, chat and the workspace panel. */
+function SessionPane({
+  projectId,
+  sessionId,
+  model,
+  catalog,
+  approvalMode,
+  onApprovalModeChange,
+  savingMode,
+  onNewSession,
+  creatingNew,
+}: {
+  projectId: string;
+  sessionId: string;
+  model: SessionModel | null;
+  catalog: ReturnType<typeof useModelCatalog>["catalog"];
+  approvalMode: ApprovalMode;
+  onApprovalModeChange: (mode: ApprovalMode) => void;
+  savingMode: boolean;
+  onNewSession: () => void;
+  creatingNew: boolean;
+}) {
+  const git = useGitStatus(projectId);
+  const { sandbox } = useSandbox(sessionId);
+  const { state, connected, send, stop, revertAll, answerApproval } = useSession(sessionId);
+
+  return (
+    <div className="flex min-h-0 flex-1 gap-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
+        <div className="flex items-center justify-end">
+          <Button size="sm" variant="outline" disabled={creatingNew} onClick={onNewSession}>
+            <PlusIcon /> New session
+          </Button>
+        </div>
+        <SessionHeader
+          model={model}
+          catalog={catalog}
+          approvalMode={approvalMode}
+          onApprovalModeChange={onApprovalModeChange}
+          savingMode={savingMode}
+          git={git.status}
+          sandbox={sandbox}
+          actions={
+            git.status && (
+              <GitActions
+                projectId={projectId}
+                sessionId={sessionId}
+                status={git.status}
+                onChanged={git.reload}
+              />
+            )
+          }
+        />
+        <SessionWorkspace
+          state={state}
+          connected={connected}
+          onSend={send}
+          onStop={stop}
+          onAnswerApproval={answerApproval}
+        />
+      </div>
+      <SessionRightSidebar
+        projectId={projectId}
+        changedFiles={state.changedFiles}
+        onRevertAll={revertAll}
+        busy={state.running}
+      />
+    </div>
+  );
+}
+
 export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) {
-  const [project, setProject] = useState<Project | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { sessions, error: sessionsError, reload } = useProjectSessions(projectId);
   const [creatingNew, setCreatingNew] = useState(false);
   /** True while the new-session form is shown. */
   const [picking, setPicking] = useState(false);
   const models = useModelCatalog();
-  const git = useGitStatus(projectId);
-  const { sandbox } = useSandbox(sessionId);
   const [savingMode, setSavingMode] = useState(false);
   const active = sessions?.find((s) => s.id === sessionId) ?? null;
   // Guards against creating a second first session when the effect below
   // runs again before the first request returns.
   const creating = useRef(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.getProject(projectId).then(
-      (found) => !cancelled && setProject(found),
-      (err: Error) => !cancelled && setError(err.message),
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
 
   // With no session chosen, open the most recent one, or start the first.
   useEffect(() => {
@@ -98,73 +157,38 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
   const shownError = error ?? sessionsError;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-6">
-      <div className="flex items-center gap-3">
-        <Link
-          to="/"
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeftIcon className="size-4" aria-hidden /> All projects
-        </Link>
-        {project && (
-          <>
-            <h2 className="text-lg font-semibold">{project.name}</h2>
-            <code className="truncate text-xs text-muted-foreground">{project.path}</code>
-          </>
-        )}
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-6">
       {shownError && (
         <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {shownError}
         </p>
       )}
-      <div className="flex min-h-0 flex-1 gap-4">
-        <aside className="hidden w-56 shrink-0 overflow-y-auto border-r pr-4 md:block">
-          <SessionSidebar
-            projectId={projectId}
-            sessions={sessions}
-            activeId={sessionId}
-            onNewSession={() => setPicking(true)}
-            creating={creatingNew}
+      {picking ? (
+        <div className="flex min-w-0 flex-1 items-start justify-center">
+          <NewSessionForm
+            catalog={models.catalog}
+            error={models.error}
+            onStart={newSession}
+            onCancel={() => setPicking(false)}
+            starting={creatingNew}
           />
-        </aside>
-        {picking ? (
-          <div className="flex min-w-0 flex-1 items-start justify-center">
-            <NewSessionForm
-              catalog={models.catalog}
-              error={models.error}
-              onStart={newSession}
-              onCancel={() => setPicking(false)}
-              starting={creatingNew}
-            />
-          </div>
-        ) : (
-          sessionId && (
-            <div className="flex min-w-0 flex-1 flex-col gap-3">
-              <SessionHeader
-                model={active?.model ?? null}
-                catalog={models.catalog}
-                approvalMode={active?.approval_mode ?? "ask"}
-                onApprovalModeChange={changeApprovalMode}
-                savingMode={savingMode}
-                git={git.status}
-                sandbox={sandbox}
-                actions={
-                  git.status && (
-                    <GitActions
-                      projectId={projectId}
-                      sessionId={sessionId}
-                      status={git.status}
-                      onChanged={git.reload}
-                    />
-                  )
-                }
-              />
-              <SessionWorkspace key={sessionId} sessionId={sessionId} projectId={projectId} />
-            </div>
-          )
-        )}
-      </div>
+        </div>
+      ) : (
+        sessionId && (
+          <SessionPane
+            key={sessionId}
+            projectId={projectId}
+            sessionId={sessionId}
+            model={active?.model ?? null}
+            catalog={models.catalog}
+            approvalMode={active?.approval_mode ?? "ask"}
+            onApprovalModeChange={changeApprovalMode}
+            savingMode={savingMode}
+            onNewSession={() => setPicking(true)}
+            creatingNew={creatingNew}
+          />
+        )
+      )}
     </div>
   );
 }
