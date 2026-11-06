@@ -40,7 +40,11 @@ conversation, alongside relocating `web/` to `apps/web/`.
   by hand from shadcn's own reference implementation,
   [shadcn-ui/chatbot-template](https://github.com/shadcn-ui/chatbot-template)
   (MIT), trimmed of its Next.js/Vercel-AI-SDK wiring that Forge doesn't
-  use. Retry the CLI once the registry items resolve, to pick up any
+  use. These four chat primitives (`message-scroller.tsx`, `message.tsx`,
+  `bubble.tsx`, `input-group.tsx`) and their `LICENSE.chatbot-template`
+  moved from `src/components/ui/` to `src/components/ai-elements/` to
+  keep CLI-owned Shadcn primitives separate from this hand-copied set; see
+  ADR [0009](0009-feature-based-web-ui-structure.md). Retry the CLI once the registry items resolve, to pick up any
   upstream fixes without hand-diffing.
 
 ## Alternatives considered
