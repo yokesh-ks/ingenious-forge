@@ -18,3 +18,4 @@ new ADR that supersedes the old one. See
 | [0008](0008-encrypt-stored-secrets.md) | Encrypt stored secrets with AES-256-GCM and a local key file | Proposed | 2026-11-04 |
 | [0009](0009-feature-based-web-ui-structure.md) | Organize `apps/web/src` by feature instead of by file type | Proposed | 2026-11-06 |
 | [0010](0010-full-shadcn-component-catalog.md) | Pre-install the full Shadcn component catalog | Proposed | 2026-11-06 |
+| [0011](0011-use-the-radix-vega-shadcn-preset.md) | Use the radix-vega Shadcn preset and its dependencies | Proposed | 2026-11-07 |
