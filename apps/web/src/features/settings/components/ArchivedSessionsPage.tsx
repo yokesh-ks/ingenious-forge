@@ -14,6 +14,7 @@ interface ArchivedSessionWithProject extends Session {
 export default function ArchivedSessionsPage() {
   const [sessions, setSessions] = useState<ArchivedSessionWithProject[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -22,15 +23,16 @@ export default function ArchivedSessionsPage() {
       setError(null);
       try {
         const projects = await api.recentProjects();
+        const sessionsByProject = await Promise.all(
+          projects.map((project) => api.listSessions(project.id)),
+        );
         const allArchived: ArchivedSessionWithProject[] = [];
-
-        for (const project of projects) {
-          const projectSessions = await api.listSessions(project.id);
-          const archived = projectSessions
+        projects.forEach((project, index) => {
+          const archived = sessionsByProject[index]
             .filter((s) => s.archived)
             .map((s) => ({ ...s, projectName: project.name }));
           allArchived.push(...archived);
-        }
+        });
 
         allArchived.sort(
           (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
@@ -48,11 +50,18 @@ export default function ArchivedSessionsPage() {
 
   async function restoreSession(session: ArchivedSessionWithProject) {
     setError(null);
+    setPendingIds((prev) => new Set(prev).add(session.id));
     try {
       await api.updateSession(session.id, { archived: false });
       setSessions((prev) => prev.filter((s) => s.id !== session.id));
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setPendingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(session.id);
+        return next;
+      });
     }
   }
 
@@ -61,11 +70,18 @@ export default function ArchivedSessionsPage() {
       return;
     }
     setError(null);
+    setPendingIds((prev) => new Set(prev).add(session.id));
     try {
       await api.deleteSession(session.id);
       setSessions((prev) => prev.filter((s) => s.id !== session.id));
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setPendingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(session.id);
+        return next;
+      });
     }
   }
 
@@ -124,41 +140,44 @@ export default function ArchivedSessionsPage() {
             </Badge>
           </div>
           <div className="space-y-2">
-            {projectSessions.map((session) => (
-              <Card key={session.id}>
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <h4 className="font-medium truncate">{session.title}</h4>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Archived{" "}
-                        {formatDistanceToNow(new Date(session.updated_at), { addSuffix: true })}
-                      </p>
+            {projectSessions.map((session) => {
+              const isPending = pendingIds.has(session.id);
+              return (
+                <Card key={session.id}>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <h4 className="font-medium truncate">{session.title}</h4>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Archived{" "}
+                          {formatDistanceToNow(new Date(session.updated_at), { addSuffix: true })}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => restoreSession(session)}
+                          disabled={isPending}
+                        >
+                          <RotateCcwIcon className="size-3.5 mr-1.5" />
+                          Restore
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => deleteSession(session)}
+                          disabled={isPending}
+                        >
+                          <Trash2Icon className="size-3.5 mr-1.5" />
+                          Delete
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => restoreSession(session)}
-                        disabled={loading}
-                      >
-                        <RotateCcwIcon className="size-3.5 mr-1.5" />
-                        Restore
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => deleteSession(session)}
-                        disabled={loading}
-                      >
-                        <Trash2Icon className="size-3.5 mr-1.5" />
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
-                </CardHeader>
-              </Card>
-            ))}
+                  </CardHeader>
+                </Card>
+              );
+            })}
           </div>
         </div>
       ))}
