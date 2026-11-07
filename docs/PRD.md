@@ -114,7 +114,7 @@ Approval prompts appear inline in the chat and can be answered "once" or "always
 Each repository can hold an `AGENTS.md` file (and nested ones in subfolders) describing conventions, commands and do's and don'ts. The agent loads them automatically. `/init` generates a first version by inspecting the repository.
 
 #### Models and reasoning effort — P0
-Users pick the model provider, the model and the reasoning effort per session. Providers plug in through adapters, so new providers can be added without changing the agent.
+Users pick the model provider, the model and the reasoning effort per session. The MVP ships Anthropic and NVIDIA. Providers plug in through adapters, so new providers can be added without changing the agent.
 
 #### Sessions and resume — P0
 Every session is recorded as an append-only log of messages, tool calls and results. Sessions survive server restarts and can be resumed, forked, or replayed for debugging.
@@ -178,7 +178,7 @@ A panel listing every file changed in the session, with unified or side-by-side 
 From the UI: see the current branch and status, create a branch, commit (with a generated commit message the user can edit), and push.
 
 #### Settings — P0
-Model providers and API keys, default model and effort, default approval mode and sandbox rules, and the GitHub connection.
+Model providers and API keys, default model and effort, default approval mode and sandbox rules, and the GitHub connection. No provider is configured by default: a session cannot start until the user configures at least one, and the agent makes no model call before then. A key set through the provider's environment variable counts as configured.
 
 #### Typed API — P0
 All data exchanged between server and browser is defined once in the backend and generated as TypeScript types for the frontend. CI fails if they drift apart.
@@ -299,7 +299,6 @@ graph TB
 | R2 | Agent changes that look right but don't work | The terminal in every session makes it quick to run tests before committing |
 | R3 | Exposing the server beyond `localhost` by mistake | Off by default; explicit flag plus an access token when enabled |
 | Q1 | Final name for the headless command (`forge exec`?) | |
-| Q2 | Which model providers ship in the MVP | |
 | Q3 | Hosted offering: InGeniousClan-hosted, self-host only, or both | |
 
 ## 12. Glossary
