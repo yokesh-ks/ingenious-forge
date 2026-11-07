@@ -8,7 +8,7 @@ use api_types::{
     CreateSessionRequest, FileContent, FileList, GitStatus, ModelCatalog, OpenInRequest,
     OpenProjectRequest, PickedFolder, Project, PushResult, RenameProjectRequest, SandboxInfo,
     Session, SessionEnvelope, SessionEvent, SetApprovalModeRequest, SetSessionModelRequest,
-    UpdateSessionRequest,
+    TitleSource, UpdateSessionRequest,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -200,6 +200,13 @@ async fn update_session(
         body.archived,
     )
     .await?;
+    if body.title.is_some() {
+        state.events.publish(SessionEvent::SessionTitle {
+            session_id: id.clone(),
+            title: session.title.clone(),
+            source: TitleSource::User,
+        });
+    }
     session.running = state.agent.is_running(&id);
     Ok(Json(session))
 }
@@ -437,6 +444,7 @@ async fn create_session(
     if approval_mode != session.approval_mode {
         session = projects::set_approval_mode(&state.db, &session.id, approval_mode).await?;
     }
+    let cwd = folder.to_string_lossy().into_owned();
     state
         .agent
         .open_session_with(&session.id, ToolBox::new(folder), &(&choice).into())
@@ -444,6 +452,14 @@ async fn create_session(
     state
         .agent
         .set_approval_mode(&session.id, session.approval_mode);
+    state.events.publish(SessionEvent::SessionStarted {
+        session_id: session.id.clone(),
+        cwd,
+        provider: choice.provider.clone(),
+        model: choice.model.clone(),
+        approval_mode: session.approval_mode,
+        sandbox: state.agent.sandbox_info(&session.id),
+    });
     Ok(Json(session))
 }
 
@@ -1088,11 +1104,17 @@ mod tests {
             state.agent.approval_mode(&sid),
             Some(api_types::ApprovalMode::AutoEdit)
         );
-        let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
-            .await
-            .unwrap()
-            .unwrap()
-            .event;
+        // Past the session's own start record.
+        let event = loop {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+                .await
+                .unwrap()
+                .unwrap()
+                .event;
+            if !matches!(event, SessionEvent::SessionStarted { .. }) {
+                break event;
+            }
+        };
         assert!(matches!(
             event,
             SessionEvent::ApprovalModeChanged {
@@ -1495,7 +1517,8 @@ mod tests {
             session_id: first.to_string(),
         })
         .unwrap();
-        assert_eq!(log.events_after(first, 0).unwrap().len(), 1);
+        // Its start record and the event above.
+        assert_eq!(log.events_after(first, 0).unwrap().len(), 2);
         let (_, project) = get_json(&format!("{api}/projects/{project_id}")).await;
         let folder = PathBuf::from(project["path"].as_str().unwrap());
         let url = format!("{api}/projects/{project_id}");
@@ -1575,8 +1598,13 @@ mod tests {
         assert_eq!(fork["title"], "New session (fork)");
         assert_eq!(fork["model"], sessions[0]["model"]);
         let (_, events) = get_json(&format!("{api}/sessions/{fid}/events")).await;
-        assert_eq!(events.as_array().unwrap().len(), 1);
-        assert_eq!(events[0]["session_id"], fid);
+        // The original's start record and its `done`, re-addressed.
+        assert_eq!(events.as_array().unwrap().len(), 2);
+        assert!(events
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|e| e["session_id"] == fid));
         let (_, original) = get_json(&format!("{api}/sessions/{sid}/events")).await;
         assert_eq!(original[0]["session_id"], sid);
     }
@@ -1659,6 +1687,92 @@ mod tests {
         assert_eq!(status, StatusCode::NOT_FOUND);
     }
 
+    /// The session titles published for `id` so far.
+    fn titles(
+        rx: &mut tokio::sync::broadcast::Receiver<SessionEnvelope>,
+        id: &str,
+    ) -> Vec<(String, TitleSource)> {
+        let mut out = Vec::new();
+        while let Ok(envelope) = rx.try_recv() {
+            if let SessionEvent::SessionTitle {
+                session_id,
+                title,
+                source,
+            } = envelope.event
+            {
+                if session_id == id {
+                    out.push((title, source));
+                }
+            }
+        }
+        out
+    }
+
+    #[tokio::test]
+    async fn a_new_session_logs_its_starting_settings() {
+        let (api, state) = start().await;
+        let mut rx = state.events.subscribe();
+        let (_, sessions) = project_with_sessions(&api, 1).await;
+        let id = sessions[0]["id"].as_str().unwrap();
+
+        let started: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|e| e.event.session_id() == id)
+            .filter_map(|e| match e.event {
+                SessionEvent::SessionStarted {
+                    cwd,
+                    provider,
+                    model,
+                    approval_mode,
+                    sandbox,
+                    ..
+                } => Some((cwd, provider, model, approval_mode, sandbox.is_some())),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(started.len(), 1, "{started:?}");
+        let (cwd, provider, model, mode, has_sandbox) = &started[0];
+        assert!(cwd.ends_with("repo"), "{cwd}");
+        assert_eq!(provider, sessions[0]["model"]["provider"].as_str().unwrap());
+        assert_eq!(model, sessions[0]["model"]["model"].as_str().unwrap());
+        assert_eq!(
+            serde_json::to_value(mode).unwrap(),
+            sessions[0]["approval_mode"]
+        );
+        assert!(has_sandbox);
+    }
+
+    #[tokio::test]
+    async fn naming_a_session_is_logged_by_its_first_message_then_by_a_rename() {
+        let (api, state) = start_with(Arc::new(HangModel::default())).await;
+        let (_, sessions) = project_with_sessions(&api, 1).await;
+        let id = sessions[0]["id"].as_str().unwrap();
+        let mut rx = state.events.subscribe();
+
+        for text in ["Add dark mode", "and tests"] {
+            crate::routes::handle_client_message(
+                &state,
+                &json!({ "type": "send_message", "session_id": id, "text": text }).to_string(),
+            )
+            .await;
+        }
+        let res = reqwest::Client::new()
+            .patch(format!("{api}/sessions/{id}"))
+            .json(&json!({ "title": "Dark theme" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        assert_eq!(
+            titles(&mut rx, id),
+            [
+                ("Add dark mode".to_string(), TitleSource::FirstMessage),
+                ("Dark theme".to_string(), TitleSource::User)
+            ]
+        );
+    }
+
     #[tokio::test]
     async fn the_first_message_over_the_socket_names_the_session() {
         let (api, state) = start_with(Arc::new(HangModel::default())).await;
@@ -1691,17 +1805,19 @@ mod tests {
 
         let (status, all) = get_json(&format!("{api}/sessions/{id}/events")).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(all.as_array().unwrap().len(), 3);
+        // The session's start record, then the three chunks.
+        assert_eq!(all.as_array().unwrap().len(), 4);
+        assert_eq!(all[0]["type"], "session_started");
         assert_eq!(
-            without_ts(&all[0]),
-            json!({ "seq": 1, "type": "output", "session_id": id, "chunk": "a" })
+            without_ts(&all[1]),
+            json!({ "seq": 2, "type": "output", "session_id": id, "chunk": "a" })
         );
 
-        let (_, newer) = get_json(&format!("{api}/sessions/{id}/events?after=2")).await;
+        let (_, newer) = get_json(&format!("{api}/sessions/{id}/events?after=3")).await;
         assert_eq!(newer.as_array().unwrap().len(), 1);
         assert_eq!(
             without_ts(&newer[0]),
-            json!({ "seq": 3, "type": "output", "session_id": id, "chunk": "c" })
+            json!({ "seq": 4, "type": "output", "session_id": id, "chunk": "c" })
         );
     }
 
@@ -1733,11 +1849,12 @@ mod tests {
                 .collect()
         };
 
+        // Seq 1 is the session's start record; the chunks are 2 to 6.
         let (status, tail) = get_json(&format!("{api}/sessions/{id}/events?limit=2")).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(seqs(&tail), [4, 5]);
-        let (_, older) = get_json(&format!("{api}/sessions/{id}/events?before=4&limit=2")).await;
-        assert_eq!(seqs(&older), [2, 3]);
+        assert_eq!(seqs(&tail), [5, 6]);
+        let (_, older) = get_json(&format!("{api}/sessions/{id}/events?before=5&limit=2")).await;
+        assert_eq!(seqs(&older), [3, 4]);
         let (_, oldest) = get_json(&format!("{api}/sessions/{id}/events?before=2&limit=2")).await;
         assert_eq!(seqs(&oldest), [1]);
     }

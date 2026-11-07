@@ -21,7 +21,7 @@ const S = "s1";
  * call and its result. */
 function longSession(steps: number, chunks = 20): SessionEvent[] {
   const events: SessionEvent[] = [
-    { type: "user_message", session_id: S, text: "do the big job" },
+    { type: "user_message", session_id: S, text: "do the big job", source: "human" },
     { type: "turn_started", session_id: S, turn: 1 },
   ];
   for (let i = 0; i < steps; i++) {

@@ -17,6 +17,7 @@ const REFRESH_ON = new Set([
   "error",
   "interrupted",
   "approval_mode_changed",
+  "session_title",
 ]);
 
 /** Tells every mounted copy of a project's list (page, sidebar, breadcrumb) to refetch. */

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use agent::tools::ToolBox;
-use api_types::{ClientMessage, SessionEvent};
+use api_types::{ClientMessage, SessionEvent, TitleSource};
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -104,15 +104,27 @@ pub(crate) async fn handle_client_message(state: &AppState, text: &str) {
             ensure_open(state, &session_id).await;
             // Record first so the title is in place when the sidebar
             // refreshes on `turn_started`.
-            if let Err(err) =
-                services::projects::record_message(&state.db, &session_id, &text).await
-            {
-                tracing::warn!(%err, %session_id, "cannot record session activity");
-            }
+            let title =
+                match services::projects::record_message(&state.db, &session_id, &text).await {
+                    Ok(title) => title,
+                    Err(err) => {
+                        tracing::warn!(%err, %session_id, "cannot record session activity");
+                        None
+                    }
+                };
             if let Err(err) = state.agent.send_message(&session_id, &text) {
                 state.events.publish(SessionEvent::Error {
-                    session_id,
+                    session_id: session_id.clone(),
                     message: err.to_string(),
+                });
+            }
+            // Logged after the message, so the browser sees its message
+            // echoed first.
+            if let Some(title) = title {
+                state.events.publish(SessionEvent::SessionTitle {
+                    session_id,
+                    title,
+                    source: TitleSource::FirstMessage,
                 });
             }
         }
@@ -253,6 +265,11 @@ mod tests {
                     "reasoning_delta",
                     "assistant_message",
                     "assistant_attempt",
+                    "request_header",
+                    "request_context",
+                    "system_prompt",
+                    "model_changed",
+                    "session_title",
                 ]
                 .contains(&value["type"].as_str().unwrap_or_default())
                 {
@@ -505,7 +522,7 @@ mod tests {
         value.as_object_mut().unwrap().remove("ts");
         assert_eq!(
             value,
-            json!({ "seq": 1, "type": "user_message", "session_id": "s1", "text": "hi" })
+            json!({ "seq": 1, "type": "user_message", "session_id": "s1", "text": "hi", "source": "human" })
         );
     }
 
@@ -529,16 +546,37 @@ mod tests {
                 break;
             }
         }
+        // Every frame is numbered, from 1 and without gaps.
+        let numbers: Vec<u64> = seqs.iter().map(|(seq, _)| *seq).collect();
+        assert_eq!(numbers, (1..=seqs.len() as u64).collect::<Vec<_>>());
+        let main: Vec<_> = seqs
+            .iter()
+            .map(|(_, kind)| kind.as_str().unwrap())
+            .filter(|kind| {
+                [
+                    "user_message",
+                    "turn_started",
+                    "step_started",
+                    "request_header",
+                    "output",
+                    "assistant_message",
+                    "step_ended",
+                    "turn_ended",
+                ]
+                .contains(kind)
+            })
+            .collect();
         assert_eq!(
-            seqs,
+            main,
             [
-                (1, json!("user_message")),
-                (2, json!("turn_started")),
-                (3, json!("step_started")),
-                (4, json!("output")),
-                (5, json!("assistant_message")),
-                (6, json!("step_ended")),
-                (7, json!("turn_ended"))
+                "user_message",
+                "turn_started",
+                "step_started",
+                "request_header",
+                "output",
+                "assistant_message",
+                "step_ended",
+                "turn_ended"
             ]
         );
     }
