@@ -88,6 +88,14 @@ pub struct ModelRequest {
 pub enum ModelEvent {
     /// A piece of the assistant's reply, forwarded as soon as it arrives.
     TextDelta(String),
+    /// A piece of the model's reasoning, as it arrives.
+    ReasoningDelta(String),
+    /// Part of a tool call arrived. Carries nothing: it only marks when
+    /// the reply started, for first-token timing.
+    ToolCallDelta,
+    /// The tokens the reply used, normalized across providers (ADR 0012);
+    /// sent once, before `Message`, by providers that report it.
+    Usage(api_types::Usage),
     /// The complete assistant message, sent once at the end of the reply.
     /// A provider that never sends it is treated as replying with the text
     /// deltas alone.

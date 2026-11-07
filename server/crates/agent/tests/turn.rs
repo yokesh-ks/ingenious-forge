@@ -9,7 +9,7 @@ use agent::{
     tools::ToolBox,
     Agent, AgentError,
 };
-use api_types::{SessionEnvelope, SessionEvent, TurnEndReason};
+use api_types::{SessionEnvelope, SessionEvent, TurnEndReason, Usage};
 use serde_json::json;
 use services::EventService;
 use tokio::sync::{broadcast, mpsc, Semaphore};
@@ -98,6 +98,9 @@ fn describe(events: &[SessionEvent]) -> Vec<String> {
                 SessionEvent::UserMessage { .. }
                     | SessionEvent::StepStarted { .. }
                     | SessionEvent::StepEnded { .. }
+                    | SessionEvent::ReasoningDelta { .. }
+                    | SessionEvent::AssistantMessage { .. }
+                    | SessionEvent::AssistantAttempt { .. }
             )
         })
         .map(|e| match e {
@@ -126,7 +129,10 @@ fn describe(events: &[SessionEvent]) -> Vec<String> {
             SessionEvent::FileChanged { path, .. } => format!("changed:{path}"),
             SessionEvent::UserMessage { .. }
             | SessionEvent::StepStarted { .. }
-            | SessionEvent::StepEnded { .. } => unreachable!(),
+            | SessionEvent::StepEnded { .. }
+            | SessionEvent::ReasoningDelta { .. }
+            | SessionEvent::AssistantMessage { .. }
+            | SessionEvent::AssistantAttempt { .. } => unreachable!(),
             SessionEvent::ChangesReverted { paths, .. } => format!("reverted:{paths:?}"),
         })
         .collect()
@@ -1324,4 +1330,143 @@ async fn rejected_messages_are_not_published() {
     assert!(agent.send_message("s1", "  ").is_err());
     assert!(agent.send_message("ghost", "hi").is_err());
     assert!(rx.try_recv().is_err());
+}
+
+fn step_ended(events: &[SessionEvent]) -> Vec<(Option<Usage>, Option<u64>, Option<u64>)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            SessionEvent::StepEnded {
+                usage,
+                first_token_ms,
+                generation_ms,
+                ..
+            } => Some((*usage, *first_token_ms, *generation_ms)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_step_records_its_usage_and_first_token_timing() {
+    let usage = Usage {
+        input: 100,
+        output: 20,
+        cache_read: 900,
+        cache_write: 0,
+    };
+    let (agent, _, mut rx) = setup(FakeModel::replying(vec![vec![
+        (
+            Duration::from_millis(60),
+            Ok(ModelEvent::TextDelta("Hi".into())),
+        ),
+        (
+            Duration::from_millis(40),
+            Ok(ModelEvent::TextDelta(" there".into())),
+        ),
+        (Duration::ZERO, Ok(ModelEvent::Usage(usage))),
+    ]]));
+
+    agent.send_message("s1", "hi").unwrap();
+    let events = turn_events(&mut rx, "s1").await;
+
+    let ended = step_ended(&events);
+    assert_eq!(ended.len(), 1);
+    let (reported, first_token, generation) = ended[0];
+    assert_eq!(reported, Some(usage));
+    let first_token = first_token.expect("first-token time");
+    assert!((50..1000).contains(&first_token), "{first_token}");
+    let generation = generation.expect("generation time");
+    assert!((30..1000).contains(&generation), "{generation}");
+}
+
+#[tokio::test]
+async fn a_settled_reply_is_logged_with_its_usage() {
+    let usage = Usage {
+        input: 5,
+        output: 2,
+        cache_read: 0,
+        cache_write: 0,
+    };
+    let (agent, _, mut rx) = setup(FakeModel::replying(vec![vec![
+        text("Hello"),
+        (Duration::ZERO, Ok(ModelEvent::Usage(usage))),
+    ]]));
+
+    agent.send_message("s1", "hi").unwrap();
+    let events = turn_events(&mut rx, "s1").await;
+
+    let messages: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            SessionEvent::AssistantMessage {
+                turn,
+                step,
+                content,
+                usage,
+                ..
+            } => Some((*turn, *step, content.clone(), *usage)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        messages,
+        [(
+            1,
+            1,
+            vec![json!({ "type": "text", "text": "Hello" })],
+            Some(usage)
+        )]
+    );
+}
+
+#[tokio::test]
+async fn reasoning_streams_to_the_session_with_its_step() {
+    let (agent, _, mut rx) = setup(FakeModel::replying(vec![vec![
+        (
+            Duration::ZERO,
+            Ok(ModelEvent::ReasoningDelta("Let me ".into())),
+        ),
+        (
+            Duration::ZERO,
+            Ok(ModelEvent::ReasoningDelta("think.".into())),
+        ),
+        text("Done"),
+    ]]));
+
+    agent.send_message("s1", "hi").unwrap();
+    let events = turn_events(&mut rx, "s1").await;
+
+    let reasoning: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            SessionEvent::ReasoningDelta {
+                turn, step, chunk, ..
+            } => Some((*turn, *step, chunk.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(reasoning, [(1, 1, "Let me "), (1, 1, "think.")]);
+    // Reasoning counts as the first token.
+    assert!(step_ended(&events)[0].1.is_some());
+}
+
+#[tokio::test]
+async fn a_failed_request_is_logged_as_an_attempt_without_usage() {
+    let (agent, _, mut rx) = setup(FakeModel::replying(vec![vec![(
+        Duration::ZERO,
+        Err(ModelError::Stream("broken".into())),
+    )]]));
+
+    agent.send_message("s1", "hi").unwrap();
+    let events = turn_events(&mut rx, "s1").await;
+
+    assert!(events.iter().any(|e| matches!(
+        e,
+        SessionEvent::AssistantAttempt { turn: 1, step: 1, error, .. } if error.contains("broken")
+    )));
+    assert!(!events
+        .iter()
+        .any(|e| matches!(e, SessionEvent::AssistantMessage { .. })));
+    assert_eq!(step_ended(&events), [(None, None, None)]);
 }

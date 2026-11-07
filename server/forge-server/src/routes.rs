@@ -244,10 +244,17 @@ mod tests {
                 .unwrap();
             if let WsMessage::Text(text) = msg {
                 let mut value: Value = serde_json::from_str(&text).unwrap();
-                // Sequence numbers, the echoed user message and step
-                // boundaries have their own tests.
-                if ["user_message", "step_started", "step_ended"]
-                    .contains(&value["type"].as_str().unwrap_or_default())
+                // Sequence numbers, the echoed user message, step
+                // boundaries and step records have their own tests.
+                if [
+                    "user_message",
+                    "step_started",
+                    "step_ended",
+                    "reasoning_delta",
+                    "assistant_message",
+                    "assistant_attempt",
+                ]
+                .contains(&value["type"].as_str().unwrap_or_default())
                 {
                     continue;
                 }
@@ -529,8 +536,9 @@ mod tests {
                 (2, json!("turn_started")),
                 (3, json!("step_started")),
                 (4, json!("output")),
-                (5, json!("step_ended")),
-                (6, json!("turn_ended"))
+                (5, json!("assistant_message")),
+                (6, json!("step_ended")),
+                (7, json!("turn_ended"))
             ]
         );
     }

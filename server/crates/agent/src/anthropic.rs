@@ -292,6 +292,27 @@ impl PartialBlock {
 #[derive(Default)]
 pub(crate) struct StreamAssembler {
     blocks: Vec<PartialBlock>,
+    /// Usage as reported so far: `message_start` gives the prompt side,
+    /// `message_delta` the running output count.
+    usage: Option<api_types::Usage>,
+}
+
+/// Reads the counts present in an Anthropic `usage` object into `usage`.
+/// `input_tokens` already excludes cached tokens in this API.
+fn merge_usage(usage: &mut api_types::Usage, reported: &Value) {
+    let count = |key: &str| reported[key].as_u64();
+    if let Some(n) = count("input_tokens") {
+        usage.input = n;
+    }
+    if let Some(n) = count("output_tokens") {
+        usage.output = n;
+    }
+    if let Some(n) = count("cache_read_input_tokens") {
+        usage.cache_read = n;
+    }
+    if let Some(n) = count("cache_creation_input_tokens") {
+        usage.cache_write = n;
+    }
 }
 
 impl StreamAssembler {
@@ -300,11 +321,20 @@ impl StreamAssembler {
             serde_json::from_str(&event.data).map_err(|e| ModelError::Stream(e.to_string()))?;
         let index = data["index"].as_u64().unwrap_or_default() as usize;
         match data["type"].as_str() {
+            Some("message_start") => {
+                let reported = &data["message"]["usage"];
+                if reported.is_object() {
+                    merge_usage(self.usage.get_or_insert_with(Default::default), reported);
+                }
+            }
             Some("content_block_start") => {
                 while self.blocks.len() <= index {
                     self.blocks.push(PartialBlock::Unsupported);
                 }
                 self.blocks[index] = PartialBlock::start(&data["content_block"]);
+                if matches!(self.blocks[index], PartialBlock::ToolUse { .. }) {
+                    return Ok(vec![ModelEvent::ToolCallDelta]);
+                }
             }
             Some("content_block_delta") => {
                 let delta = &data["delta"];
@@ -319,9 +349,11 @@ impl StreamAssembler {
                     }
                     (Some("input_json_delta"), Some(PartialBlock::ToolUse { json, .. })) => {
                         json.push_str(piece("partial_json"));
+                        return Ok(vec![ModelEvent::ToolCallDelta]);
                     }
                     (Some("thinking_delta"), Some(PartialBlock::Thinking { thinking, .. })) => {
                         thinking.push_str(piece("thinking"));
+                        return Ok(vec![ModelEvent::ReasoningDelta(piece("thinking").into())]);
                     }
                     (Some("signature_delta"), Some(PartialBlock::Thinking { signature, .. })) => {
                         signature.push_str(piece("signature"));
@@ -332,12 +364,25 @@ impl StreamAssembler {
             Some("message_delta") if data["delta"]["stop_reason"] == "refusal" => {
                 return Err(ModelError::Refusal);
             }
+            Some("message_delta") => {
+                let reported = &data["usage"];
+                if reported.is_object() {
+                    merge_usage(self.usage.get_or_insert_with(Default::default), reported);
+                }
+            }
             Some("message_stop") => {
                 let content = std::mem::take(&mut self.blocks)
                     .into_iter()
                     .filter_map(PartialBlock::finish)
                     .collect();
-                return Ok(vec![ModelEvent::Message(content)]);
+                let mut events: Vec<_> = self
+                    .usage
+                    .take()
+                    .map(ModelEvent::Usage)
+                    .into_iter()
+                    .collect();
+                events.push(ModelEvent::Message(content));
+                return Ok(events);
             }
             Some("error") => return Err(ModelError::Stream(error_message(&data))),
             _ => {}
@@ -471,6 +516,71 @@ mod tests {
         sse("message_stop", json!({"type":"message_stop"}))
     }
 
+    /// The assembled messages, without the deltas that stream before them.
+    fn only_messages(events: Vec<ModelEvent>) -> Vec<ModelEvent> {
+        events
+            .into_iter()
+            .filter(|e| matches!(e, ModelEvent::Message(_)))
+            .collect()
+    }
+
+    #[test]
+    fn usage_reasoning_and_tool_starts_are_reported() {
+        let events = feed(&[
+            sse(
+                "message_start",
+                json!({"type":"message_start","message":{"usage":{
+                    "input_tokens": 12, "output_tokens": 1,
+                    "cache_read_input_tokens": 300, "cache_creation_input_tokens": 40
+                }}}),
+            ),
+            block_start(0, json!({"type":"thinking","thinking":"","signature":""})),
+            delta(0, json!({"type":"thinking_delta","thinking":"Let me "})),
+            delta(0, json!({"type":"thinking_delta","thinking":"look."})),
+            block_stop(0),
+            block_start(
+                1,
+                json!({"type":"tool_use","id":"t1","name":"read","input":{}}),
+            ),
+            delta(1, json!({"type":"input_json_delta","partial_json":"{}"})),
+            block_stop(1),
+            sse(
+                "message_delta",
+                json!({"type":"message_delta","delta":{"stop_reason":"tool_use"},
+                       "usage":{"output_tokens": 57}}),
+            ),
+            message_stop(),
+        ])
+        .unwrap();
+
+        assert_eq!(events[0], ModelEvent::ReasoningDelta("Let me ".into()));
+        assert_eq!(events[1], ModelEvent::ReasoningDelta("look.".into()));
+        assert_eq!(events[2], ModelEvent::ToolCallDelta);
+        assert_eq!(events[3], ModelEvent::ToolCallDelta);
+        assert_eq!(
+            events[4],
+            ModelEvent::Usage(api_types::Usage {
+                input: 12,
+                output: 57,
+                cache_read: 300,
+                cache_write: 40,
+            })
+        );
+        assert!(matches!(events[5], ModelEvent::Message(_)));
+        assert_eq!(events.len(), 6);
+    }
+
+    #[test]
+    fn a_stream_without_usage_reports_none() {
+        let events = feed(&[
+            block_start(0, json!({"type":"text","text":""})),
+            delta(0, json!({"type":"text_delta","text":"hi"})),
+            message_stop(),
+        ])
+        .unwrap();
+        assert!(!events.iter().any(|e| matches!(e, ModelEvent::Usage(_))));
+    }
+
     #[test]
     fn text_streams_as_deltas_then_the_whole_message() {
         let out = feed(&[
@@ -519,7 +629,7 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(
-            out,
+            only_messages(out),
             vec![ModelEvent::Message(vec![ContentBlock::ToolUse {
                 id: "toolu_1".into(),
                 name: "read_file".into(),
@@ -540,7 +650,7 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(
-            out,
+            only_messages(out),
             vec![ModelEvent::Message(vec![ContentBlock::ToolUse {
                 id: "t".into(),
                 name: "list_directory".into(),
@@ -562,7 +672,7 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(
-            out,
+            only_messages(out),
             vec![ModelEvent::Message(vec![
                 ContentBlock::Thinking {
                     thinking: "hmm".into(),
