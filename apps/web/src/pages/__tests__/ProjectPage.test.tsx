@@ -11,6 +11,8 @@ import ProjectPage from "../ProjectPage";
 beforeEach(() => {
   FakeSocket.reset();
   vi.stubGlobal("WebSocket", FakeSocket);
+  // A wide screen, where the workspace panel starts open.
+  vi.spyOn(window, "matchMedia").mockReturnValue({ matches: true } as MediaQueryList);
   window.history.replaceState(null, "", "/projects/p1");
 });
 afterEach(() => {

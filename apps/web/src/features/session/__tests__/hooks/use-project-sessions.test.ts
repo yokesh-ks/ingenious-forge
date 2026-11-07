@@ -21,6 +21,28 @@ function setup() {
 }
 
 describe("useProjectSessions", () => {
+  it("refreshes every copy of a project's list when one of them reloads", async () => {
+    let list = [session("a")];
+    fakeFetch({ "GET /api/projects/p1/sessions": () => ({ body: list }) });
+    const page = setup();
+    const sidebar = setup();
+    await waitFor(() => expect(sidebar.result.current.sessions).toEqual([session("a")]));
+
+    list = [session("a"), session("b")];
+    act(() => page.result.current.reload());
+    await waitFor(() => expect(sidebar.result.current.sessions).toHaveLength(2));
+    expect(page.result.current.sessions).toHaveLength(2);
+  });
+
+  it("fetches nothing and opens no socket without a project", () => {
+    const fetch = fakeFetch({});
+    const { result } = renderHook(() =>
+      useProjectSessions(null, { createSocket: createFakeSocket }),
+    );
+    expect(result.current.sessions).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("loads the project's sessions", async () => {
     fakeFetch({ "GET /api/projects/p1/sessions": [session("a")] });
     const { result } = setup();

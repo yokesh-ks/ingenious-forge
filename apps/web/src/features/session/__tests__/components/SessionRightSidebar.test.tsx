@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileChange } from "@/features/session/session-reducer";
 import { fakeFetch } from "@/test/fake-fetch";
 import SessionRightSidebar from "../../components/SessionRightSidebar";
@@ -17,6 +17,12 @@ function renderSidebar(files: FileChange[] = []) {
   );
   return { onRevertAll };
 }
+
+function wideScreen(matches: boolean) {
+  vi.spyOn(window, "matchMedia").mockReturnValue({ matches } as MediaQueryList);
+}
+
+beforeEach(() => wideScreen(true));
 
 describe("SessionRightSidebar", () => {
   it("shows the changed files tab by default", () => {
@@ -54,7 +60,23 @@ describe("SessionRightSidebar", () => {
   it("toggles open and closed from its trigger", async () => {
     renderSidebar();
     const trigger = screen.getByRole("button", { name: /toggle workspace panel/i });
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("tab", { name: /changes/i })).toBeVisible();
+
     await userEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("tab", { name: /changes/i })).not.toBeInTheDocument();
+
+    await userEvent.click(trigger);
+    expect(screen.getByRole("tab", { name: /changes/i })).toBeVisible();
+  });
+
+  it("starts closed on a narrow screen", () => {
+    wideScreen(false);
+    renderSidebar();
+    expect(screen.getByRole("button", { name: /toggle workspace panel/i })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
   });
 });
