@@ -35,7 +35,10 @@ pub fn router() -> Router<Arc<AppState>> {
                 .delete(delete_project),
         )
         .route("/projects/{id}/open-in", post(open_project_in))
-        .route("/sessions/{id}", axum::routing::patch(update_session).delete(delete_session))
+        .route(
+            "/sessions/{id}",
+            axum::routing::patch(update_session).delete(delete_session),
+        )
         .route("/sessions/{id}/fork", post(fork_session))
         .route("/projects/{id}/files", get(project_files))
         .route("/projects/{id}/file", get(project_file))
