@@ -11,7 +11,7 @@ export default function AppRail({ path }: { path: string }) {
       aria-label="Sections"
       className="flex w-15 shrink-0 flex-col gap-2 overflow-y-auto px-1 py-2"
     >
-      {APP_SECTIONS.map((section) => {
+      {APP_SECTIONS.filter((section) => !section.comingSoon).map((section) => {
         const isActive = section.id === active?.id;
         const Icon = section.icon;
         return (
