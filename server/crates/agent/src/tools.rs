@@ -1,6 +1,7 @@
-//! The agent's built-in file tools (PRD §6.1 Built-in tools: Read, Edit,
-//! List). Every path is resolved inside the project root; a path that
-//! escapes it is refused.
+//! The agent's built-in file tools (PRD §6.1 Built-in tools: `read`,
+//! `write`, `edit`, and directory listing). Every path is resolved inside
+//! the project root; a path that escapes it is refused. Each result keeps
+//! structured details (`meta`) beside its text for the UI (ADR 0012).
 
 use std::{
     fs,
@@ -10,13 +11,17 @@ use std::{
 use serde::Serialize;
 use serde_json::{json, Value};
 
-pub const READ_FILE: &str = "read_file";
-pub const EDIT_FILE: &str = "edit_file";
+use crate::changes;
+
+pub const READ: &str = "read";
+pub const WRITE: &str = "write";
+pub const EDIT: &str = "edit";
 pub const LIST_DIRECTORY: &str = "list_directory";
 /// Runs in the agent rather than here, since it streams (see `shell`).
-pub const RUN_SHELL: &str = "run_shell";
+pub const BASH: &str = "bash";
 
 const MAX_READ_BYTES: usize = 200_000;
+const DEFAULT_READ_LINES: usize = 2_000;
 const MAX_LIST_ENTRIES: usize = 1_000;
 
 /// A tool definition as sent to the model.
@@ -31,6 +36,18 @@ pub struct ToolSpec {
 pub struct ToolOutcome {
     pub output: String,
     pub is_error: bool,
+    /// Structured details of a successful call, for the UI.
+    pub meta: Option<Value>,
+}
+
+impl ToolOutcome {
+    pub fn error(output: impl Into<String>) -> Self {
+        Self {
+            output: output.into(),
+            is_error: true,
+            meta: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -49,31 +66,50 @@ impl ToolBox {
     }
 
     pub fn specs(&self) -> Vec<ToolSpec> {
+        let path = json!({
+            "type": "string",
+            "description": "Path of the file, relative to the project root or absolute inside it"
+        });
         vec![
             ToolSpec {
-                name: READ_FILE,
-                description: "Read a UTF-8 text file in the project. Paths are relative to the project root.",
+                name: READ,
+                description: "Read a UTF-8 text file and return line-numbered content.",
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "path": { "type": "string", "description": "File path relative to the project root" }
+                        "file_path": path,
+                        "offset": { "type": "number", "description": "1-based first line to return. Defaults to 1." },
+                        "limit": { "type": "number", "description": "Maximum number of lines to return. Defaults to 2000." }
                     },
-                    "required": ["path"],
+                    "required": ["file_path"],
                     "additionalProperties": false
                 }),
             },
             ToolSpec {
-                name: EDIT_FILE,
-                description: "Edit a file by replacing old_string with new_string exactly. old_string must match once unless replace_all is true. An empty old_string creates a new file containing new_string.",
+                name: WRITE,
+                description: "Create or fully replace a UTF-8 text file.",
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "path": { "type": "string", "description": "File path relative to the project root" },
-                        "old_string": { "type": "string", "description": "Exact text to replace; empty to create a new file" },
+                        "file_path": path,
+                        "content": { "type": "string", "description": "The whole new content of the file" }
+                    },
+                    "required": ["file_path", "content"],
+                    "additionalProperties": false
+                }),
+            },
+            ToolSpec {
+                name: EDIT,
+                description: "Edit an existing UTF-8 text file by replacing literal text. old_string must match once unless replace_all is true. Use write to create a file.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "file_path": path,
+                        "old_string": { "type": "string", "description": "Exact text to replace" },
                         "new_string": { "type": "string", "description": "Replacement text" },
                         "replace_all": { "type": "boolean", "description": "Replace every occurrence" }
                     },
-                    "required": ["path", "old_string", "new_string"],
+                    "required": ["file_path", "old_string", "new_string"],
                     "additionalProperties": false
                 }),
             },
@@ -89,12 +125,13 @@ impl ToolBox {
                 }),
             },
             ToolSpec {
-                name: RUN_SHELL,
-                description: "Run a shell command with sh -c in the project root. Returns stdout and stderr (the end, for long output) and the exit code.",
+                name: BASH,
+                description: "Execute a bash command (`bash -c`) in the project root and return its stdout and stderr (the end, for long output) and exit code. Give a short description of what it does.",
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "command": { "type": "string", "description": "The command to run" }
+                        "command": { "type": "string", "description": "The command to run" },
+                        "description": { "type": "string", "description": "What the command does, in a few words, for the user" }
                     },
                     "required": ["command"],
                     "additionalProperties": false
@@ -105,21 +142,27 @@ impl ToolBox {
 
     pub fn run(&self, name: &str, input: &Value) -> ToolOutcome {
         let result = match name {
-            READ_FILE => self.read_file(input),
-            EDIT_FILE => self.edit_file(input),
+            READ => self.read(input),
+            WRITE => self.write(input),
+            EDIT => self.edit(input),
             LIST_DIRECTORY => self.list_directory(input),
             other => Err(format!("unknown tool: {other}")),
         };
         match result {
-            Ok(output) => ToolOutcome {
+            Ok((output, meta)) => ToolOutcome {
                 output,
                 is_error: false,
+                meta: Some(meta),
             },
-            Err(output) => ToolOutcome {
-                output,
-                is_error: true,
-            },
+            Err(output) => ToolOutcome::error(output),
         }
+    }
+
+    /// The file a `write` or `edit` call changes, as given.
+    pub fn changed_path(name: &str, input: &Value) -> Option<String> {
+        matches!(name, WRITE | EDIT)
+            .then(|| input["file_path"].as_str().map(str::to_string))
+            .flatten()
     }
 
     /// `rel` normalised to a `/`-separated path relative to the project
@@ -171,54 +214,106 @@ impl ToolBox {
         }
     }
 
-    fn read_file(&self, input: &Value) -> Result<String, String> {
-        let rel = str_arg(input, "path")?;
+    fn read(&self, input: &Value) -> Result<(String, Value), String> {
+        let rel = str_arg(input, "file_path")?;
+        let offset = count_arg(input, "offset")?.unwrap_or(1).max(1);
+        let limit = count_arg(input, "limit")?
+            .unwrap_or(DEFAULT_READ_LINES)
+            .max(1);
         let path = self.resolve(rel)?;
         let bytes = fs::read(&path).map_err(|e| format!("cannot read {rel}: {e}"))?;
         let text =
             String::from_utf8(bytes).map_err(|_| format!("{rel} is not a UTF-8 text file"))?;
-        if text.len() <= MAX_READ_BYTES {
-            return Ok(text);
+        let all: Vec<&str> = text.lines().collect();
+        let total = all.len();
+        if offset > total.max(1) {
+            return Err(format!(
+                "offset {offset} is past the end of {rel}, which has {total} lines"
+            ));
         }
-        let mut end = MAX_READ_BYTES;
-        while !text.is_char_boundary(end) {
-            end -= 1;
+        let mut lines = Vec::new();
+        let mut numbered = String::new();
+        let mut size = 0;
+        for (i, line) in all.iter().enumerate().skip(offset - 1).take(limit) {
+            size += line.len() + 1;
+            if size > MAX_READ_BYTES && !lines.is_empty() {
+                break;
+            }
+            let number = i + 1;
+            numbered.push_str(&format!("{number}: {line}\n"));
+            lines.push(json!({ "number": number, "text": line }));
         }
-        Ok(format!(
-            "{}\n\n[truncated: file is {} bytes, showing the first {end}]",
-            &text[..end],
-            text.len()
-        ))
+        let shown_end = offset - 1 + lines.len();
+        let shown = path.display().to_string();
+        let mut output =
+            format!("<path>{shown}</path>\n<type>file</type>\n<content>\n{numbered}</content>");
+        if shown_end < total {
+            output.push_str(&format!(
+                "\n\n[Showing lines {offset}-{shown_end} of {total}; pass offset {} to read on.]",
+                shown_end + 1
+            ));
+        }
+        let meta = json!({
+            "path": shown,
+            "offset": offset,
+            "lines": lines,
+            "total_lines": total,
+        });
+        Ok((output, meta))
     }
 
-    /// What an `edit_file` call would do, without writing: the file's
+    /// What a `write` or `edit` call would do, without writing: the file's
     /// content before (`None` when it would be created) and after.
-    pub fn preview_edit(&self, input: &Value) -> Result<(Option<String>, String), String> {
-        self.plan_edit(input)
+    pub fn preview_change(
+        &self,
+        name: &str,
+        input: &Value,
+    ) -> Result<(Option<String>, String), String> {
+        self.plan_change(name, input)
             .map(|plan| (plan.original, plan.content))
     }
 
-    fn plan_edit(&self, input: &Value) -> Result<EditPlan, String> {
-        let rel = str_arg(input, "path")?;
+    fn plan_change(&self, name: &str, input: &Value) -> Result<ChangePlan, String> {
+        match name {
+            WRITE => self.plan_write(input),
+            EDIT => self.plan_edit(input),
+            other => Err(format!("{other} does not change files")),
+        }
+    }
+
+    fn plan_write(&self, input: &Value) -> Result<ChangePlan, String> {
+        let rel = str_arg(input, "file_path")?;
+        let content = str_arg(input, "content")?;
+        let path = self.resolve(rel)?;
+        let original = match fs::read(&path) {
+            Ok(bytes) => Some(
+                String::from_utf8(bytes).map_err(|_| format!("{rel} is not a UTF-8 text file"))?,
+            ),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(format!("cannot read {rel}: {e}")),
+        };
+        let verb = if original.is_some() {
+            "Wrote"
+        } else {
+            "Created"
+        };
+        Ok(ChangePlan {
+            summary: format!("{verb} {rel}"),
+            path,
+            original,
+            content: content.to_string(),
+        })
+    }
+
+    fn plan_edit(&self, input: &Value) -> Result<ChangePlan, String> {
+        let rel = str_arg(input, "file_path")?;
         let old = str_arg(input, "old_string")?;
         let new = str_arg(input, "new_string")?;
         let replace_all = input["replace_all"].as_bool().unwrap_or(false);
-        let path = self.resolve(rel)?;
-
         if old.is_empty() {
-            if path.exists() {
-                return Err(format!(
-                    "{rel} already exists; pass the text to replace as old_string"
-                ));
-            }
-            return Ok(EditPlan {
-                summary: format!("Created {rel} (+{} lines)", new.lines().count()),
-                path,
-                original: None,
-                content: new.to_string(),
-            });
+            return Err("old_string is empty; use write to create or replace a whole file".into());
         }
-
+        let path = self.resolve(rel)?;
         let text = fs::read_to_string(&path).map_err(|e| format!("cannot read {rel}: {e}"))?;
         let count = text.matches(old).count();
         if count == 0 {
@@ -234,31 +329,49 @@ impl ToolBox {
         } else {
             "occurrences"
         };
-        Ok(EditPlan {
-            summary: format!(
-                "Edited {rel}: replaced {count} {noun} (+{} −{} lines)",
-                new.lines().count(),
-                old.lines().count()
-            ),
+        Ok(ChangePlan {
+            summary: format!("Edited {rel}: replaced {count} {noun}"),
             path,
             content: text.replace(old, new),
             original: Some(text),
         })
     }
 
-    fn edit_file(&self, input: &Value) -> Result<String, String> {
-        let plan = self.plan_edit(input)?;
-        let rel = str_arg(input, "path")?;
+    fn write(&self, input: &Value) -> Result<(String, Value), String> {
+        self.apply_change(WRITE, input)
+    }
+
+    fn edit(&self, input: &Value) -> Result<(String, Value), String> {
+        self.apply_change(EDIT, input)
+    }
+
+    fn apply_change(&self, name: &str, input: &Value) -> Result<(String, Value), String> {
+        let plan = self.plan_change(name, input)?;
+        let rel = str_arg(input, "file_path")?;
         if plan.original.is_none() {
             if let Some(parent) = plan.path.parent() {
                 fs::create_dir_all(parent).map_err(|e| format!("cannot create {rel}: {e}"))?;
             }
         }
         fs::write(&plan.path, &plan.content).map_err(|e| format!("cannot write {rel}: {e}"))?;
-        Ok(plan.summary)
+        let shown = plan.path.display().to_string();
+        let change = changes::unified_diff(&shown, plan.original.as_deref(), Some(&plan.content));
+        let meta = json!({
+            "path": shown,
+            "created": plan.original.is_none(),
+            "additions": change.additions,
+            "deletions": change.deletions,
+        });
+        Ok((
+            format!(
+                "{} (+{} −{} lines)",
+                plan.summary, change.additions, change.deletions
+            ),
+            meta,
+        ))
     }
 
-    fn list_directory(&self, input: &Value) -> Result<String, String> {
+    fn list_directory(&self, input: &Value) -> Result<(String, Value), String> {
         let rel = match &input["path"] {
             Value::Null => ".",
             Value::String(s) if s.is_empty() => ".",
@@ -279,8 +392,10 @@ impl ToolBox {
                 }
             })
             .collect();
+        let shown = path.display().to_string();
         if entries.is_empty() {
-            return Ok("(empty directory)".into());
+            let meta = json!({ "path": shown, "entries": 0, "truncated": false });
+            return Ok(("(empty directory)".into(), meta));
         }
         entries.sort();
         let total = entries.len();
@@ -292,7 +407,12 @@ impl ToolBox {
                 total - MAX_LIST_ENTRIES
             ));
         }
-        Ok(out)
+        let meta = json!({
+            "path": shown,
+            "entries": total,
+            "truncated": total > MAX_LIST_ENTRIES,
+        });
+        Ok((out, meta))
     }
 
     /// Resolves `rel` inside the project root, refusing `..` escapes,
@@ -324,13 +444,26 @@ impl ToolBox {
     }
 }
 
-/// A checked edit: where it writes, the content before and after, and a
-/// summary for the model.
-struct EditPlan {
+/// A checked `write` or `edit`: where it writes, the content before and
+/// after, and a summary for the model.
+struct ChangePlan {
     path: PathBuf,
     original: Option<String>,
     content: String,
     summary: String,
+}
+
+/// An optional whole-number argument; models sometimes send `3.0`.
+fn count_arg(input: &Value, key: &str) -> Result<Option<usize>, String> {
+    match &input[key] {
+        Value::Null => Ok(None),
+        Value::Number(n) => n
+            .as_f64()
+            .filter(|n| *n >= 0.0 && n.fract() == 0.0)
+            .map(|n| Some(n as usize))
+            .ok_or_else(|| format!("{key} must be a whole number")),
+        _ => Err(format!("{key} must be a number")),
+    }
 }
 
 fn str_arg<'a>(input: &'a Value, key: &str) -> Result<&'a str, String> {

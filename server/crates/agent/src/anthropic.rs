@@ -789,10 +789,7 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(
-            names,
-            ["read_file", "edit_file", "list_directory", "run_shell"]
-        );
+        assert_eq!(names, ["read", "write", "edit", "list_directory", "bash"]);
         assert!(body["tools"][0]["input_schema"].is_object());
     }
 

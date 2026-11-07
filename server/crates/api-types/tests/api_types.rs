@@ -89,8 +89,10 @@ fn event_session_id_accessor_covers_every_variant() {
         SessionEvent::ToolCall {
             session_id: "a".into(),
             call_id: "c".into(),
-            name: "read_file".into(),
+            name: "read".into(),
             args: json!({}),
+            turn: 1,
+            step: 1,
         },
         SessionEvent::ToolResult {
             session_id: "a".into(),
@@ -98,6 +100,9 @@ fn event_session_id_accessor_covers_every_variant() {
             output: String::new(),
             is_error: false,
             exit_code: None,
+            meta: None,
+            started_at: 0,
+            ended_at: 0,
         },
         SessionEvent::Done {
             session_id: "a".into(),
@@ -113,8 +118,10 @@ fn tool_call_and_result_share_a_call_id() {
     let call = SessionEvent::ToolCall {
         session_id: "s1".into(),
         call_id: "toolu_1".into(),
-        name: "read_file".into(),
-        args: json!({ "path": "README.md" }),
+        name: "read".into(),
+        args: json!({ "file_path": "README.md" }),
+        turn: 2,
+        step: 1,
     };
     let result = SessionEvent::ToolResult {
         session_id: "s1".into(),
@@ -122,6 +129,9 @@ fn tool_call_and_result_share_a_call_id() {
         output: "# Forge".into(),
         is_error: false,
         exit_code: None,
+        meta: Some(json!({ "total_lines": 1 })),
+        started_at: 10,
+        ended_at: 45,
     };
     assert_eq!(
         serde_json::to_value(&call).unwrap(),
@@ -129,8 +139,10 @@ fn tool_call_and_result_share_a_call_id() {
             "type": "tool_call",
             "session_id": "s1",
             "call_id": "toolu_1",
-            "name": "read_file",
-            "args": { "path": "README.md" }
+            "name": "read",
+            "args": { "file_path": "README.md" },
+            "turn": 2,
+            "step": 1
         })
     );
     assert_eq!(
@@ -141,7 +153,10 @@ fn tool_call_and_result_share_a_call_id() {
             "call_id": "toolu_1",
             "output": "# Forge",
             "is_error": false,
-            "exit_code": null
+            "exit_code": null,
+            "meta": { "total_lines": 1 },
+            "started_at": 10,
+            "ended_at": 45
         })
     );
 }
@@ -459,6 +474,9 @@ fn tool_output_lines_and_exit_codes_serialize() {
         output: "done".into(),
         is_error: false,
         exit_code: Some(2),
+        meta: None,
+        started_at: 0,
+        ended_at: 0,
     };
     assert_eq!(serde_json::to_value(&result).unwrap()["exit_code"], 2);
     // Results logged before exit codes existed still load.
@@ -470,6 +488,9 @@ fn tool_output_lines_and_exit_codes_serialize() {
         old,
         SessionEvent::ToolResult {
             exit_code: None,
+            meta: None,
+            started_at: 0,
+            ended_at: 0,
             ..
         }
     ));

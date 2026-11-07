@@ -64,16 +64,17 @@ impl Sandbox {
         }
     }
 
-    /// The program and arguments that run `command` with `sh -c` under
-    /// this sandbox.
+    /// The program and arguments that run `command` with `bash -c` (or
+    /// `sh -c` where bash is not installed) under this sandbox.
     pub fn command(
         &self,
         policy: &Policy,
         command: &str,
     ) -> Result<(PathBuf, Vec<String>), String> {
-        let shell = || vec!["/bin/sh".to_string(), "-c".into(), command.into()];
+        let program = shell_program();
+        let shell = || vec![program.to_string(), "-c".into(), command.into()];
         match self {
-            Sandbox::Off => Ok(("/bin/sh".into(), shell()[1..].to_vec())),
+            Sandbox::Off => Ok((program.into(), shell()[1..].to_vec())),
             Sandbox::SandboxExec => {
                 let mut args = vec!["-p".to_string(), sandbox_exec_profile(policy)];
                 args.extend(shell());
@@ -88,6 +89,16 @@ impl Sandbox {
                 "Commands are not run because the sandbox is unavailable: {reason}"
             )),
         }
+    }
+}
+
+/// The shell commands run in: bash, as the `bash` tool says, or `sh`
+/// where bash is not installed.
+pub fn shell_program() -> &'static str {
+    if Path::new("/bin/bash").exists() {
+        "/bin/bash"
+    } else {
+        "/bin/sh"
     }
 }
 

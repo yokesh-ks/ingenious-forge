@@ -512,6 +512,10 @@ async fn output_is_published_within_200ms_of_model_emission() {
 #[tokio::test]
 async fn tool_calls_run_and_their_results_go_back_to_the_model() {
     let root = project(&[("notes.txt", "remember the milk")]);
+    let read_back = format!(
+        "<path>{}</path>\n<type>file</type>\n<content>\n1: remember the milk\n</content>",
+        root.join("notes.txt").display()
+    );
     let (agent, model, mut rx) = setup_in(
         FakeModel::replying(vec![
             vec![
@@ -524,8 +528,8 @@ async fn tool_calls_run_and_their_results_go_back_to_the_model() {
                         },
                         ContentBlock::ToolUse {
                             id: "t1".into(),
-                            name: "read_file".into(),
-                            input: json!({ "path": "notes.txt" }),
+                            name: "read".into(),
+                            input: json!({ "file_path": "notes.txt" }),
                         },
                     ])),
                 ),
@@ -542,8 +546,8 @@ async fn tool_calls_run_and_their_results_go_back_to_the_model() {
         [
             "started",
             "out:Let me look. ",
-            r#"tool:read_file:{"path":"notes.txt"}"#,
-            "result:t1:false:remember the milk",
+            r#"tool:read:{"file_path":"notes.txt"}"#,
+            &format!("result:t1:false:{read_back}"),
             "out:It says milk.",
             "done",
         ]
@@ -559,13 +563,13 @@ async fn tool_calls_run_and_their_results_go_back_to_the_model() {
                 },
                 ContentBlock::ToolUse {
                     id: "t1".into(),
-                    name: "read_file".into(),
-                    input: json!({ "path": "notes.txt" }),
+                    name: "read".into(),
+                    input: json!({ "file_path": "notes.txt" }),
                 },
             ]),
             ChatMessage::user(vec![ContentBlock::ToolResult {
                 tool_use_id: "t1".into(),
-                content: "remember the milk".into(),
+                content: read_back.clone(),
                 is_error: false,
             }]),
         ]
@@ -582,10 +586,7 @@ async fn every_request_offers_the_file_tools_and_the_shell() {
         .iter()
         .map(|t| t.name)
         .collect();
-    assert_eq!(
-        names,
-        ["read_file", "edit_file", "list_directory", "run_shell"]
-    );
+    assert_eq!(names, ["read", "write", "edit", "list_directory", "bash"]);
 }
 
 #[tokio::test]
@@ -595,8 +596,8 @@ async fn edit_and_list_tools_act_on_the_project() {
         FakeModel::replying(vec![
             vec![tool_use(
                 "e1",
-                "edit_file",
-                json!({ "path": "a.txt", "old_string": "old", "new_string": "new" }),
+                "edit",
+                json!({ "file_path": "a.txt", "old_string": "old", "new_string": "new" }),
             )],
             vec![tool_use("l1", "list_directory", json!({}))],
             vec![text("ok")],
@@ -626,8 +627,8 @@ async fn a_failing_tool_is_reported_to_the_model_and_the_turn_continues() {
         FakeModel::replying(vec![
             vec![tool_use(
                 "t1",
-                "read_file",
-                json!({ "path": "missing.txt" }),
+                "read",
+                json!({ "file_path": "missing.txt" }),
             )],
             vec![text("Sorry, no file.")],
         ]),
@@ -686,11 +687,15 @@ async fn an_empty_reply_ends_the_turn() {
     assert_eq!(model.requests.lock().unwrap().len(), 1);
 }
 
+/// An `edit` of `path`, or a `write` creating it when `old` is empty.
 fn edit(id: &str, path: &str, old: &str, new: &str) -> Step {
+    if old.is_empty() {
+        return tool_use(id, "write", json!({ "file_path": path, "content": new }));
+    }
     tool_use(
         id,
-        "edit_file",
-        json!({ "path": path, "old_string": old, "new_string": new }),
+        "edit",
+        json!({ "file_path": path, "old_string": old, "new_string": new }),
     )
 }
 
@@ -779,7 +784,7 @@ async fn failed_edits_and_reads_publish_no_change() {
     let (agent, _, mut rx) = setup_in(
         FakeModel::replying(vec![
             vec![edit("e1", "a.txt", "missing", "x")],
-            vec![tool_use("r1", "read_file", json!({ "path": "a.txt" }))],
+            vec![tool_use("r1", "read", json!({ "file_path": "a.txt" }))],
             vec![text("ok")],
         ]),
         project(&[("a.txt", "body")]),

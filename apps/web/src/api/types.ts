@@ -266,12 +266,27 @@ first_token_ms: number | null,
 /**
  * First streamed delta to the settled reply.
  */
-generation_ms: number | null, } | { "type": "reasoning_delta", session_id: string, turn: number, step: number, chunk: string, } | { "type": "assistant_message", session_id: string, turn: number, step: number, content: Array<JsonValue>, provider: string, model: string, usage: Usage | null, } | { "type": "assistant_attempt", session_id: string, turn: number, step: number, error: string, } | { "type": "turn_ended", session_id: string, turn: number, reason: TurnEndReason, } | { "type": "output", session_id: string, chunk: string, } | { "type": "tool_call", session_id: string, call_id: string, name: string, args: JsonValue, } | { "type": "tool_output", session_id: string, call_id: string, stream: OutputStream, text: string, } | { "type": "tool_result", session_id: string, call_id: string, output: string, is_error: boolean, 
+generation_ms: number | null, } | { "type": "reasoning_delta", session_id: string, turn: number, step: number, chunk: string, } | { "type": "assistant_message", session_id: string, turn: number, step: number, content: Array<JsonValue>, provider: string, model: string, usage: Usage | null, } | { "type": "assistant_attempt", session_id: string, turn: number, step: number, error: string, } | { "type": "turn_ended", session_id: string, turn: number, reason: TurnEndReason, } | { "type": "output", session_id: string, chunk: string, } | { "type": "tool_call", session_id: string, call_id: string, name: string, args: JsonValue, 
+/**
+ * The turn and step that made the call; 0 in logs written before
+ * ADR 0012.
+ */
+turn: number, step: number, } | { "type": "tool_output", session_id: string, call_id: string, stream: OutputStream, text: string, } | { "type": "tool_result", session_id: string, call_id: string, output: string, is_error: boolean, 
 /**
  * The exit code of a shell command; `None` for other tools and
  * for a command that did not exit normally.
  */
-exit_code: number | null, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, } | { "type": "approval_mode_changed", session_id: string, mode: ApprovalMode, } | { "type": "approval_requested", session_id: string, call_id: string, kind: ApprovalKind, command: string | null, path: string | null, diff: string | null, } | { "type": "approval_resolved", session_id: string, call_id: string, decision: ApprovalDecision, } | { "type": "sandbox_changed", session_id: string, sandbox: SandboxInfo, };
+exit_code: number | null, 
+/**
+ * Structured details of the result for the UI, such as the line
+ * numbers of a read; `None` for failures and older logs.
+ */
+meta: JsonValue | null, 
+/**
+ * When the tool started and finished running, in milliseconds
+ * since the Unix epoch; 0 in logs written before ADR 0012.
+ */
+started_at: number, ended_at: number, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, } | { "type": "approval_mode_changed", session_id: string, mode: ApprovalMode, } | { "type": "approval_requested", session_id: string, call_id: string, kind: ApprovalKind, command: string | null, path: string | null, diff: string | null, } | { "type": "approval_resolved", session_id: string, call_id: string, decision: ApprovalDecision, } | { "type": "sandbox_changed", session_id: string, sandbox: SandboxInfo, };
 
 export type SessionEnvelope = { seq: number, 
 /**
@@ -294,9 +309,24 @@ first_token_ms: number | null,
 /**
  * First streamed delta to the settled reply.
  */
-generation_ms: number | null, } | { "type": "reasoning_delta", session_id: string, turn: number, step: number, chunk: string, } | { "type": "assistant_message", session_id: string, turn: number, step: number, content: Array<JsonValue>, provider: string, model: string, usage: Usage | null, } | { "type": "assistant_attempt", session_id: string, turn: number, step: number, error: string, } | { "type": "turn_ended", session_id: string, turn: number, reason: TurnEndReason, } | { "type": "output", session_id: string, chunk: string, } | { "type": "tool_call", session_id: string, call_id: string, name: string, args: JsonValue, } | { "type": "tool_output", session_id: string, call_id: string, stream: OutputStream, text: string, } | { "type": "tool_result", session_id: string, call_id: string, output: string, is_error: boolean, 
+generation_ms: number | null, } | { "type": "reasoning_delta", session_id: string, turn: number, step: number, chunk: string, } | { "type": "assistant_message", session_id: string, turn: number, step: number, content: Array<JsonValue>, provider: string, model: string, usage: Usage | null, } | { "type": "assistant_attempt", session_id: string, turn: number, step: number, error: string, } | { "type": "turn_ended", session_id: string, turn: number, reason: TurnEndReason, } | { "type": "output", session_id: string, chunk: string, } | { "type": "tool_call", session_id: string, call_id: string, name: string, args: JsonValue, 
+/**
+ * The turn and step that made the call; 0 in logs written before
+ * ADR 0012.
+ */
+turn: number, step: number, } | { "type": "tool_output", session_id: string, call_id: string, stream: OutputStream, text: string, } | { "type": "tool_result", session_id: string, call_id: string, output: string, is_error: boolean, 
 /**
  * The exit code of a shell command; `None` for other tools and
  * for a command that did not exit normally.
  */
-exit_code: number | null, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, } | { "type": "approval_mode_changed", session_id: string, mode: ApprovalMode, } | { "type": "approval_requested", session_id: string, call_id: string, kind: ApprovalKind, command: string | null, path: string | null, diff: string | null, } | { "type": "approval_resolved", session_id: string, call_id: string, decision: ApprovalDecision, } | { "type": "sandbox_changed", session_id: string, sandbox: SandboxInfo, });
+exit_code: number | null, 
+/**
+ * Structured details of the result for the UI, such as the line
+ * numbers of a read; `None` for failures and older logs.
+ */
+meta: JsonValue | null, 
+/**
+ * When the tool started and finished running, in milliseconds
+ * since the Unix epoch; 0 in logs written before ADR 0012.
+ */
+started_at: number, ended_at: number, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, } | { "type": "approval_mode_changed", session_id: string, mode: ApprovalMode, } | { "type": "approval_requested", session_id: string, call_id: string, kind: ApprovalKind, command: string | null, path: string | null, diff: string | null, } | { "type": "approval_resolved", session_id: string, call_id: string, decision: ApprovalDecision, } | { "type": "sandbox_changed", session_id: string, sandbox: SandboxInfo, });

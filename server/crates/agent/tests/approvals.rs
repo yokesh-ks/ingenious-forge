@@ -11,7 +11,7 @@ use std::{
 
 use agent::{
     model::{ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest},
-    tools::{ToolBox, EDIT_FILE, READ_FILE, RUN_SHELL},
+    tools::{ToolBox, BASH, EDIT, READ},
     Agent,
 };
 use api_types::{
@@ -156,8 +156,8 @@ async fn ask_mode_shows_the_edit_diff_and_waits_before_writing() {
         vec![
             call(
                 "t1",
-                EDIT_FILE,
-                json!({"path": "a.txt", "old_string": "old", "new_string": "new"}),
+                EDIT,
+                json!({"file_path": "a.txt", "old_string": "old", "new_string": "new"}),
             ),
             reply("done"),
         ],
@@ -210,7 +210,7 @@ async fn deny_skips_the_command_and_the_agent_continues() {
         ApprovalMode::Ask,
         &[],
         vec![
-            call("t1", RUN_SHELL, json!({"command": "touch ran"})),
+            call("t1", BASH, json!({"command": "touch ran"})),
             reply("ok, skipped"),
         ],
     );
@@ -247,9 +247,9 @@ async fn always_allow_approves_that_exact_command_for_the_session() {
         ApprovalMode::Ask,
         &[],
         vec![
-            call("t1", RUN_SHELL, json!({"command": "echo hi"})),
-            call("t2", RUN_SHELL, json!({"command": "echo hi"})),
-            call("t3", RUN_SHELL, json!({"command": "echo other"})),
+            call("t1", BASH, json!({"command": "echo hi"})),
+            call("t2", BASH, json!({"command": "echo hi"})),
+            call("t3", BASH, json!({"command": "echo other"})),
             reply("done"),
         ],
     );
@@ -278,10 +278,10 @@ async fn auto_edit_applies_edits_but_asks_for_commands() {
         vec![
             call(
                 "t1",
-                EDIT_FILE,
-                json!({"path": "a.txt", "old_string": "old", "new_string": "new"}),
+                EDIT,
+                json!({"file_path": "a.txt", "old_string": "old", "new_string": "new"}),
             ),
-            call("t2", RUN_SHELL, json!({"command": "true"})),
+            call("t2", BASH, json!({"command": "true"})),
             reply("done"),
         ],
     );
@@ -309,10 +309,10 @@ async fn full_auto_never_asks() {
         vec![
             call(
                 "t1",
-                EDIT_FILE,
-                json!({"path": "a.txt", "old_string": "old", "new_string": "new"}),
+                EDIT,
+                json!({"file_path": "a.txt", "old_string": "old", "new_string": "new"}),
             ),
-            call("t2", RUN_SHELL, json!({"command": "echo ran > out.txt"})),
+            call("t2", BASH, json!({"command": "echo ran > out.txt"})),
             reply("done"),
         ],
     );
@@ -343,7 +343,7 @@ async fn reading_never_needs_approval() {
         ApprovalMode::Ask,
         &[("a.txt", "x")],
         vec![
-            call("t1", READ_FILE, json!({"path": "a.txt"})),
+            call("t1", READ, json!({"file_path": "a.txt"})),
             reply("done"),
         ],
     );
@@ -357,8 +357,8 @@ async fn a_mode_change_applies_to_the_next_action() {
         ApprovalMode::Ask,
         &[],
         vec![
-            call("t1", RUN_SHELL, json!({"command": "true"})),
-            call("t2", RUN_SHELL, json!({"command": "true"})),
+            call("t1", BASH, json!({"command": "true"})),
+            call("t2", BASH, json!({"command": "true"})),
             reply("done"),
         ],
     );
@@ -378,7 +378,7 @@ async fn stopping_the_turn_while_a_card_waits_ends_it() {
         ApprovalMode::Ask,
         &[],
         vec![
-            call("t1", RUN_SHELL, json!({"command": "touch ran"})),
+            call("t1", BASH, json!({"command": "touch ran"})),
             reply("unused"),
         ],
     );

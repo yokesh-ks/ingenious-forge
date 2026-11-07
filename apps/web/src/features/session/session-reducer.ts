@@ -30,6 +30,8 @@ export interface ToolItem {
   exitCode: number | null;
   /** The approval card for this call, when one was shown. */
   approval: Approval | null;
+  /** Structured details of the result, such as a read's lines. */
+  meta: JsonValue | null;
 }
 
 /** An approval card: what it asks about and, once answered, the answer. */
@@ -167,6 +169,7 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
         hiddenLines: 0,
         exitCode: null,
         approval: null,
+        meta: null,
       });
       return true;
     case "approval_requested": {
@@ -210,6 +213,7 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
         output: event.output,
         // Results logged before exit codes existed have no field.
         exitCode: event.exit_code ?? null,
+        meta: event.meta ?? null,
       };
       return true;
     }

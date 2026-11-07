@@ -214,8 +214,8 @@ async fn serve_script(replies: Vec<&'static str>) -> (String, Arc<Mutex<Vec<serd
 }
 
 const CALLS_EDIT: &str = "data: {\"choices\":[{\"delta\":{\"content\":\"Editing.\"}}]}\n\n\
-data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"edit_file\",\"arguments\":\"\"}}]}}]}\n\n\
-data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"path\\\":\\\"a.txt\\\",\"}}]}}]}\n\n\
+data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"edit\",\"arguments\":\"\"}}]}}]}\n\n\
+data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"file_path\\\":\\\"a.txt\\\",\"}}]}}]}\n\n\
 data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"old_string\\\":\\\"old\\\",\\\"new_string\\\":\\\"new\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n\
 data: [DONE]\n\n";
 
@@ -298,7 +298,7 @@ async fn an_approved_edit_runs_and_its_result_goes_back_to_the_model() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|t| t["function"]["name"] == "edit_file"));
+        .any(|t| t["function"]["name"] == "edit"));
     assert_eq!(bodies[0]["reasoning_effort"], "high");
 
     let messages = bodies[1]["messages"].as_array().unwrap();
@@ -308,7 +308,7 @@ async fn an_approved_edit_runs_and_its_result_goes_back_to_the_model() {
         .expect("the assistant's tool call is replayed");
     let call = &assistant["tool_calls"][0];
     assert_eq!(call["id"], "call-1");
-    assert_eq!(call["function"]["name"], "edit_file");
+    assert_eq!(call["function"]["name"], "edit");
     let arguments: serde_json::Value =
         serde_json::from_str(call["function"]["arguments"].as_str().unwrap()).unwrap();
     assert_eq!(arguments["new_string"], "new");

@@ -63,6 +63,7 @@ describe("SessionView", () => {
             hiddenLines: 0,
             exitCode: null,
             approval: null,
+            meta: null,
           },
         ]}
         running={false}
@@ -90,6 +91,7 @@ describe("SessionView", () => {
             hiddenLines: 0,
             exitCode: null,
             approval: null,
+            meta: null,
           },
         ]}
         running

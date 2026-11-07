@@ -79,6 +79,7 @@ describe("SessionWorkspace", () => {
           hiddenLines: 0,
           exitCode: null,
           approval: { kind: "command", command: "ls", path: null, diff: null, status: "pending" },
+          meta: null,
         },
       ],
     });

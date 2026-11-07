@@ -147,6 +147,8 @@ describe("useSession", () => {
         call_id: `t${i}`,
         name: "read_file",
         args: {},
+        turn: 1,
+        step: 1,
       });
     }
     fakeFetch({ "GET /api/sessions/s1/events": backlog });

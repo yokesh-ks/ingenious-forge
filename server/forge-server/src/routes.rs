@@ -326,7 +326,7 @@ mod tests {
             vec![
                 vec![ModelEvent::Message(vec![ContentBlock::ToolUse {
                     id: "t1".into(),
-                    name: "run_shell".into(),
+                    name: "bash".into(),
                     input: json!({ "command": "true" }),
                 }])],
                 vec![ModelEvent::TextDelta("ok".into())],

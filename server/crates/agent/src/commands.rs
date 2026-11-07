@@ -105,7 +105,7 @@ fn init_prompt(tools: &ToolBox, guidance: &str) -> String {
          - code style and conventions you can see in the code;\n\
          - anything an agent must or must not do here.\n\
          Only state what you found in the repository. Write the file with \
-         edit_file (an empty old_string creates it), then summarise what you wrote.\n\n\
+         write, then summarise what you wrote.\n\n\
          Repository survey:\n{}",
         survey(tools)
     );
