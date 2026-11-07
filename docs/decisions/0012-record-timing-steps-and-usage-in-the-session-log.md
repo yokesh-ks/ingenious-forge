@@ -1,6 +1,6 @@
 # 0012. Record timing, model steps and token usage in the session log
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-07
 - **PRD:** §6.1 Sessions and resume, §6.2 Trajectory view, §6.2 Session
   statistics, §6.2 Typed API, §7 Performance
