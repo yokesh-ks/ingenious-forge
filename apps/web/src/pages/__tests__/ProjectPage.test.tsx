@@ -120,7 +120,7 @@ describe("ProjectPage", () => {
     render(<ProjectPage projectId="p1" sessionId={null} />);
 
     const link = await screen.findByRole("link", { name: /open settings/i });
-    expect(link).toHaveAttribute("href", "/settings");
+    expect(link).toHaveAttribute("href", "/settings/providers");
     expect(screen.getByText(/no model provider/i)).toBeInTheDocument();
     expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
   });

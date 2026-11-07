@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { useProject } from "@/features/session/hooks/use-project";
 import { useSessionTitle } from "@/features/session/hooks/use-session-title";
+import { settingsSectionForPath } from "@/features/settings/settings-sections";
 import { Link, matchPath } from "@/lib/router";
 
 /** The page header's breadcrumb: the section, the open project, the open session. */
@@ -20,6 +21,7 @@ export default function AppBreadcrumb({ path }: { path: string }) {
   const sessionTitle = useSessionTitle(projectId, sessionMatch?.sessionId ?? null);
   const section = sectionForPath(path);
   const root = section && section.id !== "work" ? section.label : "Projects";
+  const settingsPage = settingsSectionForPath(path);
 
   return (
     <Breadcrumb>
@@ -33,6 +35,14 @@ export default function AppBreadcrumb({ path }: { path: string }) {
             </BreadcrumbLink>
           )}
         </BreadcrumbItem>
+        {settingsPage && (
+          <>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{settingsPage.label}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </>
+        )}
         {projectId !== null && (
           <>
             <BreadcrumbSeparator />

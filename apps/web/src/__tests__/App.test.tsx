@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeFetch } from "@/test/fake-fetch";
 import { FakeSocket } from "@/test/fake-socket";
@@ -101,5 +102,48 @@ describe("App", () => {
     window.history.replaceState(null, "", "/settings");
     window.dispatchEvent(new PopStateEvent("popstate"));
     expect(await screen.findByRole("heading", { name: /^settings$/i })).toBeInTheDocument();
+    // It opens on the first page, in place of /settings in the history.
+    expect(await screen.findByRole("heading", { name: "Appearance" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/settings/appearance");
+  });
+
+  it("gives Settings its own sidebar, one URL per page", async () => {
+    fakeFetch({ "GET /api/projects": [], "GET /api/settings/providers": [] });
+    window.history.replaceState(null, "", "/settings/appearance");
+    render(<App />);
+    const nav = await screen.findByRole("navigation", { name: "Settings" });
+    expect(
+      within(nav)
+        .getAllByRole("link")
+        .map((link) => [link.textContent, link.getAttribute("href")]),
+    ).toEqual([
+      ["Appearance", "/settings/appearance"],
+      ["Providers", "/settings/providers"],
+      ["Session defaults", "/settings/defaults"],
+      ["GitHub", "/settings/github"],
+    ]);
+    expect(within(nav).getByRole("link", { name: "Appearance" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.queryByText(/open folder/i)).not.toBeInTheDocument();
+
+    await userEvent.click(within(nav).getByRole("link", { name: "Providers" }));
+
+    expect(window.location.pathname).toBe("/settings/providers");
+    expect(screen.queryByRole("heading", { name: "Providers" })).not.toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "Providers" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    // The rail still shows Settings as the current section.
+    expect(document.querySelector('a[href="/settings"]')).toHaveAttribute("aria-current", "page");
+  });
+
+  it("does not treat an unknown settings path as a page", async () => {
+    fakeFetch({ "GET /api/projects": [] });
+    window.history.replaceState(null, "", "/settings/nope");
+    render(<App />);
+    expect(await screen.findByText(/page not found/i)).toBeInTheDocument();
   });
 });
