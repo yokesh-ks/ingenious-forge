@@ -20,3 +20,4 @@ new ADR that supersedes the old one. See
 | [0010](0010-full-shadcn-component-catalog.md) | Pre-install the full Shadcn component catalog | Proposed | 2026-11-06 |
 | [0011](0011-use-the-radix-vega-shadcn-preset.md) | Use the radix-vega Shadcn preset and its dependencies | Proposed | 2026-11-07 |
 | [0012](0012-record-timing-steps-and-usage-in-the-session-log.md) | Record timing, model steps and token usage in the session log | Accepted | 2026-11-07 |
+| [0013](0013-render-markdown-with-react-markdown-and-shiki.md) | Render Markdown with react-markdown, remark-gfm and Shiki | Proposed | 2026-11-07 |
