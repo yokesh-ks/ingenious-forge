@@ -110,12 +110,15 @@ async fn the_first_message_names_the_session_and_every_message_bumps_activity() 
         .await
         .unwrap();
 
-    projects::record_message(&pool, &session.id, "  Fix the login bug\nwith details  ")
+    let named = projects::record_message(&pool, &session.id, "  Fix the login bug\nwith details  ")
         .await
         .unwrap();
-    projects::record_message(&pool, &session.id, "and add a test")
+    let again = projects::record_message(&pool, &session.id, "and add a test")
         .await
         .unwrap();
+    // Only the first message names the session.
+    assert_eq!(named.as_deref(), Some("Fix the login bug"));
+    assert_eq!(again, None);
 
     let listed = projects::list_sessions(&pool, &project.id).await.unwrap();
     assert_eq!(listed.len(), 1);

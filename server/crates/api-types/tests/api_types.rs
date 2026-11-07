@@ -1,4 +1,6 @@
-use api_types::{typescript_bindings, ClientMessage, SessionEvent, TurnEndReason, Usage};
+use api_types::{
+    typescript_bindings, ClientMessage, MessageSource, SessionEvent, TurnEndReason, Usage,
+};
 use serde_json::json;
 
 const GENERATED_TS: &str = "../../../apps/web/src/api/types.ts";
@@ -359,12 +361,24 @@ fn user_message_event_serializes() {
     let event = SessionEvent::UserMessage {
         session_id: "s1".into(),
         text: "hi".into(),
+        source: MessageSource::Steering,
     };
     assert_eq!(event.session_id(), "s1");
     assert_eq!(
         serde_json::to_value(&event).unwrap(),
-        json!({ "type": "user_message", "session_id": "s1", "text": "hi" })
+        json!({ "type": "user_message", "session_id": "s1", "text": "hi", "source": "steering" })
     );
+    // Messages logged before sources read as typed by a human.
+    let old: SessionEvent =
+        serde_json::from_value(json!({ "type": "user_message", "session_id": "s1", "text": "x" }))
+            .unwrap();
+    assert!(matches!(
+        old,
+        SessionEvent::UserMessage {
+            source: MessageSource::Human,
+            ..
+        }
+    ));
 }
 
 #[test]

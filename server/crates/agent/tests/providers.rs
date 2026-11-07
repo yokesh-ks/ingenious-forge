@@ -14,7 +14,7 @@ use agent::{
     tools::ToolBox,
     Agent, AgentError,
 };
-use api_types::{SessionEvent, TurnEndReason};
+use api_types::{HeaderReason, SessionEvent, TurnEndReason};
 use services::EventService;
 use tokio::sync::mpsc;
 
@@ -393,4 +393,143 @@ fn a_session_approval_mode_is_kept_by_the_agent() {
     assert_eq!(agent.approval_mode("s"), Some(ApprovalMode::Ask));
     assert!(!agent.set_approval_mode("unknown", ApprovalMode::Ask));
     assert_eq!(agent.approval_mode("unknown"), None);
+}
+
+/// The events of `session` until its turn ends.
+async fn one_turn(
+    rx: &mut tokio::sync::broadcast::Receiver<api_types::SessionEnvelope>,
+    session: &str,
+) -> Vec<SessionEvent> {
+    let mut out = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let event = rx.recv().await.unwrap().event;
+            if event.session_id() != session {
+                continue;
+            }
+            let end = matches!(event, SessionEvent::TurnEnded { .. });
+            out.push(event);
+            if end {
+                return;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    out
+}
+
+fn headers(events: &[SessionEvent]) -> Vec<(String, String, HeaderReason, usize)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            SessionEvent::RequestHeader {
+                provider,
+                model,
+                reason,
+                tools,
+                ..
+            } => Some((provider.clone(), model.clone(), *reason, tools.len())),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn request_headers_are_logged_first_and_after_a_model_change_only() {
+    let (a, _) = echo("a", vec!["x", "y"]);
+    let mut providers = Providers::new();
+    providers.register(a);
+    let events = EventService::new();
+    let mut rx = events.subscribe();
+    let agent = Agent::with_providers(providers, events);
+    let tools = ToolBox::new(std::env::temp_dir());
+    let offered = tools.specs().len();
+    agent
+        .open_session_with("s", tools, &choice("a", "x"))
+        .unwrap();
+
+    agent.send_message("s", "one").unwrap();
+    let first = one_turn(&mut rx, "s").await;
+    agent.send_message("s", "two").unwrap();
+    let second = one_turn(&mut rx, "s").await;
+    assert!(agent.set_model("s", &choice("a", "y")).unwrap());
+    agent.send_message("s", "three").unwrap();
+    let third = one_turn(&mut rx, "s").await;
+
+    assert_eq!(
+        headers(&first),
+        [("a".into(), "x".into(), HeaderReason::First, offered)]
+    );
+    // The context follows its header.
+    let at = first
+        .iter()
+        .position(|e| matches!(e, SessionEvent::RequestHeader { .. }))
+        .unwrap();
+    assert!(matches!(
+        &first[at + 1],
+        SessionEvent::RequestContext { provider, model, context_window: None, .. }
+            if provider == "a" && model == "x"
+    ));
+    assert!(headers(&second).is_empty());
+    assert_eq!(
+        headers(&third),
+        [("a".into(), "y".into(), HeaderReason::ModelChanged, offered)]
+    );
+    assert!(third.iter().any(|e| matches!(
+        e,
+        SessionEvent::AssistantMessage { provider, model, .. } if provider == "a" && model == "y"
+    )));
+}
+
+#[tokio::test]
+async fn a_model_change_is_logged_with_both_models() {
+    let (a, _) = echo("a", vec!["x", "y"]);
+    let mut providers = Providers::new();
+    providers.register(a);
+    let events = EventService::new();
+    let mut rx = events.subscribe();
+    let agent = Agent::with_providers(providers, events);
+    agent
+        .open_session_with("s", ToolBox::new(std::env::temp_dir()), &choice("a", "x"))
+        .unwrap();
+
+    assert!(agent.set_model("s", &choice("a", "x")).unwrap());
+    assert!(agent.set_model("s", &choice("a", "y")).unwrap());
+
+    let event = rx.try_recv().unwrap().event;
+    assert!(matches!(
+        event,
+        SessionEvent::ModelChanged { from: Some(ref from), ref to, .. }
+            if from.model == "x" && to.model == "y" && to.provider == "a"
+    ));
+    // Choosing the model already in use logs nothing.
+    assert!(rx.try_recv().is_err());
+}
+
+#[test]
+fn a_request_header_holds_no_more_than_its_listed_fields() {
+    let header = SessionEvent::RequestHeader {
+        session_id: "s".into(),
+        provider: "a".into(),
+        model: "x".into(),
+        max_tokens: None,
+        tools: Vec::new(),
+        reason: HeaderReason::First,
+    };
+    let value = serde_json::to_value(&header).unwrap();
+    let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        [
+            "max_tokens",
+            "model",
+            "provider",
+            "reason",
+            "session_id",
+            "tools",
+            "type"
+        ]
+    );
 }

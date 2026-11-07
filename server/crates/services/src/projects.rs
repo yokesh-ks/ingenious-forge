@@ -278,16 +278,17 @@ pub fn title_from_message(text: &str) -> String {
 
 /// Records that the user sent `text` in a session: the first message names
 /// an untitled session, and every message updates its last activity.
+/// Returns the title the message gave the session, if it named it.
 pub async fn record_message(
     pool: &SqlitePool,
     session_id: &str,
     text: &str,
-) -> Result<(), ProjectError> {
+) -> Result<Option<String>, ProjectError> {
     let Some(row) = db::get_session(pool, session_id).await? else {
-        return Ok(());
+        return Ok(None);
     };
     let title = (row.title == NEW_SESSION_TITLE && !text.trim().is_empty())
         .then(|| title_from_message(text));
     db::touch_session(pool, session_id, title.as_deref(), now_ms()).await?;
-    Ok(())
+    Ok(title)
 }

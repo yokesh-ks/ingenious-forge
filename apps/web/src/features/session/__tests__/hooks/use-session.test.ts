@@ -58,7 +58,14 @@ describe("useSession", () => {
       text: "hello",
     });
     expect(result.current.state.running).toBe(true);
-    act(() => FakeSocket.latest().emit({ type: "user_message", session_id: "s1", text: "hello" }));
+    act(() =>
+      FakeSocket.latest().emit({
+        type: "user_message",
+        session_id: "s1",
+        text: "hello",
+        source: "human",
+      }),
+    );
     expect(result.current.state.messages).toEqual([{ id: "m0", role: "user", text: "hello" }]);
   });
 
@@ -86,7 +93,7 @@ describe("useSession", () => {
     await openSocket(socket);
     act(() => {
       result.current.send("hi");
-      socket.emit({ type: "user_message", session_id: "s1", text: "hi" });
+      socket.emit({ type: "user_message", session_id: "s1", text: "hi", source: "human" });
       socket.emit({ type: "turn_started", session_id: "s1", turn: 1 });
       socket.emit({ type: "output", session_id: "other", chunk: "nope" });
       socket.emit({ type: "output", session_id: "s1", chunk: "Hi!" });
@@ -195,7 +202,7 @@ describe("useSession", () => {
     await openSocket(first);
     act(() => {
       result.current.send("hi");
-      first.emit({ type: "user_message", session_id: "s1", text: "hi" });
+      first.emit({ type: "user_message", session_id: "s1", text: "hi", source: "human" });
       first.emit({ type: "turn_started", session_id: "s1", turn: 1 });
     });
 

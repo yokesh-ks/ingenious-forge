@@ -9,7 +9,7 @@ use agent::{
     tools::ToolBox,
     Agent, AgentError,
 };
-use api_types::{SessionEnvelope, SessionEvent, TurnEndReason, Usage};
+use api_types::{MessageSource, SessionEnvelope, SessionEvent, TurnEndReason, Usage};
 use serde_json::json;
 use services::EventService;
 use tokio::sync::{broadcast, mpsc, Semaphore};
@@ -101,6 +101,12 @@ fn describe(events: &[SessionEvent]) -> Vec<String> {
                     | SessionEvent::ReasoningDelta { .. }
                     | SessionEvent::AssistantMessage { .. }
                     | SessionEvent::AssistantAttempt { .. }
+                    | SessionEvent::RequestHeader { .. }
+                    | SessionEvent::RequestContext { .. }
+                    | SessionEvent::SystemPrompt { .. }
+                    | SessionEvent::ModelChanged { .. }
+                    | SessionEvent::SessionTitle { .. }
+                    | SessionEvent::SessionStarted { .. }
             )
         })
         .map(|e| match e {
@@ -132,7 +138,13 @@ fn describe(events: &[SessionEvent]) -> Vec<String> {
             | SessionEvent::StepEnded { .. }
             | SessionEvent::ReasoningDelta { .. }
             | SessionEvent::AssistantMessage { .. }
-            | SessionEvent::AssistantAttempt { .. } => unreachable!(),
+            | SessionEvent::AssistantAttempt { .. }
+            | SessionEvent::RequestHeader { .. }
+            | SessionEvent::RequestContext { .. }
+            | SessionEvent::SystemPrompt { .. }
+            | SessionEvent::ModelChanged { .. }
+            | SessionEvent::SessionTitle { .. }
+            | SessionEvent::SessionStarted { .. } => unreachable!(),
             SessionEvent::ChangesReverted { paths, .. } => format!("reverted:{paths:?}"),
         })
         .collect()
@@ -1121,6 +1133,7 @@ mod restart {
         log.append_event(&SessionEvent::UserMessage {
             session_id: "s1".into(),
             text: "hi".into(),
+            source: MessageSource::Human,
         })
         .unwrap();
         drop(log);
@@ -1315,11 +1328,17 @@ async fn accepted_messages_are_published_including_steers() {
     let users: Vec<_> = events
         .iter()
         .filter_map(|e| match e {
-            SessionEvent::UserMessage { text, .. } => Some(text.as_str()),
+            SessionEvent::UserMessage { text, source, .. } => Some((text.as_str(), *source)),
             _ => None,
         })
         .collect();
-    assert_eq!(users, ["first", "steer"]);
+    assert_eq!(
+        users,
+        [
+            ("first", MessageSource::Human),
+            ("steer", MessageSource::Steering)
+        ]
+    );
     assert!(matches!(events[0], SessionEvent::UserMessage { .. }));
     assert!(matches!(events[1], SessionEvent::TurnStarted { .. }));
 }

@@ -236,7 +236,25 @@ export type Usage = { input: number, output: number, cache_read: number, cache_w
 
 export type TurnEndReason = { "kind": "completed" } | { "kind": "interrupted" } | { "kind": "error", code: string, message: string, };
 
-export type SessionEvent = { "type": "user_message", session_id: string, text: string, } | { "type": "turn_started", session_id: string, turn: number, } | { "type": "step_started", session_id: string, turn: number, step: number, } | { "type": "step_ended", session_id: string, turn: number, step: number, 
+export type MessageSource = "human" | "steering";
+
+export type ToolSchema = { name: string, description: string, 
+/**
+ * The JSON Schema of its arguments.
+ */
+parameters: JsonValue, };
+
+export type HeaderReason = "first" | "model_changed" | "tools_changed";
+
+export type ModelRef = { provider: string, model: string, };
+
+export type TitleSource = "first_message" | "user";
+
+export type SessionEvent = { "type": "session_started", session_id: string, cwd: string, provider: string, model: string, approval_mode: ApprovalMode, sandbox: SandboxInfo | null, } | { "type": "user_message", session_id: string, text: string, 
+/**
+ * How it reached the agent; `human` in logs written before ADR 0012.
+ */
+source: MessageSource, } | { "type": "request_header", session_id: string, provider: string, model: string, max_tokens: number | null, tools: Array<ToolSchema>, reason: HeaderReason, } | { "type": "request_context", session_id: string, provider: string, model: string, context_window: number | null, } | { "type": "system_prompt", session_id: string, text: string, } | { "type": "model_changed", session_id: string, from: ModelRef | null, to: ModelRef, } | { "type": "session_title", session_id: string, title: string, source: TitleSource, } | { "type": "turn_started", session_id: string, turn: number, } | { "type": "step_started", session_id: string, turn: number, step: number, } | { "type": "step_ended", session_id: string, turn: number, step: number, 
 /**
  * Token usage the provider reported; `None` when it reported none.
  */
@@ -260,7 +278,11 @@ export type SessionEnvelope = { seq: number,
  * Milliseconds since the Unix epoch; 0 in logs written before
  * ADR 0012.
  */
-ts: number, } & ({ "type": "user_message", session_id: string, text: string, } | { "type": "turn_started", session_id: string, turn: number, } | { "type": "step_started", session_id: string, turn: number, step: number, } | { "type": "step_ended", session_id: string, turn: number, step: number, 
+ts: number, } & ({ "type": "session_started", session_id: string, cwd: string, provider: string, model: string, approval_mode: ApprovalMode, sandbox: SandboxInfo | null, } | { "type": "user_message", session_id: string, text: string, 
+/**
+ * How it reached the agent; `human` in logs written before ADR 0012.
+ */
+source: MessageSource, } | { "type": "request_header", session_id: string, provider: string, model: string, max_tokens: number | null, tools: Array<ToolSchema>, reason: HeaderReason, } | { "type": "request_context", session_id: string, provider: string, model: string, context_window: number | null, } | { "type": "system_prompt", session_id: string, text: string, } | { "type": "model_changed", session_id: string, from: ModelRef | null, to: ModelRef, } | { "type": "session_title", session_id: string, title: string, source: TitleSource, } | { "type": "turn_started", session_id: string, turn: number, } | { "type": "step_started", session_id: string, turn: number, step: number, } | { "type": "step_ended", session_id: string, turn: number, step: number, 
 /**
  * Token usage the provider reported; `None` when it reported none.
  */

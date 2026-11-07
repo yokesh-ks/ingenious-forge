@@ -82,6 +82,22 @@ describe("useProjectSessions", () => {
     await waitFor(() => expect(fetch.mock.calls.length).toBe(calls + 1));
   });
 
+  it("reloads when a session is named or renamed", async () => {
+    const fetch = fakeFetch({ "GET /api/projects/p1/sessions": [session("a", false)] });
+    const { result } = setup();
+    await waitFor(() => expect(result.current.sessions).not.toBeNull());
+    const calls = fetch.mock.calls.length;
+    act(() =>
+      FakeSocket.latest().emit({
+        type: "session_title",
+        session_id: "a",
+        title: "Dark theme",
+        source: "user",
+      }),
+    );
+    await waitFor(() => expect(fetch.mock.calls.length).toBe(calls + 1));
+  });
+
   it("reports a load error", async () => {
     fakeFetch({
       "GET /api/projects/p1/sessions": () => ({ status: 500, body: { error: "boom" } }),

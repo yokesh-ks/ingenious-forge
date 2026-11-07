@@ -503,10 +503,61 @@ pub enum OutputStream {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SessionEvent {
+    /// A new session's starting settings: its folder, model, approval mode
+    /// and sandbox. Logged once, when the session is created.
+    SessionStarted {
+        session_id: String,
+        cwd: String,
+        provider: String,
+        model: String,
+        approval_mode: ApprovalMode,
+        sandbox: Option<SandboxInfo>,
+    },
     /// The user's message, as the agent accepted it (a new turn or a steer).
     UserMessage {
         session_id: String,
         text: String,
+        /// How it reached the agent; `human` in logs written before ADR 0012.
+        #[serde(default)]
+        source: MessageSource,
+    },
+    /// What the next model request is sent with; logged for the session's
+    /// first request and whenever the provider, model, reply cap or tool
+    /// set changes. Never holds keys or HTTP headers.
+    RequestHeader {
+        session_id: String,
+        provider: String,
+        model: String,
+        max_tokens: Option<u32>,
+        tools: Vec<ToolSchema>,
+        reason: HeaderReason,
+    },
+    /// The model the next requests go to and its context window, when
+    /// known; logged with every `RequestHeader`.
+    RequestContext {
+        session_id: String,
+        provider: String,
+        model: String,
+        #[ts(type = "number | null")]
+        context_window: Option<u64>,
+    },
+    /// The system prompt the next requests carry; logged when it changes.
+    /// Empty text means the requests carry none.
+    SystemPrompt {
+        session_id: String,
+        text: String,
+    },
+    /// The session switched model; it applies from the next request.
+    ModelChanged {
+        session_id: String,
+        from: Option<ModelRef>,
+        to: ModelRef,
+    },
+    /// The session's title was set, by its first message or by the user.
+    SessionTitle {
+        session_id: String,
+        title: String,
+        source: TitleSource,
     },
     /// A turn began; turns are numbered from 1 within a session. Logs
     /// written before turn numbers have `turn: 0`.
@@ -673,6 +724,55 @@ pub struct Usage {
     pub cache_write: u64,
 }
 
+/// How a user message reached the agent.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageSource {
+    /// Typed to start a turn.
+    #[default]
+    Human,
+    /// Typed while a turn ran; the agent reads it at its next step.
+    Steering,
+}
+
+/// A tool as a model request offers it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct ToolSchema {
+    pub name: String,
+    pub description: String,
+    /// The JSON Schema of its arguments.
+    pub parameters: serde_json::Value,
+}
+
+/// Why a `RequestHeader` was logged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum HeaderReason {
+    /// The session's first request.
+    First,
+    /// The provider or model changed.
+    ModelChanged,
+    /// The tool set or reply cap changed.
+    ToolsChanged,
+}
+
+/// A provider and one of its models.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ModelRef {
+    pub provider: String,
+    pub model: String,
+}
+
+/// Who set a session's title.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum TitleSource {
+    /// Taken from the session's first message.
+    FirstMessage,
+    /// Renamed by the user.
+    User,
+}
+
 /// Why a turn ended.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -715,6 +815,12 @@ impl SessionEvent {
             | Self::ReasoningDelta { session_id, .. }
             | Self::AssistantMessage { session_id, .. }
             | Self::AssistantAttempt { session_id, .. }
+            | Self::RequestHeader { session_id, .. }
+            | Self::RequestContext { session_id, .. }
+            | Self::SystemPrompt { session_id, .. }
+            | Self::ModelChanged { session_id, .. }
+            | Self::SessionTitle { session_id, .. }
+            | Self::SessionStarted { session_id, .. }
             | Self::Output { session_id, .. }
             | Self::ToolCall { session_id, .. }
             | Self::ToolOutput { session_id, .. }
@@ -786,6 +892,11 @@ pub fn typescript_bindings() -> String {
         SandboxInfo::decl(&cfg),
         Usage::decl(&cfg),
         TurnEndReason::decl(&cfg),
+        MessageSource::decl(&cfg),
+        ToolSchema::decl(&cfg),
+        HeaderReason::decl(&cfg),
+        ModelRef::decl(&cfg),
+        TitleSource::decl(&cfg),
         SessionEvent::decl(&cfg),
         SessionEnvelope::decl(&cfg),
     ];

@@ -19,7 +19,7 @@ function sent(text: string, state = initialSessionState): SessionState {
   const sending = sessionReducer(state, { kind: "send", text });
   return sessionReducer(sending, {
     kind: "event",
-    event: { type: "user_message", session_id: S, text },
+    event: { type: "user_message", session_id: S, text, source: "human" },
   });
 }
 
@@ -52,6 +52,7 @@ describe("sessionReducer", () => {
       type: "user_message",
       session_id: S,
       text: "from tab 2",
+      source: "human",
     });
     expect(state.messages).toEqual([{ id: "m0", role: "user", text: "from tab 2" }]);
   });

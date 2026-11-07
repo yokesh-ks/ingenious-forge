@@ -281,3 +281,54 @@ async fn a_failed_tool_call_does_not_load_instructions() {
     // Reading the file itself shows it once, not twice.
     assert_eq!(outputs[1], "web rules");
 }
+
+fn prompts(events: &[SessionEvent]) -> Vec<String> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            SessionEvent::SystemPrompt { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn the_system_prompt_is_logged_once_until_it_changes() {
+    let root = project(&[("AGENTS.md", "Always respond in French.")]);
+    let (agent, _, mut rx) = setup(
+        root,
+        vec![
+            vec![ModelEvent::TextDelta("Bonjour".into())],
+            vec![ModelEvent::TextDelta("Encore".into())],
+        ],
+    );
+
+    agent.send_message("s1", "hello").unwrap();
+    let first = turn(&mut rx).await;
+    agent.send_message("s1", "again").unwrap();
+    let second = turn(&mut rx).await;
+
+    let logged = prompts(&first);
+    assert_eq!(logged.len(), 1);
+    assert!(logged[0].contains("Always respond in French."));
+    // It precedes the request it applies to.
+    let prompt_at = first
+        .iter()
+        .position(|e| matches!(e, SessionEvent::SystemPrompt { .. }))
+        .unwrap();
+    let output_at = first
+        .iter()
+        .position(|e| matches!(e, SessionEvent::Output { .. }))
+        .unwrap();
+    assert!(prompt_at < output_at);
+    assert!(prompts(&second).is_empty());
+}
+
+#[tokio::test]
+async fn a_session_without_a_prompt_logs_none() {
+    let (agent, _, mut rx) = setup(project(&[]), vec![vec![ModelEvent::TextDelta("hi".into())]]);
+
+    agent.send_message("s1", "hello").unwrap();
+
+    assert!(prompts(&turn(&mut rx).await).is_empty());
+}

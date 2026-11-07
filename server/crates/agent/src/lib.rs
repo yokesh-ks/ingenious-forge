@@ -19,7 +19,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use api_types::{ApprovalDecision, ApprovalKind, ApprovalMode, SessionEvent, TurnEndReason};
+use api_types::{
+    ApprovalDecision, ApprovalKind, ApprovalMode, HeaderReason, MessageSource, ModelRef,
+    SessionEvent, ToolSchema, TurnEndReason,
+};
 use services::{log::LogRecord, EventService};
 use tokio::sync::watch;
 
@@ -85,6 +88,20 @@ struct SessionState {
     turns: u32,
     /// The provider and model ids the session talks to, for the log.
     model_ref: Option<(String, String)>,
+    /// What the last logged `RequestHeader` said; a request that differs
+    /// logs a new one.
+    logged_header: Option<RequestShape>,
+    /// The last logged system prompt.
+    logged_system: Option<String>,
+}
+
+/// The parts of a model request a `RequestHeader` records.
+#[derive(Clone, PartialEq)]
+struct RequestShape {
+    provider: String,
+    model: String,
+    max_tokens: Option<u32>,
+    tools: Vec<ToolSchema>,
 }
 
 /// What one step measured, for `StepEnded` (ADR 0012).
@@ -350,6 +367,21 @@ impl Agent {
                         in_turn = true;
                         started = true;
                     }
+                    SessionEvent::SystemPrompt { text, .. } => session.logged_system = Some(text),
+                    SessionEvent::RequestHeader {
+                        provider,
+                        model,
+                        max_tokens,
+                        tools,
+                        ..
+                    } => {
+                        session.logged_header = Some(RequestShape {
+                            provider,
+                            model,
+                            max_tokens,
+                            tools,
+                        })
+                    }
                     SessionEvent::TurnEnded { .. }
                     | SessionEvent::Done { .. }
                     | SessionEvent::Error { .. }
@@ -411,17 +443,91 @@ impl Agent {
         let model = self.providers.resolve(choice)?;
         let effort = self.providers.effort_for(choice);
         let mut sessions = self.sessions.lock().unwrap();
-        Ok(
-            match sessions.get_mut(session_id).filter(|s| s.tools.is_some()) {
-                Some(session) => {
-                    session.model = Some(model);
-                    session.effort = effort;
-                    session.model_ref = Some((choice.provider.clone(), choice.model.clone()));
-                    true
-                }
-                None => false,
-            },
-        )
+        let Some(session) = sessions.get_mut(session_id).filter(|s| s.tools.is_some()) else {
+            return Ok(false);
+        };
+        session.model = Some(model);
+        session.effort = effort;
+        let to = (choice.provider.clone(), choice.model.clone());
+        let from = session.model_ref.replace(to.clone());
+        drop(sessions);
+        if from.as_ref() != Some(&to) {
+            let as_ref = |(provider, model): (String, String)| ModelRef { provider, model };
+            self.events.publish(SessionEvent::ModelChanged {
+                session_id: session_id.to_string(),
+                from: from.map(as_ref),
+                to: as_ref(to),
+            });
+        }
+        Ok(true)
+    }
+
+    /// Logs the system prompt and request header of `request` when they
+    /// differ from the last ones logged for the session (ADR 0012).
+    fn log_request_changes(&self, session_id: &str, request: &ModelRequest) {
+        let mut events = Vec::new();
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            let Some(session) = sessions.get_mut(session_id) else {
+                return;
+            };
+            let system = request.system.clone().unwrap_or_default();
+            let unchanged = match &session.logged_system {
+                Some(logged) => *logged == system,
+                // A session without a prompt has nothing to log yet.
+                None => system.is_empty(),
+            };
+            if !unchanged {
+                events.push(SessionEvent::SystemPrompt {
+                    session_id: session_id.to_string(),
+                    text: system.clone(),
+                });
+                session.logged_system = Some(system);
+            }
+            let (provider, model) = session.model_ref.clone().unwrap_or_default();
+            let shape = RequestShape {
+                provider,
+                model,
+                max_tokens: request.max_tokens,
+                tools: request
+                    .tools
+                    .iter()
+                    .map(|tool| ToolSchema {
+                        name: tool.name.to_string(),
+                        description: tool.description.to_string(),
+                        parameters: tool.input_schema.clone(),
+                    })
+                    .collect(),
+            };
+            if session.logged_header.as_ref() != Some(&shape) {
+                let reason = match &session.logged_header {
+                    None => HeaderReason::First,
+                    Some(old) if old.provider != shape.provider || old.model != shape.model => {
+                        HeaderReason::ModelChanged
+                    }
+                    Some(_) => HeaderReason::ToolsChanged,
+                };
+                events.push(SessionEvent::RequestHeader {
+                    session_id: session_id.to_string(),
+                    provider: shape.provider.clone(),
+                    model: shape.model.clone(),
+                    max_tokens: shape.max_tokens,
+                    tools: shape.tools.clone(),
+                    reason,
+                });
+                events.push(SessionEvent::RequestContext {
+                    session_id: session_id.to_string(),
+                    provider: shape.provider.clone(),
+                    model: shape.model.clone(),
+                    // The model catalog does not know context windows yet.
+                    context_window: None,
+                });
+                session.logged_header = Some(shape);
+            }
+        }
+        for event in events {
+            self.events.publish(event);
+        }
     }
 
     /// Answers the approval card for `call_id`. False when no card for it
@@ -540,16 +646,17 @@ impl Agent {
             .get_mut(session_id)
             .filter(|s| s.tools.is_some())
             .ok_or(AgentError::UnknownSession)?;
-        let user_message = || SessionEvent::UserMessage {
+        let user_message = |source| SessionEvent::UserMessage {
             session_id: session_id.to_string(),
             text: text.to_string(),
+            source,
         };
         if session.running {
             session.pending.push(text.to_string());
-            self.events.publish(user_message());
+            self.events.publish(user_message(MessageSource::Steering));
             return Ok(());
         }
-        self.events.publish(user_message());
+        self.events.publish(user_message(MessageSource::Human));
         // A slash command is shown as typed; the model gets what it stands for.
         let prompt = session
             .tools
@@ -876,13 +983,15 @@ impl Agent {
             attempt_failed(&error);
             return Err(error);
         };
-        let mut rx = model.stream(ModelRequest {
+        let request = ModelRequest {
             messages: conversation.to_vec(),
             tools: tools.specs(),
             system,
             effort,
             max_tokens: None,
-        });
+        };
+        self.log_request_changes(session_id, &request);
+        let mut rx = model.stream(request);
         let mut text = String::new();
         let mut message = None;
         loop {
