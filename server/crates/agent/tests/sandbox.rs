@@ -15,7 +15,7 @@ use agent::{
     tools::{ToolBox, RUN_SHELL},
     Agent,
 };
-use api_types::SessionEvent;
+use api_types::{SessionEvent, TurnEndReason};
 use serde_json::json;
 use services::EventService;
 use tokio::sync::{mpsc, watch};
@@ -553,7 +553,13 @@ async fn commands_follow_the_session_policy() {
             .unwrap()
             .unwrap()
             .event;
-        if matches!(event, SessionEvent::Done { .. }) {
+        if matches!(
+            event,
+            SessionEvent::TurnEnded {
+                reason: TurnEndReason::Completed,
+                ..
+            }
+        ) {
             break;
         }
     }
@@ -591,7 +597,13 @@ async fn full_auto_runs_without_asking_but_still_inside_the_sandbox() {
             .unwrap()
             .event;
         asked |= matches!(event, SessionEvent::ApprovalRequested { .. });
-        if matches!(event, SessionEvent::Done { .. }) {
+        if matches!(
+            event,
+            SessionEvent::TurnEnded {
+                reason: TurnEndReason::Completed,
+                ..
+            }
+        ) {
             break;
         }
     }

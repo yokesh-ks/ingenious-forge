@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use agent::model::{ChatMessage, ContentBlock, ModelError, ModelEvent, ModelRequest};
 use agent::openai_compat::{OpenAiCompatProvider, PROVIDERS};
 use agent::providers::{ModelProvider, Providers};
-use api_types::ReasoningEffort;
+use api_types::{ReasoningEffort, TurnEndReason};
 use axum::{
     body::Body,
     http::{HeaderMap, StatusCode},
@@ -272,8 +272,14 @@ async fn edit_on_nvidia(
                 assert!(agent.answer_approval("s", &call_id, decision));
             }
             SessionEvent::Output { chunk, .. } => text.push_str(&chunk),
-            SessionEvent::Done { .. } => break,
-            SessionEvent::Error { message, .. } => panic!("{message}"),
+            SessionEvent::TurnEnded {
+                reason: TurnEndReason::Completed,
+                ..
+            } => break,
+            SessionEvent::TurnEnded {
+                reason: TurnEndReason::Error { message, .. },
+                ..
+            } => panic!("{message}"),
             _ => {}
         }
     }

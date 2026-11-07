@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SessionEvent } from "@/api/types";
+import type { SessionEvent, TurnEndReason } from "@/api/types";
 import {
   initialSessionState,
   MAX_SHELL_LINES,
@@ -59,7 +59,7 @@ describe("sessionReducer", () => {
   it("streams output chunks into one assistant message", () => {
     const state = apply(
       sent("hi"),
-      { type: "turn_started", session_id: S },
+      { type: "turn_started", session_id: S, turn: 1 },
       { type: "output", session_id: S, chunk: "Hel" },
       { type: "output", session_id: S, chunk: "lo" },
     );
@@ -73,14 +73,14 @@ describe("sessionReducer", () => {
   it("ends the turn on done and starts a new reply next turn", () => {
     let state = apply(
       sent("one"),
-      { type: "turn_started", session_id: S },
+      { type: "turn_started", session_id: S, turn: 1 },
       { type: "output", session_id: S, chunk: "A" },
       { type: "done", session_id: S },
     );
     expect(state.running).toBe(false);
     state = apply(
       sent("two", state),
-      { type: "turn_started", session_id: S },
+      { type: "turn_started", session_id: S, turn: 1 },
       { type: "output", session_id: S, chunk: "B" },
     );
     expect(state.messages.map((m) => [m.role, "text" in m ? m.text : m.name])).toEqual([
@@ -109,7 +109,9 @@ describe("sessionReducer", () => {
   });
 
   it("marks running when another tab starts a turn", () => {
-    expect(apply(initialSessionState, { type: "turn_started", session_id: S }).running).toBe(true);
+    expect(
+      apply(initialSessionState, { type: "turn_started", session_id: S, turn: 1 }).running,
+    ).toBe(true);
   });
 
   it("adds a running tool card on tool_call", () => {
@@ -386,6 +388,65 @@ describe("sessionReducer", () => {
       { type: "interrupted", session_id: S },
     );
     expect(state.messages[1]).toMatchObject({ status: "error", output: "Interrupted" });
+  });
+
+  describe("turn_ended", () => {
+    const ended = (reason: TurnEndReason): SessionEvent => ({
+      type: "turn_ended",
+      session_id: S,
+      turn: 1,
+      reason,
+    });
+
+    it("ends a completed turn like done", () => {
+      const state = apply(
+        sent("hi"),
+        { type: "output", session_id: S, chunk: "a" },
+        ended({ kind: "completed" }),
+      );
+      expect(state.running).toBe(false);
+      expect(state.error).toBeNull();
+      const next = apply(state, { type: "output", session_id: S, chunk: "b" });
+      expect(next.messages.map((m) => m.role)).toEqual(["user", "assistant", "assistant"]);
+    });
+
+    it("ends an interrupted turn like interrupted", () => {
+      const state = apply(
+        sent("go"),
+        { type: "tool_call", session_id: S, call_id: "t1", name: "read_file", args: {} },
+        ended({ kind: "interrupted" }),
+      );
+      expect(state.running).toBe(false);
+      expect(state.messages[1]).toMatchObject({ status: "error", output: "Interrupted" });
+      expect(state.messages[2]).toMatchObject({ role: "notice", text: "Turn interrupted" });
+    });
+
+    it("shows a failed turn's message as the error", () => {
+      const state = apply(
+        sent("hi"),
+        ended({ kind: "error", code: "PROVIDER_ERROR", message: "no key" }),
+      );
+      expect(state.running).toBe(false);
+      expect(state.error).toBe("no key");
+    });
+
+    it("leaves the timeline unchanged on step boundaries", () => {
+      const state = sent("hi");
+      const next = apply(
+        state,
+        { type: "step_started", session_id: S, turn: 1, step: 1 },
+        {
+          type: "step_ended",
+          session_id: S,
+          turn: 1,
+          step: 1,
+          usage: null,
+          first_token_ms: null,
+          generation_ms: null,
+        },
+      );
+      expect(next).toBe(state);
+    });
   });
 
   it("lists changed files in first-edit order and keeps the latest diff", () => {

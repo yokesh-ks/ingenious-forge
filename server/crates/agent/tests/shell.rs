@@ -14,7 +14,7 @@ use agent::{
     tools::{ToolBox, RUN_SHELL},
     Agent,
 };
-use api_types::{OutputStream, SessionEnvelope, SessionEvent};
+use api_types::{OutputStream, SessionEnvelope, SessionEvent, TurnEndReason};
 use serde_json::json;
 use services::EventService;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -287,10 +287,7 @@ async fn turn(rx: &mut broadcast::Receiver<SessionEnvelope>) -> Vec<SessionEvent
             .expect("timed out waiting for a session event")
             .unwrap()
             .event;
-        let end = matches!(
-            event,
-            SessionEvent::Done { .. } | SessionEvent::Error { .. }
-        );
+        let end = matches!(event, SessionEvent::TurnEnded { .. });
         out.push(event);
         if end {
             return out;
@@ -437,7 +434,13 @@ async fn stopping_the_turn_stops_a_running_command() {
             .expect("the turn should end promptly")
             .unwrap()
             .event;
-        let end = matches!(event, SessionEvent::Interrupted { .. });
+        let end = matches!(
+            event,
+            SessionEvent::TurnEnded {
+                reason: TurnEndReason::Interrupted,
+                ..
+            }
+        );
         rest.push(event);
         if end {
             break;

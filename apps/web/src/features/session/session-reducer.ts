@@ -233,28 +233,43 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
     case "file_changed":
       draft.changedFiles = upsertChange(draft.changedFiles, event);
       return true;
+    case "turn_ended":
+      // Logs since ADR 0012 end turns this way; older ones use the three
+      // events below.
+      if (event.reason.kind === "completed") return endTurn(draft);
+      if (event.reason.kind === "interrupted") return interruptTurn(draft);
+      return failTurn(draft, event.reason.message);
     case "done":
-      draft.running = false;
-      draft.streamingId = null;
-      return true;
+      return endTurn(draft);
     case "interrupted":
-      for (const [i, item] of items.entries()) {
-        if (item.role === "tool" && item.status === "running") {
-          items[i] = { ...item, status: "error", output: "Interrupted" };
-        }
-      }
-      items.push({ id: nextId(draft), role: "notice", text: "Turn interrupted" });
-      draft.running = false;
-      draft.streamingId = null;
-      return true;
+      return interruptTurn(draft);
     case "error":
-      draft.running = false;
-      draft.error = event.message;
-      draft.streamingId = null;
-      return true;
+      return failTurn(draft, event.message);
     default:
       return false;
   }
+}
+
+function endTurn(draft: SessionState): boolean {
+  draft.running = false;
+  draft.streamingId = null;
+  return true;
+}
+
+function interruptTurn(draft: SessionState): boolean {
+  const items = draft.messages;
+  for (const [i, item] of items.entries()) {
+    if (item.role === "tool" && item.status === "running") {
+      items[i] = { ...item, status: "error", output: "Interrupted" };
+    }
+  }
+  items.push({ id: nextId(draft), role: "notice", text: "Turn interrupted" });
+  return endTurn(draft);
+}
+
+function failTurn(draft: SessionState, message: string): boolean {
+  draft.error = message;
+  return endTurn(draft);
 }
 
 /** The index of the tool call `callId`; results and output follow their

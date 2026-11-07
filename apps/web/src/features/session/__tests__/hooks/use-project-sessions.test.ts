@@ -59,7 +59,7 @@ describe("useProjectSessions", () => {
     await waitFor(() => expect(result.current.sessions).not.toBeNull());
 
     running = true;
-    act(() => FakeSocket.latest().emit({ type: "turn_started", session_id: "a" }));
+    act(() => FakeSocket.latest().emit({ type: "turn_started", session_id: "a", turn: 1 }));
     await waitFor(() => expect(result.current.sessions?.[0].running).toBe(true));
 
     running = false;

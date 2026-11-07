@@ -519,10 +519,41 @@ async fn list_sessions(
 #[derive(Deserialize)]
 struct EventsQuery {
     after: Option<u64>,
+    before: Option<u64>,
+    limit: Option<usize>,
 }
 
-/// The logged events of a session after `?after=` (default: all), so a
-/// browser can catch up after connecting or reconnecting.
+/// The most events one tail page returns.
+const MAX_EVENTS_PAGE: usize = 500;
+
+/// Which events a request asks for.
+enum EventsPage {
+    After(u64),
+    Before { before: Option<u64>, limit: usize },
+}
+
+impl EventsQuery {
+    fn page(&self) -> Result<EventsPage, String> {
+        match (self.after, self.before, self.limit) {
+            (Some(_), Some(_), _) | (Some(_), _, Some(_)) => {
+                Err("use either after or before/limit, not both".into())
+            }
+            (after, None, None) => Ok(EventsPage::After(after.unwrap_or(0))),
+            (None, before, limit) => {
+                let limit = limit.unwrap_or(MAX_EVENTS_PAGE);
+                if limit == 0 || limit > MAX_EVENTS_PAGE {
+                    return Err(format!("limit must be between 1 and {MAX_EVENTS_PAGE}"));
+                }
+                Ok(EventsPage::Before { before, limit })
+            }
+        }
+    }
+}
+
+/// A session's logged events: those after `?after=` (default: all), so a
+/// browser can catch up after connecting or reconnecting, or a page of
+/// the latest events before `?before=` (default: the newest) of at most
+/// `?limit=`, so a long session can open at its tail.
 async fn session_events(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -538,16 +569,21 @@ async fn session_events(
             "session not found".into(),
         ));
     }
+    let page = query
+        .page()
+        .map_err(|message| ApiFailure(StatusCode::BAD_REQUEST, message))?;
     // Opening restores the session, closing a turn the server cut off.
     crate::routes::ensure_open(&state, &id).await;
     let Some(log) = state.events.log().cloned() else {
         return Ok(Json(Vec::new()));
     };
-    let after = query.after.unwrap_or(0);
-    let events = tokio::task::spawn_blocking(move || log.events_after(&id, after))
-        .await
-        .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let events = tokio::task::spawn_blocking(move || match page {
+        EventsPage::After(after) => log.events_after(&id, after),
+        EventsPage::Before { before, limit } => log.events_before(&id, before, limit),
+    })
+    .await
+    .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(events))
 }
 
@@ -1657,15 +1693,73 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(all.as_array().unwrap().len(), 3);
         assert_eq!(
-            all[0],
+            without_ts(&all[0]),
             json!({ "seq": 1, "type": "output", "session_id": id, "chunk": "a" })
         );
 
         let (_, newer) = get_json(&format!("{api}/sessions/{id}/events?after=2")).await;
+        assert_eq!(newer.as_array().unwrap().len(), 1);
         assert_eq!(
-            newer,
-            json!([{ "seq": 3, "type": "output", "session_id": id, "chunk": "c" }])
+            without_ts(&newer[0]),
+            json!({ "seq": 3, "type": "output", "session_id": id, "chunk": "c" })
         );
+    }
+
+    /// An event as served, after checking its timestamp is set.
+    fn without_ts(event: &Value) -> Value {
+        let mut event = event.clone();
+        let ts = event.as_object_mut().unwrap().remove("ts");
+        assert!(ts.and_then(|ts| ts.as_u64()).is_some_and(|ts| ts > 0));
+        event
+    }
+
+    #[tokio::test]
+    async fn a_long_session_opens_at_its_tail_and_pages_back() {
+        let (api, state) = start().await;
+        let (_, sessions) = project_with_sessions(&api, 1).await;
+        let id = sessions[0]["id"].as_str().unwrap();
+        for i in 0..5 {
+            state.events.publish(SessionEvent::Output {
+                session_id: id.into(),
+                chunk: i.to_string(),
+            });
+        }
+        let seqs = |events: &Value| -> Vec<u64> {
+            events
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|e| e["seq"].as_u64().unwrap())
+                .collect()
+        };
+
+        let (status, tail) = get_json(&format!("{api}/sessions/{id}/events?limit=2")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(seqs(&tail), [4, 5]);
+        let (_, older) = get_json(&format!("{api}/sessions/{id}/events?before=4&limit=2")).await;
+        assert_eq!(seqs(&older), [2, 3]);
+        let (_, oldest) = get_json(&format!("{api}/sessions/{id}/events?before=2&limit=2")).await;
+        assert_eq!(seqs(&oldest), [1]);
+    }
+
+    #[tokio::test]
+    async fn bad_paging_requests_are_refused() {
+        let (api, _) = start().await;
+        let (_, sessions) = project_with_sessions(&api, 1).await;
+        let id = sessions[0]["id"].as_str().unwrap();
+
+        for query in [
+            "limit=0",
+            "limit=501",
+            "after=1&before=3",
+            "after=1&limit=2",
+            "limit=x",
+        ] {
+            let res = reqwest::get(format!("{api}/sessions/{id}/events?{query}"))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{query}");
+        }
     }
 
     #[tokio::test]

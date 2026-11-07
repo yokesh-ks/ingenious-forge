@@ -15,7 +15,7 @@ use agent::{
     tools::{ToolBox, LIST_DIRECTORY, READ_FILE},
     Agent,
 };
-use api_types::{SessionEnvelope, SessionEvent};
+use api_types::{SessionEnvelope, SessionEvent, TurnEndReason};
 use serde_json::json;
 use services::EventService;
 use tokio::sync::{broadcast, mpsc};
@@ -91,10 +91,7 @@ async fn turn(rx: &mut broadcast::Receiver<SessionEnvelope>) -> Vec<SessionEvent
             .expect("timed out waiting for a session event")
             .unwrap()
             .event;
-        let end = matches!(
-            event,
-            SessionEvent::Done { .. } | SessionEvent::Error { .. }
-        );
+        let end = matches!(event, SessionEvent::TurnEnded { .. });
         out.push(event);
         if end {
             return out;
@@ -193,7 +190,10 @@ async fn the_session_sends_agents_md_as_the_system_prompt() {
     agent.send_message("s1", "hello").unwrap();
     assert!(matches!(
         turn(&mut rx).await.last(),
-        Some(SessionEvent::Done { .. })
+        Some(SessionEvent::TurnEnded {
+            reason: TurnEndReason::Completed,
+            ..
+        })
     ));
 
     let requests = model.requests.lock().unwrap();
@@ -209,7 +209,10 @@ async fn a_session_without_agents_md_starts_normally() {
     agent.send_message("s1", "hello").unwrap();
     assert!(matches!(
         turn(&mut rx).await.last(),
-        Some(SessionEvent::Done { .. })
+        Some(SessionEvent::TurnEnded {
+            reason: TurnEndReason::Completed,
+            ..
+        })
     ));
     assert_eq!(model.requests.lock().unwrap()[0].system, None);
 }

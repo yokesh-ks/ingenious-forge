@@ -87,7 +87,7 @@ describe("useSession", () => {
     act(() => {
       result.current.send("hi");
       socket.emit({ type: "user_message", session_id: "s1", text: "hi" });
-      socket.emit({ type: "turn_started", session_id: "s1" });
+      socket.emit({ type: "turn_started", session_id: "s1", turn: 1 });
       socket.emit({ type: "output", session_id: "other", chunk: "nope" });
       socket.emit({ type: "output", session_id: "s1", chunk: "Hi!" });
       socket.emit({ type: "done", session_id: "s1" });
@@ -114,9 +114,9 @@ describe("useSession", () => {
   it("loads the session's logged events when it connects", async () => {
     fakeFetch({
       "GET /api/sessions/s1/events": [
-        { seq: 1, type: "turn_started", session_id: "s1" },
-        { seq: 2, type: "output", session_id: "s1", chunk: "Earlier reply" },
-        { seq: 3, type: "done", session_id: "s1" },
+        { seq: 1, ts: 0, type: "turn_started", session_id: "s1", turn: 1 },
+        { seq: 2, ts: 0, type: "output", session_id: "s1", chunk: "Earlier reply" },
+        { seq: 3, ts: 0, type: "done", session_id: "s1" },
       ],
     });
     const { result } = setup();
@@ -170,8 +170,8 @@ describe("useSession", () => {
     });
     await act(async () => {
       release([
-        { seq: 1, type: "output", session_id: "s1", chunk: "A" },
-        { seq: 2, type: "output", session_id: "s1", chunk: "B" },
+        { seq: 1, ts: 0, type: "output", session_id: "s1", chunk: "A" },
+        { seq: 2, ts: 0, type: "output", session_id: "s1", chunk: "B" },
       ]);
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
@@ -196,7 +196,7 @@ describe("useSession", () => {
     act(() => {
       result.current.send("hi");
       first.emit({ type: "user_message", session_id: "s1", text: "hi" });
-      first.emit({ type: "turn_started", session_id: "s1" });
+      first.emit({ type: "turn_started", session_id: "s1", turn: 1 });
     });
 
     act(() => first.drop());
@@ -209,8 +209,8 @@ describe("useSession", () => {
         expect(url.searchParams.get("after")).toBe("2");
         return {
           body: [
-            { seq: 3, type: "output", session_id: "s1", chunk: "missed" },
-            { seq: 4, type: "done", session_id: "s1" },
+            { seq: 3, ts: 0, type: "output", session_id: "s1", chunk: "missed" },
+            { seq: 4, ts: 0, type: "done", session_id: "s1" },
           ],
         };
       },

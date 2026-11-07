@@ -508,8 +508,42 @@ pub enum SessionEvent {
         session_id: String,
         text: String,
     },
+    /// A turn began; turns are numbered from 1 within a session. Logs
+    /// written before turn numbers have `turn: 0`.
     TurnStarted {
         session_id: String,
+        #[serde(default)]
+        turn: u32,
+    },
+    /// One model request of a turn began; steps are numbered from 1.
+    StepStarted {
+        session_id: String,
+        turn: u32,
+        step: u32,
+    },
+    /// A step's model reply settled and its tool calls returned (ADR 0012).
+    StepEnded {
+        session_id: String,
+        turn: u32,
+        step: u32,
+        /// Token usage the provider reported; `None` when it reported none.
+        #[serde(default)]
+        usage: Option<Usage>,
+        /// Step start to the first streamed delta.
+        #[serde(default)]
+        #[ts(type = "number | null")]
+        first_token_ms: Option<u64>,
+        /// First streamed delta to the settled reply.
+        #[serde(default)]
+        #[ts(type = "number | null")]
+        generation_ms: Option<u64>,
+    },
+    /// A turn ended, and why. Replaces `Done`, `Interrupted` and the
+    /// turn-ending `Error` in logs written since ADR 0012.
+    TurnEnded {
+        session_id: String,
+        turn: u32,
+        reason: TurnEndReason,
     },
     Output {
         session_id: String,
@@ -553,14 +587,18 @@ pub enum SessionEvent {
         session_id: String,
         paths: Vec<String>,
     },
+    /// A session error outside a turn, such as a message the agent could
+    /// not accept. Older logs also end failed turns with it.
     Error {
         session_id: String,
         message: String,
     },
+    /// A turn finished. Logs written before ADR 0012 only.
     Done {
         session_id: String,
     },
-    /// The user stopped the turn before it finished.
+    /// The user stopped the turn before it finished. Logs written before
+    /// ADR 0012 only.
     Interrupted {
         session_id: String,
     },
@@ -593,12 +631,46 @@ pub enum SessionEvent {
     },
 }
 
+/// Tokens one model request used, normalized across providers: `input`
+/// excludes tokens served from or written to the prompt cache (ADR 0012).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Usage {
+    #[ts(type = "number")]
+    pub input: u64,
+    #[ts(type = "number")]
+    pub output: u64,
+    #[ts(type = "number")]
+    pub cache_read: u64,
+    #[ts(type = "number")]
+    pub cache_write: u64,
+}
+
+/// Why a turn ended.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TurnEndReason {
+    Completed,
+    /// The user stopped it.
+    Interrupted,
+    /// It failed; `code` is a stable identifier such as `PROVIDER_ERROR`.
+    Error {
+        code: String,
+        message: String,
+    },
+}
+
 /// A session event as sent to the browser: the event's fields plus its
-/// per-session sequence number, which starts at 1.
+/// per-session sequence number, which starts at 1, and the time it was
+/// published.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct SessionEnvelope {
     #[ts(type = "number")]
     pub seq: u64,
+    /// Milliseconds since the Unix epoch; 0 in logs written before
+    /// ADR 0012.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub ts: u64,
     #[serde(flatten)]
     #[ts(flatten)]
     pub event: SessionEvent,
@@ -608,7 +680,10 @@ impl SessionEvent {
     pub fn session_id(&self) -> &str {
         match self {
             Self::UserMessage { session_id, .. }
-            | Self::TurnStarted { session_id }
+            | Self::TurnStarted { session_id, .. }
+            | Self::StepStarted { session_id, .. }
+            | Self::StepEnded { session_id, .. }
+            | Self::TurnEnded { session_id, .. }
             | Self::Output { session_id, .. }
             | Self::ToolCall { session_id, .. }
             | Self::ToolOutput { session_id, .. }
@@ -678,6 +753,8 @@ pub fn typescript_bindings() -> String {
         ClientMessage::decl(&cfg),
         OutputStream::decl(&cfg),
         SandboxInfo::decl(&cfg),
+        Usage::decl(&cfg),
+        TurnEndReason::decl(&cfg),
         SessionEvent::decl(&cfg),
         SessionEnvelope::decl(&cfg),
     ];

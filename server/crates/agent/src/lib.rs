@@ -19,7 +19,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use api_types::{ApprovalDecision, ApprovalKind, ApprovalMode, SessionEvent};
+use api_types::{ApprovalDecision, ApprovalKind, ApprovalMode, SessionEvent, TurnEndReason};
 use services::{log::LogRecord, EventService};
 use tokio::sync::watch;
 
@@ -81,6 +81,23 @@ struct SessionState {
     /// What the session's commands may write and reach; the project
     /// folder only, without network, until changed.
     policy: Option<sandbox::Policy>,
+    /// The number of the session's latest turn; turns count from 1.
+    turns: u32,
+}
+
+/// Why a turn failed: a stable `code` and a message for the user.
+struct TurnFailure {
+    code: &'static str,
+    message: String,
+}
+
+impl TurnFailure {
+    fn provider(message: String) -> Self {
+        Self {
+            code: "PROVIDER_ERROR",
+            message,
+        }
+    }
 }
 
 /// How a turn that did not fail came to an end.
@@ -238,28 +255,33 @@ impl Agent {
         session.effort = effort;
         let unfinished = self.restore(session_id, session);
         drop(sessions);
-        if unfinished {
-            self.events.publish(SessionEvent::Error {
+        if let Some(turn) = unfinished {
+            self.events.publish(SessionEvent::TurnEnded {
                 session_id: session_id.to_string(),
-                message: "The server stopped during this turn, so it did not finish.".into(),
+                turn,
+                reason: TurnEndReason::Error {
+                    code: "SERVER_RESTARTED".into(),
+                    message: "The server stopped during this turn, so it did not finish.".into(),
+                },
             });
         }
     }
 
-    /// Loads a session's conversation and file baselines from its log.
-    /// Returns true when the log ends inside a turn.
-    fn restore(&self, session_id: &str, session: &mut SessionState) -> bool {
-        let Some(log) = self.events.log() else {
-            return false;
-        };
+    /// Loads a session's conversation, file baselines and turn count from
+    /// its log. Returns the number of the turn the log ends inside, if any.
+    fn restore(&self, session_id: &str, session: &mut SessionState) -> Option<u32> {
+        let log = self.events.log()?;
         let records = match log.read(session_id) {
             Ok(records) => records,
             Err(err) => {
                 tracing::error!(%err, %session_id, "cannot read session log");
-                return false;
+                return None;
             }
         };
         let mut in_turn = false;
+        // Whether the open turn's `TurnStarted` was logged; a restart
+        // between a message and its turn start leaves only the message.
+        let mut started = false;
         for record in records {
             match record {
                 LogRecord::Message { message } => match serde_json::from_value(message) {
@@ -273,17 +295,35 @@ impl Agent {
                 LogRecord::Event { event, .. } => match event {
                     // A message is logged before its turn starts, so a
                     // restart between the two still leaves a turn open.
-                    SessionEvent::UserMessage { .. } | SessionEvent::TurnStarted { .. } => {
-                        in_turn = true
+                    SessionEvent::UserMessage { .. } => in_turn = true,
+                    SessionEvent::TurnStarted { turn, .. } => {
+                        // Logs from before turn numbers record 0.
+                        session.turns = if turn == 0 {
+                            session.turns + 1
+                        } else {
+                            turn.max(session.turns)
+                        };
+                        in_turn = true;
+                        started = true;
                     }
-                    SessionEvent::Done { .. }
+                    SessionEvent::TurnEnded { .. }
+                    | SessionEvent::Done { .. }
                     | SessionEvent::Error { .. }
-                    | SessionEvent::Interrupted { .. } => in_turn = false,
+                    | SessionEvent::Interrupted { .. } => {
+                        in_turn = false;
+                        started = false;
+                    }
                     _ => {}
                 },
             }
         }
-        in_turn
+        if !in_turn {
+            return None;
+        }
+        if !started {
+            session.turns += 1;
+        }
+        Some(session.turns)
     }
 
     fn log(&self, session_id: &str, record: &LogRecord) {
@@ -573,10 +613,12 @@ impl Agent {
         let (cancel, cancelled) = watch::channel(false);
         session.running = true;
         session.cancel = Some(cancel);
+        session.turns += 1;
+        let turn = session.turns;
         let agent = self.clone();
         tokio::spawn(async move {
             agent
-                .run_turn(session_id, conversation, cancelled, tools)
+                .run_turn(session_id, turn, conversation, cancelled, tools)
                 .await
         });
     }
@@ -584,15 +626,17 @@ impl Agent {
     async fn run_turn(
         self,
         session_id: String,
+        turn: u32,
         mut conversation: Vec<ChatMessage>,
         cancelled: watch::Receiver<bool>,
         tools: ToolBox,
     ) {
         self.events.publish(SessionEvent::TurnStarted {
             session_id: session_id.clone(),
+            turn,
         });
         let result = self
-            .run_steps(&session_id, &mut conversation, cancelled, &tools)
+            .run_steps(&session_id, turn, &mut conversation, cancelled, &tools)
             .await;
 
         let mut sessions = self.sessions.lock().unwrap();
@@ -614,16 +658,16 @@ impl Agent {
         // A message that arrived after the last step starts the next turn.
         let leftover = std::mem::take(&mut session.pending);
 
-        self.events.publish(match result {
-            Ok(Ending::Done) => SessionEvent::Done {
-                session_id: session_id.clone(),
-            },
-            Ok(Ending::Interrupted) => SessionEvent::Interrupted {
-                session_id: session_id.clone(),
-            },
-            Err(message) => SessionEvent::Error {
-                session_id: session_id.clone(),
-                message,
+        self.events.publish(SessionEvent::TurnEnded {
+            session_id: session_id.clone(),
+            turn,
+            reason: match result {
+                Ok(Ending::Done) => TurnEndReason::Completed,
+                Ok(Ending::Interrupted) => TurnEndReason::Interrupted,
+                Err(failure) => TurnEndReason::Error {
+                    code: failure.code.to_string(),
+                    message: failure.message,
+                },
             },
         });
 
@@ -640,60 +684,96 @@ impl Agent {
     async fn run_steps(
         &self,
         session_id: &str,
+        turn: u32,
         conversation: &mut Vec<ChatMessage>,
         mut cancelled: watch::Receiver<bool>,
         tools: &ToolBox,
-    ) -> Result<Ending, String> {
-        for _ in 0..MAX_STEPS {
-            let reply = self
-                .model_step(session_id, conversation, &mut cancelled, tools)
-                .await?;
-            let calls: Vec<_> = reply
-                .content
-                .iter()
-                .filter_map(|block| match block {
-                    ContentBlock::ToolUse { id, name, input } => {
-                        Some((id.clone(), name.clone(), input.clone()))
-                    }
-                    _ => None,
-                })
-                .collect();
-            if !reply.content.is_empty() {
-                conversation.push(ChatMessage::assistant(reply.content));
+    ) -> Result<Ending, TurnFailure> {
+        for step in 1..=MAX_STEPS as u32 {
+            self.events.publish(SessionEvent::StepStarted {
+                session_id: session_id.to_string(),
+                turn,
+                step,
+            });
+            let outcome = self
+                .run_step(session_id, conversation, &mut cancelled, tools)
+                .await;
+            // Every started step ends, whether it continues the turn,
+            // finishes it, is interrupted or fails.
+            self.events.publish(SessionEvent::StepEnded {
+                session_id: session_id.to_string(),
+                turn,
+                step,
+                usage: None,
+                first_token_ms: None,
+                generation_ms: None,
+            });
+            if let Some(ending) = outcome? {
+                return Ok(ending);
             }
-            if reply.interrupted {
-                return Ok(Ending::Interrupted);
-            }
-
-            let mut next = Vec::with_capacity(calls.len());
-            for (call_id, name, input) in calls {
-                next.push(if *cancelled.borrow() {
-                    ContentBlock::ToolResult {
-                        tool_use_id: call_id,
-                        content: INTERRUPTED_TOOL.into(),
-                        is_error: true,
-                    }
-                } else {
-                    self.run_tool(session_id, tools, call_id, name, input, cancelled.clone())
-                        .await
-                });
-            }
-            next.extend(text_blocks(self.take_pending(session_id)));
-            if *cancelled.borrow() {
-                if !next.is_empty() {
-                    conversation.push(ChatMessage::user(next));
-                }
-                return Ok(Ending::Interrupted);
-            }
-            // No tool to answer and no message waiting: the reply is final.
-            if next.is_empty() {
-                return Ok(Ending::Done);
-            }
-            conversation.push(ChatMessage::user(next));
         }
-        Err(format!(
-            "stopped after {MAX_STEPS} model steps without finishing"
-        ))
+        Err(TurnFailure {
+            code: "MAX_STEPS",
+            message: format!("stopped after {MAX_STEPS} model steps without finishing"),
+        })
+    }
+
+    /// One step: a model request and the tools it calls. Returns how the
+    /// turn ends, or `None` when another step follows.
+    async fn run_step(
+        &self,
+        session_id: &str,
+        conversation: &mut Vec<ChatMessage>,
+        cancelled: &mut watch::Receiver<bool>,
+        tools: &ToolBox,
+    ) -> Result<Option<Ending>, TurnFailure> {
+        let reply = self
+            .model_step(session_id, conversation, cancelled, tools)
+            .await
+            .map_err(TurnFailure::provider)?;
+        let calls: Vec<_> = reply
+            .content
+            .iter()
+            .filter_map(|block| match block {
+                ContentBlock::ToolUse { id, name, input } => {
+                    Some((id.clone(), name.clone(), input.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        if !reply.content.is_empty() {
+            conversation.push(ChatMessage::assistant(reply.content));
+        }
+        if reply.interrupted {
+            return Ok(Some(Ending::Interrupted));
+        }
+
+        let mut next = Vec::with_capacity(calls.len());
+        for (call_id, name, input) in calls {
+            next.push(if *cancelled.borrow() {
+                ContentBlock::ToolResult {
+                    tool_use_id: call_id,
+                    content: INTERRUPTED_TOOL.into(),
+                    is_error: true,
+                }
+            } else {
+                self.run_tool(session_id, tools, call_id, name, input, cancelled.clone())
+                    .await
+            });
+        }
+        next.extend(text_blocks(self.take_pending(session_id)));
+        if *cancelled.borrow() {
+            if !next.is_empty() {
+                conversation.push(ChatMessage::user(next));
+            }
+            return Ok(Some(Ending::Interrupted));
+        }
+        // No tool to answer and no message waiting: the reply is final.
+        if next.is_empty() {
+            return Ok(Some(Ending::Done));
+        }
+        conversation.push(ChatMessage::user(next));
+        Ok(None)
     }
 
     fn take_pending(&self, session_id: &str) -> Vec<String> {

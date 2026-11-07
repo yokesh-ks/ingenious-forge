@@ -121,9 +121,9 @@ describe("ProjectPage", () => {
       "GET /api/projects/p1": project,
       "GET /api/projects/p1/sessions": [session("s1", "Older")],
       "GET /api/sessions/s1/events": [
-        { seq: 1, type: "user_message", session_id: "s1", text: "fix the typo" },
-        { seq: 2, type: "turn_started", session_id: "s1" },
-        { seq: 3, type: "output", session_id: "s1", chunk: "Reading it." },
+        { seq: 1, ts: 0, type: "user_message", session_id: "s1", text: "fix the typo" },
+        { seq: 2, ts: 0, type: "turn_started", session_id: "s1", turn: 1 },
+        { seq: 3, ts: 0, type: "output", session_id: "s1", chunk: "Reading it." },
         {
           seq: 4,
           type: "tool_call",
@@ -149,8 +149,8 @@ describe("ProjectPage", () => {
           additions: 1,
           deletions: 1,
         },
-        { seq: 7, type: "output", session_id: "s1", chunk: "Fixed." },
-        { seq: 8, type: "done", session_id: "s1" },
+        { seq: 7, ts: 0, type: "output", session_id: "s1", chunk: "Fixed." },
+        { seq: 8, ts: 0, type: "done", session_id: "s1" },
       ],
     });
     render(<ProjectPage projectId="p1" sessionId="s1" />);
