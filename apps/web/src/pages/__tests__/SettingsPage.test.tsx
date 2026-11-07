@@ -21,8 +21,14 @@ const none: ProviderKeyStatus = {
   default_base_url: "https://api.example.com",
   models: null,
   default_models: [{ id: "m1", name: "Model 1" }],
+  key_valid: null,
 };
-const saved: ProviderKeyStatus = { ...none, hint: "…9876", source: "settings" };
+const saved: ProviderKeyStatus = {
+  ...none,
+  hint: "…9876",
+  source: "settings",
+  key_valid: true,
+};
 const nvidia: ProviderKeyStatus = {
   provider: "nvidia",
   name: "NVIDIA",
@@ -35,6 +41,7 @@ const nvidia: ProviderKeyStatus = {
   default_base_url: "https://api.example.com",
   models: null,
   default_models: [{ id: "m1", name: "Model 1" }],
+  key_valid: null,
 };
 
 /** Opens the Add model sheet on its manual tab. */
@@ -740,6 +747,7 @@ describe("SettingsPage — custom providers", () => {
     default_base_url: "https://gw.example.com/v1",
     models: null,
     default_models: [],
+    key_valid: true,
   };
 
   async function open(routes: Record<string, unknown> = {}) {
@@ -907,58 +915,81 @@ describe("SettingsPage — testing a key", () => {
     expect(await within(row).findByRole("alert")).toHaveTextContent("invalid x-api-key");
   });
 
-  it("shows a green dot, without any text, when the provider accepts the key", async () => {
-    fakeFetch({
-      "GET /api/settings/providers": [saved],
-      "POST /api/settings/providers/anthropic/key/test": { ok: true, message: null },
-    });
+  const posts = (fetch: ReturnType<typeof fakeFetch>) =>
+    fetch.mock.calls.filter(([, init]) => init?.method === "POST");
+
+  it("shows a saved key as green without calling the provider", async () => {
+    const fetch = fakeFetch({ "GET /api/settings/providers": [saved] });
     render(<SettingsPage section="providers" />);
     const row = await screen.findByRole("listitem", { name: "Anthropic" });
-    expect(await within(row).findByRole("img", { name: "API key valid" })).toHaveClass(
-      "bg-green-500",
-    );
-    expect(within(row).queryByRole("status")).toBeNull();
+    expect(within(row).getByRole("img", { name: "API key valid" })).toHaveClass("bg-green-500");
+    expect(posts(fetch)).toHaveLength(0);
   });
 
-  it("shows a red dot and the reason when the provider rejects the key", async () => {
-    fakeFetch({
-      "GET /api/settings/providers": [saved],
-      "POST /api/settings/providers/anthropic/key/test": { ok: false, message: "invalid key" },
-    });
+  it("shows a key that failed its last test as red without calling the provider", async () => {
+    const fetch = fakeFetch({ "GET /api/settings/providers": [{ ...saved, key_valid: false }] });
     render(<SettingsPage section="providers" />);
     const row = await screen.findByRole("listitem", { name: "Anthropic" });
-    expect(await within(row).findByRole("img", { name: "API key not valid" })).toHaveClass(
+    expect(within(row).getByRole("img", { name: "API key not valid" })).toHaveClass(
       "bg-destructive",
     );
-    expect(within(row).getByRole("alert")).toHaveTextContent("invalid key");
+    expect(posts(fetch)).toHaveLength(0);
   });
 
-  it("shows a grey dot when the check itself could not run", async () => {
-    fakeFetch({ "GET /api/settings/providers": [saved] });
+  it("shows an untested key from the environment as grey", async () => {
+    const fetch = fakeFetch({
+      "GET /api/settings/providers": [{ ...saved, source: "environment", key_valid: null }],
+    });
     render(<SettingsPage section="providers" />);
     const row = await screen.findByRole("listitem", { name: "Anthropic" });
-    expect(await within(row).findByRole("img", { name: "API key not checked" })).toBeVisible();
-    expect(within(row).queryByRole("alert")).toBeNull();
+    expect(within(row).getByRole("img", { name: "API key not tested" })).toBeVisible();
+    expect(posts(fetch)).toHaveLength(0);
   });
 
-  it("does not test or mark a provider with no key", async () => {
-    const fetch = fakeFetch({ "GET /api/settings/providers": [none] });
+  it("does not mark a provider with no key", async () => {
+    fakeFetch({ "GET /api/settings/providers": [none] });
     render(<SettingsPage section="providers" />);
     const row = await screen.findByRole("listitem", { name: "Anthropic" });
     expect(within(row).queryByRole("img", { name: /api key/i })).toBeNull();
-    expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
   });
 
-  it("tests again and turns green once a rejected key is replaced", async () => {
-    let answer = { ok: false, message: "rejected" as string | null };
+  it("turns red when Test key fails, and green when it passes", async () => {
+    let answer: { ok: boolean; message: string | null } = { ok: false, message: "rejected" };
     fakeFetch({
       "GET /api/settings/providers": [saved],
       "POST /api/settings/providers/anthropic/key/test": () => ({ body: answer }),
+    });
+    render(<SettingsPage section="providers" />);
+    const row = await screen.findByRole("listitem", { name: "Anthropic" });
+
+    await userEvent.click(within(row).getByRole("button", { name: /test key/i }));
+    expect(await within(row).findByRole("img", { name: "API key not valid" })).toBeVisible();
+    expect(within(row).getByRole("alert")).toHaveTextContent("rejected");
+
+    answer = { ok: true, message: null };
+    await userEvent.click(within(row).getByRole("button", { name: /test key/i }));
+    expect(await within(row).findByRole("img", { name: "API key valid" })).toBeVisible();
+    expect(within(row).queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps the dot as it was when the test request itself fails", async () => {
+    fakeFetch({ "GET /api/settings/providers": [saved] });
+    render(<SettingsPage section="providers" />);
+    const row = await screen.findByRole("listitem", { name: "Anthropic" });
+    await userEvent.click(within(row).getByRole("button", { name: /test key/i }));
+    expect(await within(row).findByRole("alert")).toBeVisible();
+    expect(within(row).getByRole("img", { name: "API key valid" })).toBeVisible();
+  });
+
+  it("turns green after a successful save, clearing the old failure", async () => {
+    fakeFetch({
+      "GET /api/settings/providers": [saved],
+      "POST /api/settings/providers/anthropic/key/test": { ok: false, message: "rejected" },
       "PUT /api/settings/providers/anthropic/key": { ...saved, hint: "…1234" },
     });
     render(<SettingsPage section="providers" />);
+    await userEvent.click(await screen.findByRole("button", { name: /test key/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent("rejected");
-    answer = { ok: true, message: null };
 
     await userEvent.click(screen.getByRole("button", { name: "Edit" }));
     const panel = screen.getByRole("form");

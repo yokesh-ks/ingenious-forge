@@ -1,5 +1,5 @@
 import { PlusIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { ProviderKeyStatus, ProviderKeyTest } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,9 @@ export default function ProviderKeys() {
   /** What is being configured: beside the list on a wide screen, in place of it
    * on a narrow one. */
   const [panel, setPanel] = useState<ProviderKeyStatus | "custom" | null>(null);
+  /** How many saves there have been; each starts the rows afresh, so an old
+   * test message cannot linger. */
+  const [saves, setSaves] = useState(0);
   const editing = panel !== null && panel !== "custom" ? panel.provider : null;
 
   useEffect(() => {
@@ -38,10 +41,8 @@ export default function ProviderKeys() {
   }
 
   const row = (provider: ProviderKeyStatus) => (
-    // A change to what the key test uses starts the row afresh, so it tests again
-    // and an old result cannot linger.
     <ProviderRow
-      key={`${provider.provider}:${provider.source}:${provider.hint}:${provider.base_url}:${provider.models?.[0]?.id}`}
+      key={`${provider.provider}:${provider.source}:${provider.hint}:${saves}`}
       status={provider}
       selected={editing === provider.provider}
       onEnterKey={() => setPanel(provider)}
@@ -49,6 +50,7 @@ export default function ProviderKeys() {
         update(status);
         if (editing === status.provider) setPanel(null);
       }}
+      onTested={(ok) => update({ ...provider, key_valid: ok })}
       onRemoved={remove}
     />
   );
@@ -131,6 +133,7 @@ export default function ProviderKeys() {
                 onClose={() => setPanel(null)}
                 onSaved={(status) => {
                   update(status);
+                  setSaves((count) => count + 1);
                   setPanel(null);
                 }}
               />
@@ -153,14 +156,13 @@ function ProviderGroup({ title, children }: { title: string; children: React.Rea
   );
 }
 
-/** Green for a key the provider accepted, red for one it did not, and grey
- * while checking or when the check itself could not run. */
-function KeyDot({ checking, tested }: { checking: boolean; tested: ProviderKeyTest | null }) {
-  const [label, color] = checking
-    ? ["Checking API key", "animate-pulse bg-muted-foreground/50"]
-    : !tested
-      ? ["API key not checked", "bg-muted-foreground/50"]
-      : tested.ok
+/** Green once a key is saved or passes a test, red when a test fails, and grey
+ * for a key from the environment that has not been tested. */
+function KeyDot({ valid }: { valid: boolean | null }) {
+  const [label, color] =
+    valid === null
+      ? ["API key not tested", "bg-muted-foreground/50"]
+      : valid
         ? ["API key valid", "bg-green-500"]
         : ["API key not valid", "bg-destructive"];
   return (
@@ -178,6 +180,7 @@ function ProviderRow({
   selected,
   onEnterKey,
   onChanged,
+  onTested,
   onRemoved,
 }: {
   status: ProviderKeyStatus;
@@ -185,47 +188,27 @@ function ProviderRow({
   selected: boolean;
   onEnterKey: () => void;
   onChanged: (status: ProviderKeyStatus) => void;
+  onTested: (ok: boolean) => void;
   onRemoved: (id: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tested, setTested] = useState<ProviderKeyTest | null>(null);
-  const [checking, setChecking] = useState(status.source !== null);
-  /** Whether the user asked for this test, so a pass is worth saying in words. */
-  const [asked, setAsked] = useState(false);
-  /** The latest test: an older one still answering must not overwrite it. */
-  const latestTest = useRef(0);
 
-  async function runTest(byUser: boolean) {
-    const test = ++latestTest.current;
-    setChecking(true);
-    setAsked(byUser);
+  async function testKey() {
+    setBusy(true);
     setError(null);
     setTested(null);
     try {
       const result = await api.testProviderKey(status.provider);
-      if (test === latestTest.current) setTested(result);
+      setTested(result);
+      onTested(result.ok);
     } catch (err) {
-      if (test === latestTest.current && byUser) setError((err as Error).message);
+      setError((err as Error).message);
     } finally {
-      if (test === latestTest.current) setChecking(false);
+      setBusy(false);
     }
   }
-
-  async function testKey() {
-    setBusy(true);
-    await runTest(true);
-    setBusy(false);
-  }
-
-  // A changed key or base URL remounts the row, so this tests each one once.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once per row
-  useEffect(() => {
-    if (status.source) runTest(false);
-    return () => {
-      latestTest.current++;
-    };
-  }, []);
 
   async function disconnect() {
     setBusy(true);
@@ -256,7 +239,7 @@ function ProviderRow({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{status.name}</span>
-            {status.source && <KeyDot checking={checking} tested={tested} />}
+            {status.source && <KeyDot valid={status.key_valid} />}
             {status.custom && <Badge variant="secondary">Custom</Badge>}
             {status.source === "environment" && <Badge variant="secondary">Environment</Badge>}
           </div>
@@ -299,7 +282,7 @@ function ProviderRow({
           )}
         </div>
       </div>
-      {tested?.ok && asked && (
+      {tested?.ok && (
         <p role="status" className="text-sm text-muted-foreground">
           {status.name} accepted this key.
         </p>

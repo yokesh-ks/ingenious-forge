@@ -284,6 +284,9 @@ pub struct ProviderKeyStatus {
     pub models: Option<Vec<ProviderModel>>,
     /// The models offered when the user sets none.
     pub default_models: Vec<ProviderModel>,
+    /// Whether the key is good, as of the last save or key test. `None` when
+    /// there is no key, or a key from the environment has not been tested.
+    pub key_valid: Option<bool>,
 }
 
 /// A model a provider serves, by id and display name.
