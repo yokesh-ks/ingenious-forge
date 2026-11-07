@@ -22,3 +22,5 @@ server/secret.key
 server/sessions/
 
 # Web SPA build artifacts live in apps/web/.gitignore (app-local rules)
+
+.kilo/
