@@ -1,4 +1,5 @@
 import {
+  ArchiveIcon,
   GitBranchIcon,
   KeyRoundIcon,
   type LucideIcon,
@@ -7,7 +8,7 @@ import {
 } from "lucide-react";
 import { matchPath } from "@/lib/router";
 
-export type SettingsSectionId = "appearance" | "providers" | "defaults" | "github";
+export type SettingsSectionId = "appearance" | "providers" | "defaults" | "github" | "archived";
 
 export interface SettingsSection {
   id: SettingsSectionId;
@@ -23,6 +24,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "providers", label: "Providers", to: "/settings/providers", icon: KeyRoundIcon },
   { id: "defaults", label: "Session defaults", to: "/settings/defaults", icon: SlidersIcon },
   { id: "github", label: "GitHub", to: "/settings/github", icon: GitBranchIcon },
+  { id: "archived", label: "Archived Sessions", to: "/settings/archived", icon: ArchiveIcon },
 ];
 
 /** The settings page at `path`; `null` for any other path. */
