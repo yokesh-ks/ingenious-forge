@@ -7,7 +7,8 @@ use api_types::{
     ApiError, CommitMessageDraft, CommitRequest, CommitResult, CreateBranchRequest,
     CreateSessionRequest, FileContent, FileList, GitStatus, ModelCatalog, OpenInRequest,
     OpenProjectRequest, PickedFolder, Project, PushResult, RenameProjectRequest, SandboxInfo,
-    Session, SessionEnvelope, SessionEvent, SetApprovalModeRequest, UpdateSessionRequest,
+    Session, SessionEnvelope, SessionEvent, SetApprovalModeRequest, SetSessionModelRequest,
+    UpdateSessionRequest,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -53,6 +54,7 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route("/sessions/{id}/events", get(session_events))
         .route("/sessions/{id}/approval-mode", put(set_approval_mode))
+        .route("/sessions/{id}/model", put(set_session_model))
         .route("/sessions/{id}/sandbox", get(session_sandbox))
         .route("/fs/pick-folder", post(pick_folder))
         .route("/models", get(model_catalog))
@@ -452,6 +454,33 @@ async fn set_approval_mode(
         mode: body.mode,
     });
     session.running = state.agent.is_running(&id);
+    Ok(Json(session))
+}
+
+/// Changes a session's model between turns; the next message uses it.
+async fn set_session_model(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<SetSessionModelRequest>,
+) -> ApiResult<Session> {
+    let choice = (&body.model).into();
+    state
+        .agent
+        .providers()
+        .check_usable(&choice)
+        .map_err(unusable_model)?;
+    crate::routes::ensure_open(&state, &id).await;
+    if state.agent.is_running(&id) {
+        return Err(ApiFailure(
+            StatusCode::CONFLICT,
+            "the model can change once this turn has finished".into(),
+        ));
+    }
+    let session = projects::set_session_model(&state.db, &id, &body.model).await?;
+    state
+        .agent
+        .set_model(&id, &choice)
+        .map_err(|err| ApiFailure(StatusCode::BAD_REQUEST, err.to_string()))?;
     Ok(Json(session))
 }
 
@@ -1016,6 +1045,46 @@ mod tests {
         ));
         let (_, listed) = get_json(&format!("{api}/projects/{id}/sessions")).await;
         assert_eq!(listed[0]["approval_mode"], "auto_edit");
+    }
+
+    #[tokio::test]
+    async fn a_session_can_change_model_and_an_unusable_choice_changes_nothing() {
+        let (api, _) = start_with_models().await;
+        let id = new_project(&api).await;
+        let (_, session) = post_json(
+            &format!("{api}/projects/{id}/sessions"),
+            json!({ "model": { "provider": "stub", "model": "smart", "effort": "max" } }),
+        )
+        .await;
+        let sid = session["id"].as_str().unwrap();
+        let url = format!("{api}/sessions/{sid}/model");
+
+        let (status, changed) = put_json(
+            &url,
+            json!({ "model": { "provider": "stub", "model": "fast", "effort": "low" } }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(changed["model"]["model"], "fast");
+
+        let (status, _) = put_json(
+            &url,
+            json!({ "model": { "provider": "stub", "model": "nope", "effort": "low" } }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let (_, listed) = get_json(&format!("{api}/projects/{id}/sessions")).await;
+        assert_eq!(
+            listed[0]["model"],
+            json!({ "provider": "stub", "model": "fast", "effort": "low" })
+        );
+
+        let (status, _) = put_json(
+            &format!("{api}/sessions/nope/model"),
+            json!({ "model": { "provider": "stub", "model": "fast", "effort": "low" } }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

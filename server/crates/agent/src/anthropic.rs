@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 
 use std::sync::Arc;
 
-use crate::model::{ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest};
+use crate::model::{ChatMessage, ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest};
 use crate::providers::{
     current_key, fit_models, CustomizableProvider, KeyHandle, ModelInfo, ModelListRequest,
     ModelProvider,
@@ -197,13 +197,25 @@ impl CustomizableProvider for AnthropicProvider {
     }
 }
 
+/// `messages` without unsigned thinking, which comes from another provider
+/// after a session changes model and which this API would refuse.
+fn without_unsigned_thinking(messages: &[ChatMessage]) -> Vec<ChatMessage> {
+    let mut messages = messages.to_vec();
+    for message in &mut messages {
+        message.content.retain(|block| {
+            !matches!(block, ContentBlock::Thinking { signature, .. } if signature.is_empty())
+        });
+    }
+    messages
+}
+
 pub(crate) fn request_body(model: &str, request: &ModelRequest) -> Value {
     let mut body = json!({
         "model": model,
         "max_tokens": request.max_tokens.unwrap_or(MAX_TOKENS),
         "stream": true,
         "fallbacks": "default",
-        "messages": request.messages,
+        "messages": without_unsigned_thinking(&request.messages),
     });
     if !request.tools.is_empty() {
         body["tools"] = json!(request.tools);
@@ -599,6 +611,32 @@ mod tests {
             data: "{not json".into(),
         };
         assert!(matches!(feed(&[e]), Err(ModelError::Stream(_))));
+    }
+
+    #[test]
+    fn request_body_drops_only_unsigned_thinking() {
+        let thinking = |signature: &str| ContentBlock::Thinking {
+            thinking: "because".into(),
+            signature: signature.into(),
+        };
+        let req = ModelRequest {
+            messages: vec![ChatMessage::assistant(vec![
+                thinking(""),
+                thinking("signed"),
+                ContentBlock::Text {
+                    text: "done".into(),
+                },
+            ])],
+            tools: vec![],
+            system: None,
+            effort: None,
+            max_tokens: None,
+        };
+        let body = request_body("m", &req);
+        let content = body["messages"][0]["content"].as_array().unwrap();
+        assert_eq!(content.len(), 2);
+        assert_eq!(content[0]["signature"], "signed");
+        assert_eq!(content[1]["text"], "done");
     }
 
     #[test]

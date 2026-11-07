@@ -161,6 +161,23 @@ pub async fn set_approval_mode(
     get_session(pool, session_id).await
 }
 
+/// Changes the model a session talks to.
+pub async fn set_session_model(
+    pool: &SqlitePool,
+    session_id: &str,
+    model: &SessionModel,
+) -> Result<Session, ProjectError> {
+    let stored = SessionModelRow {
+        provider: model.provider.clone(),
+        model: model.model.clone(),
+        effort: model.effort.as_str().to_string(),
+    };
+    if !db::set_session_model(pool, session_id, &stored).await? {
+        return Err(ProjectError::NotFound);
+    }
+    get_session(pool, session_id).await
+}
+
 /// The project folder and model choice of `session_id`, or `None` for an
 /// unknown session.
 pub async fn session_settings(

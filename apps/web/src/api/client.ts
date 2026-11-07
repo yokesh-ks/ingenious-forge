@@ -28,6 +28,7 @@ import type {
   SessionEnvelope,
   SessionModel,
   SetApprovalModeRequest,
+  SetSessionModelRequest,
   UpdateSessionRequest,
 } from "./types";
 
@@ -160,6 +161,12 @@ export const api = {
   gitStatus: (projectId: string) =>
     request<GitStatus>(`/api/projects/${encodeURIComponent(projectId)}/git/status`),
   modelCatalog: () => request<ModelCatalog>("/api/models"),
+  setSessionModel: (sessionId: string, model: SessionModel) =>
+    post<Session>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/model`,
+      { model } satisfies SetSessionModelRequest,
+      "PUT",
+    ),
   setApprovalMode: (sessionId: string, mode: ApprovalMode) =>
     post<Session>(
       `/api/sessions/${encodeURIComponent(sessionId)}/approval-mode`,

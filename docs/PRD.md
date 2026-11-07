@@ -76,7 +76,7 @@ flowchart LR
 3. They start a session and describe the task, optionally attaching images.
 4. The agent works. The user watches live, answers approval prompts, or steers it mid-turn.
 5. The changed-files panel shows every file the agent touched with its diff. The user comments or asks for changes in the chat.
-6. The user accepts: commit, push, and optionally open a pull request — all from the web UI. Or they discard the changes.
+6. The user accepts: they ask the agent in the chat to commit, push, and optionally open a pull request. Or they discard the changes.
 
 ---
 
@@ -114,7 +114,7 @@ Approval prompts appear inline in the chat and can be answered "once" or "always
 Each repository can hold an `AGENTS.md` file (and nested ones in subfolders) describing conventions, commands and do's and don'ts. The agent loads them automatically. `/init` generates a first version by inspecting the repository.
 
 #### Models and reasoning effort — P0
-Users pick the model provider, the model and the reasoning effort per session. The MVP ships Anthropic, DeepSeek, Google, NVIDIA, OpenAI, OpenRouter and Vercel AI Gateway, and the user can add a custom provider by its base URL and API protocol (OpenAI Chat Completions, OpenAI Responses or Anthropic Messages). Providers plug in through adapters, so new providers can be added without changing the agent.
+Users pick the model provider, the model and the reasoning effort per session, and can change them from the composer between turns; the next message uses the new choice. The MVP ships Anthropic, DeepSeek, Google, NVIDIA, OpenAI, OpenRouter and Vercel AI Gateway, and the user can add a custom provider by its base URL and API protocol (OpenAI Chat Completions, OpenAI Responses or Anthropic Messages). Providers plug in through adapters, so new providers can be added without changing the agent.
 
 #### Sessions and resume — P0
 Every session is recorded as an append-only log of messages, tool calls and results. Sessions survive server restarts and can be resumed, forked, or replayed for debugging.
@@ -157,16 +157,16 @@ A single server process runs the agent and exposes it over HTTP and WebSocket to
 A global icon rail on the far left of every page holds the app's sections: Work, Artifacts, Scheduled, Plugins, Sites, Code Review and Settings. A slim top bar above it holds the Forge name and the theme toggle. Work opens the projects area and is the only section with the project sidebar; Settings has its own sidebar of settings pages. Artifacts, Scheduled, Plugins, Sites and Code Review each open a "coming soon" placeholder page for now, and listing them here does not commit to any feature behind them.
 
 #### Projects and session list — P0
-The Work section's sidebar lists recent projects, with the main area empty until one is chosen. An icon in the sidebar's Projects header opens the operating system's folder dialog, titled "Select Project Directory", to open another folder from disk. Each project expands in that sidebar to list its sessions (title and status) so the user can switch between them, resume old ones, or start a new one. Each project row has an icon that starts a new session and a menu to rename the project (its name in Forge only), show its folder in the system file manager, or delete the workspace. Deleting asks for confirmation, is refused while one of its sessions is running, and removes the project and its session history from Forge without touching the folder on disk. Each session row has icons to pin and archive it and a menu to pin it, rename it, fork it, copy its id, open the project folder in the system file manager, VS Code or a terminal, or archive it. Pinned sessions stay at the top of the project's list. Forking starts a new session with a copy of the conversation so far, the same model and the same approval mode. Archiving hides a session under the project's Archived group, from where it can be restored; a running session can be neither forked nor archived.
+The Work section's sidebar lists recent projects, with the main area empty until one is chosen. An icon in the sidebar's Projects header opens the operating system's folder dialog, titled "Select Project Directory", to open another folder from disk. Each project expands in that sidebar to list its sessions (title and status) so the user can switch between them or resume old ones. A project's first session starts when it is opened with none. Each project row has an icon that starts a new session and a menu to rename the project (its name in Forge only), show its folder in the system file manager, or delete the workspace. Deleting asks for confirmation, is refused while one of its sessions is running, and removes the project and its session history from Forge without touching the folder on disk. Each session row has icons to pin and archive it and a menu to pin it, rename it, fork it, copy its id, open the project folder in the system file manager, VS Code or a terminal, or archive it. Pinned sessions stay at the top of the project's list. Forking starts a new session with a copy of the conversation so far, the same model and the same approval mode. Archiving hides a session under the project's Archived group, from where it can be restored; a running session can be neither forked nor archived.
 
 #### Live session view — P0
 The agent's work streams into the browser as it happens: messages (rendered markdown and code), each tool call with its input and output, command output as it prints, and diffs as files change. Long sessions stay fast, and a dropped connection reconnects without losing or duplicating output.
 
 #### Composer — P0
-The message box for prompts, with slash commands (`/init`, `/model`, `/review`…), file mentions (`@path` with autocomplete), and a stop button while the agent is running. Messages sent during a turn steer the agent.
+A row above the box shows the open project at the left, with a menu to move to a recent project, and the current branch and status at the right. The message box is for prompts, with slash commands (`/init`, `/model`, `/review`…), file mentions (`@path` with autocomplete), and a stop button while the agent is running. Inside the box, the session's approval mode sits at the left and its model and reasoning effort at the right, next to the send button. Messages sent during a turn steer the agent.
 
 #### Approvals in the UI — P0
-Approval requests appear as cards in the session with the exact command or edit, and Approve / Deny / Always-allow actions. The current approval mode and sandbox are shown in the session header and can be changed there.
+Approval requests appear as cards in the session with the exact command or edit, and Approve / Deny / Always-allow actions. The current approval mode is shown in the composer and can be changed there. A warning appears above the chat only when commands are not sandboxed.
 
 #### Workspace panel — P0
 Next to the chat: the project file tree with search, a file viewer, and an interactive terminal in the project folder.
@@ -175,7 +175,7 @@ Next to the chat: the project file tree with search, a file viewer, and an inter
 A panel listing every file changed in the session, with unified or side-by-side diffs. The user can revert a single file or all changes, or select lines and send a comment about them to the agent.
 
 #### Git actions — P0
-From the UI: see the current branch and status, create a branch, commit (with a generated commit message the user can edit), and push.
+The row above the composer shows the current branch and status. The chat window has no buttons for git changes: the user asks the agent in the chat to create a branch, commit or push.
 
 #### Settings — P0
 Appearance (light, dark or following the system), model providers and API keys, default model and effort, default approval mode and sandbox rules, and the GitHub connection, each on its own page. For each provider the user can change the base URL and choose which models to offer, including from the list the provider reports. Each connected provider shows whether its key is good: green after a successful save or a passing key test, red after a failed test. Showing this makes no request to the provider. No provider is configured by default: a session cannot start until the user configures at least one, and the agent makes no model call before then. A key set through the provider's environment variable counts as configured.

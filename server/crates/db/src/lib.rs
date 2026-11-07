@@ -176,6 +176,24 @@ pub async fn set_approval_mode(pool: &SqlitePool, id: &str, mode: &str) -> Resul
     Ok(done.rows_affected() == 1)
 }
 
+/// Sets a session's provider, model and effort; false when the session does
+/// not exist.
+pub async fn set_session_model(
+    pool: &SqlitePool,
+    id: &str,
+    model: &SessionModelRow,
+) -> Result<bool, DbError> {
+    let done =
+        sqlx::query("UPDATE sessions SET provider = ?2, model = ?3, effort = ?4 WHERE id = ?1")
+            .bind(id)
+            .bind(&model.provider)
+            .bind(&model.model)
+            .bind(&model.effort)
+            .execute(pool)
+            .await?;
+    Ok(done.rows_affected() == 1)
+}
+
 /// Records that the folder at `path` was opened at `now`, creating the
 /// project the first time.
 pub async fn upsert_project(

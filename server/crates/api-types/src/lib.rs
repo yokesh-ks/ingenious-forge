@@ -100,6 +100,12 @@ pub struct SessionModel {
     pub effort: ReasoningEffort,
 }
 
+/// Body of `PUT /api/sessions/{id}/model`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SetSessionModelRequest {
+    pub model: SessionModel,
+}
+
 /// A model offered by a provider.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ModelOption {
@@ -631,6 +637,7 @@ pub fn typescript_bindings() -> String {
         SetApprovalModeRequest::decl(&cfg),
         ReasoningEffort::decl(&cfg),
         SessionModel::decl(&cfg),
+        SetSessionModelRequest::decl(&cfg),
         ModelOption::decl(&cfg),
         ProviderOption::decl(&cfg),
         ModelCatalog::decl(&cfg),
