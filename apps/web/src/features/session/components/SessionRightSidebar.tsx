@@ -32,7 +32,7 @@ export default function SessionRightSidebar({
   return (
     <SidebarProvider className="contents">
       <SidebarTrigger aria-label="Toggle workspace panel" className="self-start" />
-      <Sidebar side="right" collapsible="offcanvas">
+      <Sidebar side="right" collapsible="offcanvas" className="h-full">
         <SidebarContent className="gap-3 p-3">
           <div role="tablist" aria-label="Workspace panel" className="flex gap-1 border-b">
             {(["changes", "files", "terminal"] as const).map((name) => (

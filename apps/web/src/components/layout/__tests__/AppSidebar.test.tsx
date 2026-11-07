@@ -9,18 +9,15 @@ beforeEach(() => {
 });
 
 describe("AppSidebar", () => {
-  it("shows the Forge home link, projects, and the footer actions", async () => {
+  it("shows the Work title, its collapse toggle and the projects", async () => {
     fakeFetch({ "GET /api/projects": [] });
     render(
       <SidebarProvider>
         <AppSidebar />
       </SidebarProvider>,
     );
-    expect(screen.getByRole("link", { name: /ingenious forge/i })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("heading", { name: "Work" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /collapse sidebar/i })).toBeInTheDocument();
     expect(await screen.findByText(/no projects yet/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /settings/i })).toHaveAttribute("href", "/settings");
-    expect(
-      screen.getByRole("button", { name: /switch to (dark|light) theme/i }),
-    ).toBeInTheDocument();
   });
 });

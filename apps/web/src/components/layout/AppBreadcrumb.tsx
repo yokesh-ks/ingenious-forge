@@ -1,3 +1,4 @@
+import { sectionForPath } from "@/components/layout/app-sections";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -10,23 +11,25 @@ import { useProject } from "@/features/session/hooks/use-project";
 import { useSessionTitle } from "@/features/session/hooks/use-session-title";
 import { Link, matchPath } from "@/lib/router";
 
-/** The sticky header's breadcrumb: home, the open project, the open session. */
+/** The page header's breadcrumb: the section, the open project, the open session. */
 export default function AppBreadcrumb({ path }: { path: string }) {
   const sessionMatch = matchPath("/projects/:id/sessions/:sessionId", path);
   const projectMatch = matchPath("/projects/:id", path);
   const projectId = sessionMatch?.id ?? projectMatch?.id ?? null;
   const { project } = useProject(projectId);
   const sessionTitle = useSessionTitle(projectId, sessionMatch?.sessionId ?? null);
+  const section = sectionForPath(path);
+  const root = section && section.id !== "work" ? section.label : "Projects";
 
   return (
     <Breadcrumb>
       <BreadcrumbList>
         <BreadcrumbItem>
           {projectId === null ? (
-            <BreadcrumbPage>Forge</BreadcrumbPage>
+            <BreadcrumbPage>{root}</BreadcrumbPage>
           ) : (
             <BreadcrumbLink asChild>
-              <Link to="/">Forge</Link>
+              <Link to="/">{root}</Link>
             </BreadcrumbLink>
           )}
         </BreadcrumbItem>
