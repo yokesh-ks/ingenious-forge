@@ -79,10 +79,14 @@ describe("NewSessionForm", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Cannot reach the Forge server.");
   });
 
-  it("says so when no provider is configured", () => {
+  it("sends the user to Settings when no provider is configured", () => {
     const empty: ModelCatalog = { providers: [], efforts: catalog.efforts, default: null };
     setup({ catalog: empty });
     expect(screen.getByText(/no model provider/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /open settings/i })).toHaveAttribute(
+      "href",
+      "/settings",
+    );
     expect(screen.queryByRole("button", { name: /start session/i })).not.toBeInTheDocument();
   });
 });

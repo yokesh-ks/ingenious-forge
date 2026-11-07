@@ -94,8 +94,8 @@ pub enum ModelEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ModelError {
-    #[error("ANTHROPIC_API_KEY is not set; add a model provider key to start a turn")]
-    MissingApiKey,
+    #[error("{provider} has no API key; add one in Settings")]
+    MissingApiKey { provider: String },
     #[error("model request failed: {0}")]
     Request(String),
     #[error("model API returned {status}: {message}")]
@@ -108,7 +108,7 @@ pub enum ModelError {
     UnknownProvider(String),
     #[error("{provider} has no model {model}")]
     UnknownModel { provider: String, model: String },
-    #[error("no model provider is configured")]
+    #[error("no model provider is configured; add an API key in Settings")]
     NoProvider,
 }
 

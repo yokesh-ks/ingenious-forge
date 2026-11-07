@@ -70,9 +70,9 @@ async fn main() -> anyhow::Result<()> {
     let log_dir = data_dir.join("sessions");
     let log = services::log::SessionLog::open(&log_dir)?;
     let events = services::EventService::with_log(Arc::new(log));
-    // Provider keys move to Settings in a later story (PRD §6.2 Settings).
-    // Each provider adapter is registered here; the first is the default.
-    // A key saved in Settings wins over the environment (ADR 0008).
+    // Each provider adapter is registered here. None is the default: the
+    // first one with a key serves sessions that do not choose (PRD §6.2
+    // Settings). A key saved in Settings wins over the environment (ADR 0008).
     let env_key = std::env::var("ANTHROPIC_API_KEY")
         .ok()
         .filter(|k| !k.trim().is_empty());

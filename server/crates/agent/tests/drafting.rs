@@ -64,10 +64,12 @@ async fn the_draft_does_not_join_the_conversation() {
 
 #[tokio::test]
 async fn a_model_failure_or_an_unknown_session_is_an_error() {
-    let (agent, _) = agent(Err(ModelError::MissingApiKey));
+    let (agent, _) = agent(Err(ModelError::MissingApiKey {
+        provider: "Anthropic".into(),
+    }));
     assert!(matches!(
         agent.draft_commit_message("s1", "M a").await,
-        Err(AgentError::Model(ModelError::MissingApiKey))
+        Err(AgentError::Model(ModelError::MissingApiKey { .. }))
     ));
     assert!(matches!(
         agent.draft_commit_message("nope", "M a").await,

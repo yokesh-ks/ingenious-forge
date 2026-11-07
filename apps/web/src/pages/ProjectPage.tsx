@@ -5,7 +5,7 @@ import type { ApprovalMode, SessionModel } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import GitActions from "@/features/git/components/GitActions";
 import { useGitStatus } from "@/features/git/hooks/use-git-status";
-import NewSessionForm from "@/features/sandbox/components/NewSessionForm";
+import NewSessionForm, { NoProviderPrompt } from "@/features/sandbox/components/NewSessionForm";
 import { useModelCatalog } from "@/features/sandbox/hooks/use-model-catalog";
 import { useSandbox } from "@/features/sandbox/hooks/use-sandbox";
 import SessionHeader from "@/features/session/components/SessionHeader";
@@ -104,6 +104,10 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
   // Guards against creating a second first session when the effect below
   // runs again before the first request returns.
   const creating = useRef(false);
+  // A catalog that failed to load counts as known: the server then gives the
+  // reason when the session is created.
+  const catalogKnown = models.catalog !== null || models.error !== null;
+  const noProvider = models.catalog !== null && models.catalog.default === null;
 
   // With no session chosen, open the most recent one, or start the first.
   useEffect(() => {
@@ -114,6 +118,8 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
       open(sessions[0].id);
       return;
     }
+    // Wait to learn whether a first session can start at all.
+    if (!catalogKnown || noProvider) return;
     if (creating.current) return;
     creating.current = true;
     api.createSession(projectId).then(
@@ -126,7 +132,7 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
         setError(err.message);
       },
     );
-  }, [projectId, sessionId, sessions, reload]);
+  }, [projectId, sessionId, sessions, reload, catalogKnown, noProvider]);
 
   async function newSession(model: SessionModel) {
     setCreatingNew(true);
@@ -175,6 +181,10 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
             onCancel={() => setPicking(false)}
             starting={creatingNew}
           />
+        </div>
+      ) : !sessionId && noProvider && sessions?.length === 0 ? (
+        <div className="flex min-w-0 flex-1 items-start justify-center">
+          <NoProviderPrompt />
         </div>
       ) : (
         sessionId && (

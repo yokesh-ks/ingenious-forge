@@ -2,7 +2,7 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use agent::tools::ToolBox;
+use agent::{model::ModelError, tools::ToolBox};
 use api_types::{
     ApiError, CommitMessageDraft, CommitRequest, CommitResult, CreateBranchRequest,
     CreateSessionRequest, DirListing, FileContent, FileList, GitStatus, ModelCatalog,
@@ -252,14 +252,30 @@ async fn model_catalog(State(state): State<Arc<AppState>>) -> Json<ModelCatalog>
 async fn catalog(state: &AppState) -> ModelCatalog {
     let mut catalog = state.agent.providers().catalog();
     if let Some(model) = crate::settings::defaults(state).await.model {
-        if state.agent.providers().resolve(&(&model).into()).is_ok() {
+        if state
+            .agent
+            .providers()
+            .check_usable(&(&model).into())
+            .is_ok()
+        {
             catalog.default = Some(model);
         }
     }
     catalog
 }
 
-/// Creates a session with the chosen model, or the catalog default.
+/// Why a session cannot start with a model: a provider without a key is a
+/// conflict the user fixes in Settings, anything else a bad request.
+fn unusable_model(err: ModelError) -> ApiFailure {
+    let status = match err {
+        ModelError::MissingApiKey { .. } | ModelError::NoProvider => StatusCode::CONFLICT,
+        _ => StatusCode::BAD_REQUEST,
+    };
+    ApiFailure(status, err.to_string())
+}
+
+/// Creates a session with the chosen model, or the catalog default. Refused
+/// before anything is stored when no configured provider can serve it.
 async fn create_session(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -269,27 +285,25 @@ async fn create_session(
     let defaults = crate::settings::defaults(&state).await;
     let approval_mode = body.approval_mode.unwrap_or(defaults.approval_mode);
     let choice = match body.model {
-        Some(model) => Some(model),
-        None => catalog(&state).await.default,
+        Some(model) => model,
+        None => catalog(&state)
+            .await
+            .default
+            .ok_or_else(|| unusable_model(ModelError::NoProvider))?,
     };
-    // Check the choice before anything is stored.
-    if let Some(choice) = &choice {
-        if let Err(err) = state.agent.providers().resolve(&choice.into()) {
-            return Err(ApiFailure(StatusCode::BAD_REQUEST, err.to_string()));
-        }
-    }
-    let (mut session, folder) = projects::create_session(&state.db, &id, choice.as_ref()).await?;
+    state
+        .agent
+        .providers()
+        .check_usable(&(&choice).into())
+        .map_err(unusable_model)?;
+    let (mut session, folder) = projects::create_session(&state.db, &id, Some(&choice)).await?;
     if approval_mode != session.approval_mode {
         session = projects::set_approval_mode(&state.db, &session.id, approval_mode).await?;
     }
-    let tools = ToolBox::new(folder);
-    match &choice {
-        Some(choice) => state
-            .agent
-            .open_session_with(&session.id, tools, &choice.into())
-            .map_err(|err| ApiFailure(StatusCode::BAD_REQUEST, err.to_string()))?,
-        None => state.agent.open_session(&session.id, tools),
-    }
+    state
+        .agent
+        .open_session_with(&session.id, ToolBox::new(folder), &(&choice).into())
+        .map_err(|err| ApiFailure(StatusCode::BAD_REQUEST, err.to_string()))?;
     state
         .agent
         .set_approval_mode(&session.id, session.approval_mode);
@@ -573,6 +587,12 @@ mod tests {
     async fn start_with_models() -> (String, Arc<AppState>) {
         let mut providers = agent::providers::Providers::new();
         providers.register(Arc::new(TwoModels));
+        start_with_providers(providers).await
+    }
+
+    async fn start_with_providers(
+        providers: agent::providers::Providers,
+    ) -> (String, Arc<AppState>) {
         let log = SessionLog::open(folders().join("logs")).unwrap();
         let events = EventService::with_log(Arc::new(log));
         let state = Arc::new(AppState {
@@ -653,6 +673,84 @@ mod tests {
         assert_eq!(model_of(&first["id"])["model"], "smart");
         assert_eq!(model_of(&second["id"])["model"], "fast");
         assert_eq!(model_of(&second["id"])["effort"], "low");
+    }
+
+    /// A server as a fresh install runs it: Anthropic registered, no key.
+    async fn start_without_a_key() -> (String, agent::providers::KeyHandle) {
+        let anthropic = agent::anthropic::AnthropicProvider::new(None);
+        let key = anthropic.key_handle();
+        let mut providers = agent::providers::Providers::new();
+        providers.register(Arc::new(anthropic));
+        let (api, _) = start_with_providers(providers).await;
+        (api, key)
+    }
+
+    #[tokio::test]
+    async fn a_fresh_install_offers_no_model_and_refuses_a_session() {
+        let (api, _key) = start_without_a_key().await;
+        let id = new_project(&api).await;
+        let sessions = format!("{api}/projects/{id}/sessions");
+
+        let (status, catalog) = get_json(&format!("{api}/models")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(catalog["default"], Value::Null);
+        assert_eq!(catalog["providers"], json!([]));
+
+        let (status, body) = post_json(&sessions, json!({})).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(
+            body["error"].as_str().unwrap().contains("Settings"),
+            "{body}"
+        );
+
+        // Naming a model does not get around it, and the message names the
+        // provider that needs a key.
+        let pick = json!({ "model": {
+            "provider": "anthropic", "model": "claude-opus-5-5", "effort": "high"
+        }});
+        let (status, body) = post_json(&sessions, pick).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(
+            body["error"].as_str().unwrap().contains("Anthropic"),
+            "{body}"
+        );
+
+        let (_, listed) = get_json(&sessions).await;
+        assert_eq!(listed, json!([]), "nothing was stored");
+    }
+
+    #[tokio::test]
+    async fn adding_a_key_makes_the_provider_available() {
+        let (api, key) = start_without_a_key().await;
+        let id = new_project(&api).await;
+
+        *key.write().unwrap() = Some("sk-1".into());
+
+        let (_, catalog) = get_json(&format!("{api}/models")).await;
+        assert_eq!(catalog["default"]["provider"], "anthropic");
+        let (status, session) =
+            post_json(&format!("{api}/projects/{id}/sessions"), json!({})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(session["model"]["provider"], "anthropic");
+    }
+
+    #[tokio::test]
+    async fn saved_defaults_for_a_provider_without_a_key_are_ignored_and_refused() {
+        let (api, key) = start_without_a_key().await;
+        *key.write().unwrap() = Some("sk-1".into());
+        let defaults = json!({
+            "model": { "provider": "anthropic", "model": "claude-sonnet-5-5", "effort": "low" },
+            "approval_mode": "ask"
+        });
+        let (status, _) = put_json(&format!("{api}/settings/defaults"), defaults.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+
+        *key.write().unwrap() = None;
+
+        let (_, catalog) = get_json(&format!("{api}/models")).await;
+        assert_eq!(catalog["default"], Value::Null);
+        let (status, _) = put_json(&format!("{api}/settings/defaults"), defaults).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

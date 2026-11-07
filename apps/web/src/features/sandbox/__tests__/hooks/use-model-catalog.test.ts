@@ -10,7 +10,7 @@ describe("useModelCatalog", () => {
   it("is loading, then holds the catalog", async () => {
     fakeFetch({ "GET /api/models": catalog });
     const { result } = renderHook(() => useModelCatalog());
-    expect(result.current).toEqual({ catalog: null, error: null });
+    expect(result.current).toMatchObject({ catalog: null, error: null });
     await waitFor(() => expect(result.current.catalog).toEqual(catalog));
   });
 

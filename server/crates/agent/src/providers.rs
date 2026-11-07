@@ -10,6 +10,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::{ModelClient, ModelError};
 
+/// The API key a provider uses, shared so Settings can change it while the
+/// server runs; clients read the current value for every request.
+pub type KeyHandle = Arc<std::sync::RwLock<Option<String>>>;
+
+/// The non-blank key in `handle`, if any.
+pub fn current_key(handle: &KeyHandle) -> Option<String> {
+    handle
+        .read()
+        .ok()
+        .and_then(|key| key.clone())
+        .filter(|key| !key.trim().is_empty())
+}
+
 /// A model a provider offers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelInfo {
@@ -46,10 +59,16 @@ pub trait ModelProvider: Send + Sync {
     fn models(&self) -> Vec<ModelInfo>;
     /// A client for `model`, one of [`ModelProvider::models`].
     fn client(&self, model: &str) -> Arc<dyn ModelClient>;
+    /// Whether the user has configured this provider, such as by adding its
+    /// API key. Only configured providers can start a session.
+    fn is_configured(&self) -> bool {
+        true
+    }
 }
 
 /// The registered providers, in the order they were registered; the first
-/// is the default.
+/// configured one is the default, and with none configured there is no
+/// default.
 #[derive(Clone, Default)]
 pub struct Providers {
     list: Vec<Arc<dyn ModelProvider>>,
@@ -76,9 +95,14 @@ impl Providers {
         self.list.iter().find(|p| p.id() == id)
     }
 
-    /// The first provider's first model.
+    /// The providers a session can start with.
+    fn configured(&self) -> impl Iterator<Item = &Arc<dyn ModelProvider>> {
+        self.list.iter().filter(|p| p.is_configured())
+    }
+
+    /// The first configured provider's first model.
     pub fn default_choice(&self) -> Option<ModelChoice> {
-        self.list.iter().find_map(|p| {
+        self.configured().find_map(|p| {
             p.models().into_iter().next().map(|m| ModelChoice {
                 provider: p.id().to_string(),
                 model: m.id,
@@ -87,13 +111,24 @@ impl Providers {
         })
     }
 
-    /// What a new session can pick from; the default uses the default
-    /// effort.
+    /// Whether a new session can start with `choice`: it must exist, and its
+    /// provider must be configured.
+    pub fn check_usable(&self, choice: &ModelChoice) -> Result<(), ModelError> {
+        self.resolve(choice)?;
+        match self.get(&choice.provider) {
+            Some(provider) if !provider.is_configured() => Err(ModelError::MissingApiKey {
+                provider: provider.name().to_string(),
+            }),
+            _ => Ok(()),
+        }
+    }
+
+    /// What a new session can pick from: configured providers only. The
+    /// default uses the default effort.
     pub fn catalog(&self) -> ModelCatalog {
         ModelCatalog {
             providers: self
-                .list
-                .iter()
+                .configured()
                 .map(|p| ProviderOption {
                     id: p.id().to_string(),
                     name: p.name().to_string(),

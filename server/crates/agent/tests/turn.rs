@@ -424,7 +424,12 @@ async fn model_error_ends_the_turn_and_frees_the_session() {
     let (agent, model, mut rx) = setup(FakeModel::replying(vec![
         vec![
             text("par"),
-            (Duration::ZERO, Err(ModelError::MissingApiKey)),
+            (
+                Duration::ZERO,
+                Err(ModelError::MissingApiKey {
+                    provider: "Anthropic".into(),
+                }),
+            ),
         ],
         vec![text("ok")],
     ]));
@@ -433,7 +438,7 @@ async fn model_error_ends_the_turn_and_frees_the_session() {
     let events = describe(&turn_events(&mut rx, "s1").await);
     assert_eq!(events[..2], ["started", "out:par"]);
     assert!(
-        events[2].starts_with("error:ANTHROPIC_API_KEY is not set"),
+        events[2].starts_with("error:Anthropic has no API key"),
         "{events:?}"
     );
 
@@ -984,7 +989,12 @@ mod restart {
         let (dir, root) = (log_dir(), project(&[]));
         {
             let (agent, _, mut rx) = start(
-                FakeModel::replying(vec![vec![(Duration::ZERO, Err(ModelError::MissingApiKey))]]),
+                FakeModel::replying(vec![vec![(
+                    Duration::ZERO,
+                    Err(ModelError::MissingApiKey {
+                        provider: "Anthropic".into(),
+                    }),
+                )]]),
                 &dir,
                 &root,
             );
