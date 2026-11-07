@@ -1,13 +1,7 @@
-import {
-  ArchiveRestoreIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  FolderPlusIcon,
-  PinIcon,
-} from "lucide-react";
+import { ChevronDownIcon, FolderPlusIcon, PinIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
-import type { Project, Session } from "@/api/types";
+import type { Project } from "@/api/types";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   SidebarGroup,
@@ -23,52 +17,10 @@ import {
 } from "@/components/ui/sidebar";
 import ProjectRowActions from "@/features/session/components/ProjectRowActions";
 import SessionRowActions from "@/features/session/components/SessionRowActions";
-import {
-  notifySessionsChanged,
-  useProjectSessions,
-} from "@/features/session/hooks/use-project-sessions";
+import { useProjectSessions } from "@/features/session/hooks/use-project-sessions";
 import { Link, matchPath, navigate, usePath } from "@/lib/router";
 
 type OnError = (message: string | null) => void;
-
-function ArchivedSessions({ sessions, onError }: { sessions: Session[]; onError: OnError }) {
-  async function restore(session: Session) {
-    onError(null);
-    try {
-      await api.updateSession(session.id, { archived: false });
-      notifySessionsChanged(session.project_id);
-    } catch (err) {
-      onError((err as Error).message);
-    }
-  }
-
-  return (
-    <Collapsible>
-      <CollapsibleTrigger className="flex w-full items-center gap-1 py-1 pr-2 pl-4 text-xs text-muted-foreground hover:text-foreground [&[data-state=open]>svg]:rotate-90">
-        <ChevronRightIcon className="size-3 transition-transform" />
-        Archived ({sessions.length})
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <ul>
-          {sessions.map((session) => (
-            <li key={session.id} className="flex items-center gap-1 py-1 pr-2 pl-4 text-xs">
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">{session.title}</span>
-              <button
-                type="button"
-                title="Restore session"
-                aria-label={`Restore ${session.title}`}
-                className="flex size-5 shrink-0 items-center justify-center rounded-md hover:bg-sidebar-accent"
-                onClick={() => restore(session)}
-              >
-                <ArchiveRestoreIcon className="size-3.5" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
 
 function ProjectSessions({
   project,
@@ -79,7 +31,7 @@ function ProjectSessions({
   activeSessionId: string | null;
   onError: OnError;
 }) {
-  const { sessions, archived } = useProjectSessions(project.id);
+  const { sessions } = useProjectSessions(project.id);
 
   if (sessions === null) {
     return <p className="py-1 pr-2 pl-4 text-xs text-muted-foreground">Loading…</p>;
@@ -123,7 +75,6 @@ function ProjectSessions({
           ))}
         </SidebarMenuSub>
       )}
-      {archived.length > 0 && <ArchivedSessions sessions={archived} onError={onError} />}
     </>
   );
 }

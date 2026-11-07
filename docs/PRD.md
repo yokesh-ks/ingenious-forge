@@ -94,10 +94,17 @@ The agent works in turns: it sends the conversation to the model, streams the re
 #### Built-in tools — P0
 | Tool | What it does |
 |---|---|
-| **Shell** | Runs commands (build, test, install, grep) and returns output and exit code |
-| **Read / search** | Reads files and searches the codebase by name or content |
-| **Edit / patch** | Changes files with precise edits or multi-file patches; every change shows up as a diff |
-| **List** | Explores directory structure |
+| **`bash`** | Runs a shell command with a short description of its purpose, and returns output and exit code |
+| **`read`** | Reads a text file and returns numbered lines, from an optional start line up to a line limit |
+| **`write`** | Creates a file or replaces its whole content; the change shows up as a diff |
+| **`edit`** | Replaces exact text in an existing file; the change shows up as a diff |
+| **`glob`** | Finds files whose paths match a pattern |
+| **`grep`** | Searches file contents with a regular expression and returns matching lines with line numbers |
+| **`web_fetch`** | Fetches a web page and returns it as text |
+| **`todo_write`** | Records and updates the agent's task list for multi-step work |
+| **`ask_user_question`** | Asks the user a question and waits for the answer |
+
+The model can call several tools in one reply; the agent runs them and returns every result before the next request. Each result keeps structured details beside its text, such as the line numbers and total line count of a read, so the UI can present it.
 
 #### Sandbox — P0
 Every command the agent runs is confined by an operating-system sandbox on macOS, Linux and Windows. By default the agent can write only inside the project folder and has no network access; projects can widen this (for example, allow network for package installs). The current sandbox and writable folders are always visible in the UI.
@@ -117,7 +124,7 @@ Each repository can hold an `AGENTS.md` file (and nested ones in subfolders) des
 Users pick the model provider, the model and the reasoning effort per session, and can change them from the composer between turns; the next message uses the new choice. The MVP ships Anthropic, DeepSeek, Google, NVIDIA, OpenAI, OpenRouter and Vercel AI Gateway, and the user can add a custom provider by its base URL and API protocol (OpenAI Chat Completions, OpenAI Responses or Anthropic Messages). Providers plug in through adapters, so new providers can be added without changing the agent.
 
 #### Sessions and resume — P0
-Every session is recorded as an append-only log of messages, tool calls and results. Sessions survive server restarts and can be resumed, forked, or replayed for debugging.
+Every session is recorded as an append-only log of messages, tool calls and results. Sessions survive server restarts and can be resumed, forked, or replayed for debugging. Each entry records when it happened, and each model request records where it starts and ends, when its first token arrived and the token usage the provider reported, so a session can be measured after the fact.
 
 #### Context management — P1
 When a long session approaches the model's context limit, older parts are summarized automatically so the agent can keep working without losing the thread.
@@ -162,6 +169,8 @@ The Work section's sidebar lists recent projects, with the main area empty until
 #### Live session view — P0
 The agent's work streams into the browser as it happens: messages (rendered markdown and code), each tool call with its input and output, command output as it prints, and diffs as files change. Long sessions stay fast, and a dropped connection reconnects without losing or duplicating output.
 
+Each turn has a status row: while running it shows the elapsed time; once finished it reads "Completed in", "Failed" or "Stopped". A turn that completed normally folds its work under that row, leaving the user's message and every reply visible; a failed or stopped turn stays open. Within a turn, the model's reasoning, tool calls and injected context form groups, and each reply ends a group. A group's title names the kinds of work it did, most frequent first, such as "Ran commands and read files", or "Analysis completed" when it called no tool. A group opens to one row per item: the tool's name and a short detail (a command's description, a file name as a link that opens the file in the workspace panel), or the first line of a reasoning block. Each row opens on its own: a command shows its folder, command, output and a copy button; a read shows the file's lines with line numbers, syntax highlighting, wrap and copy, showing only the first and last four lines of a long file until expanded; reasoning shows its full text. Every tool row has an Inspect action that opens the call in the Trajectory view. A failed turn shows a red row with the error and its code. Under each reply are copy, rating and share actions and the turn's token usage. Below the composer, a line shows the session's turns and steps, output speed, total tokens, cache hit rate and how much of the model's context window is in use.
+
 #### Composer — P0
 A row above the box shows the open project at the left, with a menu to move to a recent project, and the current branch and status at the right. The message box is for prompts, with slash commands (`/init`, `/model`, `/review`…), file mentions (`@path` with autocomplete), and a stop button while the agent is running. Inside the box, the session's approval mode sits at the left and its model and reasoning effort at the right, next to the send button. Messages sent during a turn steer the agent.
 
@@ -169,7 +178,12 @@ A row above the box shows the open project at the left, with a menu to move to a
 Approval requests appear as cards in the session with the exact command or edit, and Approve / Deny / Always-allow actions. The current approval mode is shown in the composer and can be changed there. A warning appears above the chat only when commands are not sandboxed.
 
 #### Workspace panel — P0
-Next to the chat: the project file tree with search, a file viewer, and an interactive terminal in the project folder.
+A panel next to the chat, opened and closed from the session header. It starts on a Start page with entries for Workspace files, Changes, New terminal and Session log. Each thing opened becomes a tab with its own close button, and the Start page stays as the first tab. The panel can be split into side-by-side panes, made fullscreen, or collapsed.
+- **File tab:** the file's full path, with a choice of how to show it (rendered Markdown, code with line numbers, or plain text), a reload button, an action to open it in the user's editor or another installed app or show it in the file manager, and a toggle for the project file tree beside it. Opening a file that already has a tab selects that tab.
+- **Workspace files:** the project file tree with search; choosing a file opens its file tab.
+- **Changes:** the changed files and their diffs (see below).
+- **Terminal:** an interactive terminal in the project folder, choosing among the installed shells.
+- **Session log:** the session's recorded events, as a raw list or grouped by message.
 
 #### Changed files and diff review — P0
 A panel listing every file changed in the session, with unified or side-by-side diffs. The user can revert a single file or all changes, or select lines and send a comment about them to the agent.
@@ -185,6 +199,12 @@ All data exchanged between server and browser is defined once in the backend and
 
 #### Onboarding — P1
 A first-run guide: check prerequisites, add a model provider, open a project, run a first task.
+
+#### Trajectory view — P1
+The session page has three tabs: Chat (the live session view, shown by default), Trajectory and Statistics. Trajectory lists everything that happened in the session as a ledger grouped by turn and step: user messages, model replies, tool calls and their results. Each row shows its kind, a preview, its duration and its token usage. Turns and tool calls can each be folded, and a search box filters the rows. A timeline above the ledger draws each row as a bar from its start to its end, with a model reply split into the wait for its first token and its generation. Dragging across the timeline narrows the ledger to the rows active in that range, and the timeline can be zoomed and panned. Selecting a row opens an inspector beside the ledger with tabs for a Summary, the Payload (the call's arguments), the Result (the structured value and the exact text the model received), the tool's Schema, and Timing (start time and duration), plus a link to the reply that made the call. Long sessions open at their latest rows and load older ones on demand. While the agent runs, the ledger follows new rows until the user scrolls up.
+
+#### Session statistics — P1
+The Statistics tab shows one row per turn, which expands into one row per step. Each row shows what started the turn, the tools the step called, context size, output tokens, cache hit rate, time to first token, model time, tool time, output speed and total time, with a bar that splits the total into waiting, generation, tool time and the rest. A totals row covers the whole session even when only part of its history is loaded. Switches show the change in context size since the previous step and choose whether a turn's context is its last step's or the sum of its steps. A figure whose inputs were not recorded shows a dash with the reason instead of an estimate.
 
 #### Pull requests — P1
 Open a pull request from the session with a generated title and summary, and see its status.
@@ -308,6 +328,7 @@ graph TB
 | **Project** | A git repository opened in Forge |
 | **Session** | One conversation with the agent in a project, with its full history of messages, tool calls and changes |
 | **Turn** | One round of the agent working in response to a message |
+| **Step** | One model request within a turn, plus the tool calls it makes |
 | **Approval mode** | How much the agent may do without asking the user |
 | **Agent preset** | A named set of model, effort, approval mode and instructions |
 | **Task** *(Board)* | A unit of work on the board |

@@ -35,7 +35,10 @@ pub fn router() -> Router<Arc<AppState>> {
                 .delete(delete_project),
         )
         .route("/projects/{id}/open-in", post(open_project_in))
-        .route("/sessions/{id}", axum::routing::patch(update_session))
+        .route(
+            "/sessions/{id}",
+            axum::routing::patch(update_session).delete(delete_session),
+        )
         .route("/sessions/{id}/fork", post(fork_session))
         .route("/projects/{id}/files", get(project_files))
         .route("/projects/{id}/file", get(project_file))
@@ -198,6 +201,24 @@ async fn update_session(
     )
     .await?;
     session.running = state.agent.is_running(&id);
+    Ok(Json(session))
+}
+
+/// Deletes a session permanently, with its event log. Returns the deleted
+/// session.
+async fn delete_session(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<Session> {
+    ensure_idle(&state, &id, "deleting")?;
+    let session = projects::get_session(&state.db, &id).await?;
+    projects::delete_session(&state.db, &id).await?;
+    state.agent.close_session(&id);
+    if let Some(log) = state.events.log() {
+        if let Err(error) = log.remove(&id) {
+            tracing::warn!(%error, session = %id, "cannot delete session log");
+        }
+    }
     Ok(Json(session))
 }
 
