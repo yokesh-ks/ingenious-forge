@@ -193,7 +193,10 @@ fn an_effort_the_model_does_not_offer_is_not_sent() {
     use agent::openai_compat::{OpenAiCompatProvider, PROVIDERS};
     use api_types::ReasoningEffort::{High, Max, Medium};
     let mut providers = Providers::new();
-    providers.register(Arc::new(OpenAiCompatProvider::new(&PROVIDERS[0], None)));
+    providers.register(Arc::new(OpenAiCompatProvider::new(
+        PROVIDERS.iter().find(|p| p.id == "nvidia").unwrap(),
+        None,
+    )));
     let ultra = "nvidia/nemotron-3-ultra-550b-a55b";
     let with = |model: &str, effort| ModelChoice {
         provider: "nvidia".into(),

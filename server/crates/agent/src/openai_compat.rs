@@ -2,7 +2,10 @@
 //! is a row in [`PROVIDERS`] served by one adapter, so adding a provider that
 //! uses this format means adding a row (PRD §6.1 Models and reasoning effort).
 
-use std::sync::{Arc, RwLock};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, RwLock},
+};
 
 use api_types::ReasoningEffort::{self, High, Low, Max, Medium, Xhigh};
 use serde_json::{json, Value};
@@ -11,8 +14,13 @@ use tokio::sync::mpsc;
 use crate::model::{
     ChatMessage, ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest, Role,
 };
-use crate::providers::{current_key, KeyHandle, ModelInfo, ModelProvider};
+use crate::openai_responses as responses;
+use crate::providers::{
+    current_key, fit_models, CustomizableProvider, KeyHandle, ModelInfo, ModelListRequest,
+    ModelProvider,
+};
 use crate::sse::SseParser;
+use api_types::ProviderModel;
 
 /// A model a provider offers. The list is curated and committed because a
 /// provider's own model list does not say which models suit a coding agent.
@@ -31,62 +39,227 @@ pub struct ModelSpec {
 pub struct ProviderSpec {
     pub id: &'static str,
     pub name: &'static str,
+    /// One line on what the provider offers, shown in Settings.
+    pub description: &'static str,
     /// The API's base URL, up to and including its version.
     pub base_url: &'static str,
     /// The environment variable that can hold the API key.
     pub env_var: &'static str,
+    /// The request field that caps the reply; these APIs do not all agree.
+    pub max_tokens_field: &'static str,
     /// The models offered, the default first.
     pub models: &'static [ModelSpec],
 }
 
-/// The OpenAI-compatible providers Forge ships.
-pub const PROVIDERS: &[ProviderSpec] = &[ProviderSpec {
-    id: "nvidia",
-    name: "NVIDIA",
-    base_url: "https://integrate.api.nvidia.com/v1",
-    env_var: "NVIDIA_API_KEY",
-    models: &[
-        ModelSpec {
-            id: "minimaxai/minimax-m3.1-flash",
-            name: "MiniMax M3.1 Flash",
-            efforts: &[Low, Medium, High, Xhigh, Max],
-            max_tokens: 64_000,
-        },
-        ModelSpec {
-            id: "z-ai/glm-5.3-flash",
-            name: "GLM 5.3 Flash",
-            efforts: &[Low, High, Max],
-            max_tokens: 64_000,
-        },
-        ModelSpec {
-            id: "nvidia/nemotron-3-ultra-550b-a55b",
-            name: "Nemotron 3 Ultra",
-            efforts: &[Medium, High],
-            max_tokens: 64_000,
-        },
-        ModelSpec {
-            id: "nvidia/nemotron-3.5-lightning-30b-a3b",
-            name: "Nemotron 3.5 Lightning",
-            efforts: &[],
-            max_tokens: 64_000,
-        },
-    ],
-}];
+const fn model(
+    id: &'static str,
+    name: &'static str,
+    efforts: &'static [ReasoningEffort],
+) -> ModelSpec {
+    ModelSpec {
+        id,
+        name,
+        efforts,
+        max_tokens: 64_000,
+    }
+}
 
-/// A provider adapter built from a row of the table.
+const ALL_EFFORTS: &[ReasoningEffort] = &[Low, Medium, High, Xhigh, Max];
+
+/// The OpenAI-compatible providers Forge ships. Each model is listed with tool
+/// calls in the public `models.dev` catalog.
+pub const PROVIDERS: &[ProviderSpec] = &[
+    ProviderSpec {
+        id: "deepseek",
+        name: "DeepSeek",
+        description: "DeepSeek models for reasoning and coding tasks",
+        base_url: "https://api.deepseek.com",
+        env_var: "DEEPSEEK_API_KEY",
+        max_tokens_field: "max_tokens",
+        models: &[
+            model("deepseek-flash", "DeepSeek V4.1 Flash", &[Low, High, Max]),
+            model("deepseek-v4-pro", "DeepSeek V4 Pro", &[Low, High, Max]),
+        ],
+    },
+    ProviderSpec {
+        id: "google",
+        name: "Google",
+        description: "Gemini models with an API key",
+        base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
+        env_var: "GEMINI_API_KEY",
+        max_tokens_field: "max_tokens",
+        models: &[
+            ModelSpec {
+                id: "gemini-4-argon",
+                name: "Gemini 4 Argon",
+                efforts: &[Low, Medium, High],
+                max_tokens: 32_768,
+            },
+            model("gemini-3.8-flash", "Gemini 3.8 Flash", &[Low, Medium, High]),
+        ],
+    },
+    ProviderSpec {
+        id: "nvidia",
+        name: "NVIDIA",
+        description: "Models hosted by NVIDIA",
+        base_url: "https://integrate.api.nvidia.com/v1",
+        env_var: "NVIDIA_API_KEY",
+        max_tokens_field: "max_tokens",
+        models: &[
+            model(
+                "minimaxai/minimax-m3.1-flash",
+                "MiniMax M3.1 Flash",
+                ALL_EFFORTS,
+            ),
+            model("z-ai/glm-5.3-flash", "GLM 5.3 Flash", &[Low, High, Max]),
+            model(
+                "nvidia/nemotron-3-ultra-550b-a55b",
+                "Nemotron 3 Ultra",
+                &[Medium, High],
+            ),
+            model(
+                "nvidia/nemotron-3.5-lightning-30b-a3b",
+                "Nemotron 3.5 Lightning",
+                &[],
+            ),
+        ],
+    },
+    ProviderSpec {
+        id: "openai",
+        name: "OpenAI",
+        description: "GPT models with an API key",
+        base_url: "https://api.openai.com/v1",
+        env_var: "OPENAI_API_KEY",
+        max_tokens_field: "max_completion_tokens",
+        models: &[
+            model("gpt-6.1-terra", "GPT-6.1 Terra", ALL_EFFORTS),
+            model("gpt-6.1-sol", "GPT-6.1 Sol", ALL_EFFORTS),
+            model("gpt-6-luna", "GPT-6 Luna", ALL_EFFORTS),
+        ],
+    },
+    ProviderSpec {
+        id: "openrouter",
+        name: "OpenRouter",
+        description: "Access many models from one provider",
+        base_url: "https://openrouter.ai/api/v1",
+        env_var: "OPENROUTER_API_KEY",
+        max_tokens_field: "max_tokens",
+        models: &[
+            model(
+                "anthropic/claude-sonnet-5.5",
+                "Claude Sonnet 5.5",
+                ALL_EFFORTS,
+            ),
+            model("openai/gpt-6.1-terra", "GPT-6.1 Terra", ALL_EFFORTS),
+            model(
+                "google/gemini-3.8-flash",
+                "Gemini 3.8 Flash",
+                &[Low, Medium, High],
+            ),
+            model("z-ai/glm-5.3-flash", "GLM 5.3 Flash", &[Low, High, Max]),
+        ],
+    },
+    ProviderSpec {
+        id: "vercel",
+        name: "Vercel AI Gateway",
+        description: "Unified access to AI models with smart routing",
+        base_url: "https://ai-gateway.vercel.sh/v1",
+        env_var: "AI_GATEWAY_API_KEY",
+        max_tokens_field: "max_tokens",
+        models: &[
+            model(
+                "anthropic/claude-sonnet-5.5",
+                "Claude Sonnet 5.5",
+                ALL_EFFORTS,
+            ),
+            model("openai/gpt-6.1-terra", "GPT-6.1 Terra", ALL_EFFORTS),
+            model("google/gemini-3.8-flash", "Gemini 3.8 Flash", &[Low, High]),
+            model("zai/glm-5.3-flash", "GLM 5.3 Flash", &[Low, High, Max]),
+        ],
+    },
+];
+
+/// The base URL a custom provider may use, without a trailing slash. An API
+/// key must not cross the network in the clear, so plain HTTP is only for this
+/// machine.
+pub fn check_base_url(url: &str) -> Result<String, String> {
+    let trimmed = url.trim().trim_end_matches('/');
+    let parsed = reqwest::Url::parse(trimmed).map_err(|_| format!("not a valid URL: {trimmed}"))?;
+    let local = matches!(parsed.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+    match parsed.scheme() {
+        "https" => Ok(trimmed.to_string()),
+        "http" if local => Ok(trimmed.to_string()),
+        "http" => Err("use https:// so the API key is not sent in the clear".to_string()),
+        _ => Err(format!("not an http or https URL: {trimmed}")),
+    }
+}
+
+/// A provider adapter, built from a row of the table or from a custom provider
+/// the user added.
 #[derive(Debug, Clone)]
 pub struct OpenAiCompatProvider {
-    spec: &'static ProviderSpec,
+    id: String,
+    name: String,
     base_url: String,
+    max_tokens_field: &'static str,
+    /// True to use the Responses API rather than chat completions.
+    responses: bool,
+    /// Each model with the longest reply to ask for, if known.
+    models: Vec<(ModelInfo, Option<u32>)>,
     key: KeyHandle,
 }
 
 impl OpenAiCompatProvider {
     pub fn new(spec: &'static ProviderSpec, api_key: Option<String>) -> Self {
         Self {
-            spec,
+            id: spec.id.to_string(),
+            name: spec.name.to_string(),
             base_url: spec.base_url.to_string(),
+            max_tokens_field: spec.max_tokens_field,
+            responses: false,
+            models: spec
+                .models
+                .iter()
+                .map(|m| {
+                    let info = ModelInfo {
+                        id: m.id.into(),
+                        name: m.name.into(),
+                        efforts: m.efforts.to_vec(),
+                    };
+                    (info, Some(m.max_tokens))
+                })
+                .collect(),
             key: Arc::new(RwLock::new(api_key)),
+        }
+    }
+
+    /// A provider the user added. Forge knows nothing about its models, so
+    /// they offer no effort setting and their replies are not capped.
+    pub fn custom(
+        id: &str,
+        name: &str,
+        base_url: &str,
+        responses: bool,
+        models: &[ProviderModel],
+    ) -> Self {
+        Self {
+            id: id.to_string(),
+            name: name.to_string(),
+            base_url: base_url.to_string(),
+            max_tokens_field: "max_tokens",
+            responses,
+            models: models
+                .iter()
+                .map(|m| {
+                    let info = ModelInfo {
+                        id: m.id.clone(),
+                        name: m.name.clone(),
+                        efforts: Vec::new(),
+                    };
+                    (info, None)
+                })
+                .collect(),
+            key: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -104,39 +277,33 @@ impl OpenAiCompatProvider {
 
 impl ModelProvider for OpenAiCompatProvider {
     fn id(&self) -> &str {
-        self.spec.id
+        &self.id
     }
 
     fn name(&self) -> &str {
-        self.spec.name
+        &self.name
     }
 
     fn models(&self) -> Vec<ModelInfo> {
-        self.spec
-            .models
-            .iter()
-            .map(|m| ModelInfo {
-                id: m.id.into(),
-                name: m.name.into(),
-                efforts: m.efforts.to_vec(),
-            })
-            .collect()
+        self.models.iter().map(|(info, _)| info.clone()).collect()
     }
 
     fn client(&self, model: &str) -> Arc<dyn ModelClient> {
         let max_tokens = self
-            .spec
             .models
             .iter()
-            .find(|m| m.id == model)
-            .map(|m| m.max_tokens);
+            .find(|(info, _)| info.id == model)
+            .and_then(|(_, max_tokens)| *max_tokens);
         Arc::new(OpenAiCompatClient {
             http: reqwest::Client::new(),
-            provider: self.spec.name,
+            provider: self.name.clone(),
             base_url: self.base_url.clone(),
+            max_tokens_field: self.max_tokens_field,
+            responses: self.responses,
             key: self.key.clone(),
             model: model.to_string(),
             max_tokens,
+            call_extras: Arc::default(),
         })
     }
 
@@ -145,32 +312,85 @@ impl ModelProvider for OpenAiCompatProvider {
     }
 }
 
+impl CustomizableProvider for OpenAiCompatProvider {
+    fn default_base_url(&self) -> String {
+        self.base_url.clone()
+    }
+
+    fn customized(
+        &self,
+        base_url: Option<&str>,
+        models: Option<&[ProviderModel]>,
+    ) -> Arc<dyn ModelProvider> {
+        let mut provider = self.clone();
+        if let Some(base_url) = base_url {
+            provider.base_url = base_url.to_string();
+        }
+        if let Some(picks) = models {
+            provider.models = fit_models(&self.models(), picks)
+                .into_iter()
+                .map(|info| {
+                    let cap = self
+                        .models
+                        .iter()
+                        .find(|(known, _)| known.id == info.id)
+                        .and_then(|(_, cap)| *cap);
+                    (info, cap)
+                })
+                .collect();
+        }
+        Arc::new(provider)
+    }
+
+    fn models_request(&self, base_url: &str, key: &str) -> ModelListRequest {
+        ModelListRequest {
+            url: format!("{base_url}/models"),
+            headers: vec![("authorization", format!("Bearer {key}"))],
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct OpenAiCompatClient {
     http: reqwest::Client,
-    provider: &'static str,
+    provider: String,
     base_url: String,
+    max_tokens_field: &'static str,
+    responses: bool,
     key: KeyHandle,
     model: String,
     max_tokens: Option<u32>,
+    /// Provider-specific data sent with a tool call, by call id. Some providers
+    /// reject the next request unless it comes back with the call.
+    call_extras: CallExtras,
 }
+
+type CallExtras = Arc<Mutex<HashMap<String, Value>>>;
 
 /// One of our messages as chat messages. A tool result is a message of its
 /// own, and must directly follow the assistant message that called the tool,
-/// so results come before any text in the same message. Thinking blocks are
-/// another provider's format and are left out.
-fn to_chat_messages(message: &ChatMessage) -> Vec<Value> {
+/// so results come before any text in the same message. Reasoning this
+/// provider sent goes back with its message, since some reject a later tool
+/// turn without it; another provider's signed thinking is left out.
+fn to_chat_messages(message: &ChatMessage, extras: &HashMap<String, Value>) -> Vec<Value> {
     let mut text = String::new();
+    let mut reasoning = String::new();
     let mut calls = Vec::new();
     let mut out = Vec::new();
     for block in &message.content {
         match block {
             ContentBlock::Text { text: piece } => text.push_str(piece),
-            ContentBlock::ToolUse { id, name, input } => calls.push(json!({
-                "id": id,
-                "type": "function",
-                "function": { "name": name, "arguments": input.to_string() },
-            })),
+            ContentBlock::ToolUse { id, name, input } => {
+                let mut call = json!({
+                    "id": id,
+                    "type": "function",
+                    "function": { "name": name, "arguments": input.to_string() },
+                });
+                if let Some(extra) = extras.get(id) {
+                    call["extra_content"] = extra.clone();
+                }
+                calls.push(call);
+            }
             ContentBlock::ToolResult {
                 tool_use_id,
                 content,
@@ -188,6 +408,10 @@ fn to_chat_messages(message: &ChatMessage) -> Vec<Value> {
                     "content": content,
                 }));
             }
+            ContentBlock::Thinking {
+                thinking,
+                signature,
+            } if signature.is_empty() => reasoning.push_str(thinking),
             ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } => {}
         }
     }
@@ -200,25 +424,39 @@ fn to_chat_messages(message: &ChatMessage) -> Vec<Value> {
     } else if !text.is_empty() {
         out.push(json!({ "role": role, "content": text }));
     }
+    if !reasoning.is_empty() {
+        if let Some(last) = out.last_mut().filter(|m| m["role"] == "assistant") {
+            last["reasoning_content"] = json!(reasoning);
+        }
+    }
     out
 }
 
 /// The system prompt, then the conversation.
-fn chat_messages(request: &ModelRequest) -> Vec<Value> {
+fn chat_messages(request: &ModelRequest, extras: &HashMap<String, Value>) -> Vec<Value> {
     let system = request
         .system
         .iter()
         .map(|text| json!({ "role": "system", "content": text }));
     system
-        .chain(request.messages.iter().flat_map(to_chat_messages))
+        .chain(
+            request
+                .messages
+                .iter()
+                .flat_map(|message| to_chat_messages(message, extras)),
+        )
         .collect()
 }
 
-fn request_body(model: &str, max_tokens: Option<u32>, request: &ModelRequest) -> Value {
+fn request_body(
+    client: &OpenAiCompatClient,
+    extras: &HashMap<String, Value>,
+    request: &ModelRequest,
+) -> Value {
     let mut body = json!({
-        "model": model,
+        "model": client.model,
         "stream": true,
-        "messages": chat_messages(request),
+        "messages": chat_messages(request, extras),
     });
     if !request.tools.is_empty() {
         let tools: Vec<Value> = request
@@ -237,8 +475,8 @@ fn request_body(model: &str, max_tokens: Option<u32>, request: &ModelRequest) ->
             .collect();
         body["tools"] = json!(tools);
     }
-    if let Some(max_tokens) = request.max_tokens.or(max_tokens) {
-        body["max_tokens"] = json!(max_tokens);
+    if let Some(max_tokens) = request.max_tokens.or(client.max_tokens) {
+        body[client.max_tokens_field] = json!(max_tokens);
     }
     if let Some(effort) = request.effort {
         body["reasoning_effort"] = json!(effort.as_str());
@@ -252,6 +490,7 @@ struct PartialCall {
     id: String,
     name: String,
     arguments: String,
+    extra: Option<Value>,
 }
 
 /// Turns the chat completions event stream into model events: text deltas as
@@ -259,6 +498,7 @@ struct PartialCall {
 #[derive(Default)]
 struct StreamAssembler {
     text: String,
+    reasoning: String,
     calls: Vec<PartialCall>,
 }
 
@@ -280,6 +520,9 @@ impl StreamAssembler {
             return Err(ModelError::Refusal);
         }
         let delta = &choice["delta"];
+        if let Some(piece) = delta["reasoning_content"].as_str() {
+            self.reasoning.push_str(piece);
+        }
         for fragment in delta["tool_calls"].as_array().into_iter().flatten() {
             self.add_call_fragment(fragment);
         }
@@ -312,36 +555,54 @@ impl StreamAssembler {
         if let Some(name) = function["name"].as_str() {
             call.name.push_str(name);
         }
+        if !fragment["extra_content"].is_null() {
+            call.extra = Some(fragment["extra_content"].clone());
+        }
         if let Some(arguments) = function["arguments"].as_str() {
             call.arguments.push_str(arguments);
         }
     }
 
-    fn finish(self) -> ModelEvent {
+    /// The finished message, plus the extra data to send back with each call.
+    fn finish(self) -> (ModelEvent, Vec<(String, Value)>) {
         let mut content = Vec::new();
+        let mut extras = Vec::new();
+        if !self.reasoning.is_empty() {
+            // No signature: this is what marks it as this provider's own.
+            content.push(ContentBlock::Thinking {
+                thinking: self.reasoning,
+                signature: String::new(),
+            });
+        }
         if !self.text.is_empty() {
             content.push(ContentBlock::Text { text: self.text });
         }
         for (i, call) in self.calls.into_iter().enumerate() {
+            // The result has to name the call, so each needs some id.
+            let id = if call.id.is_empty() {
+                format!("call_{i}")
+            } else {
+                call.id
+            };
+            if let Some(extra) = call.extra {
+                extras.push((id.clone(), extra));
+            }
             content.push(ContentBlock::ToolUse {
-                // The result has to name the call, so each needs some id.
-                id: if call.id.is_empty() {
-                    format!("call_{i}")
-                } else {
-                    call.id
-                },
+                id: id.clone(),
                 name: call.name,
                 // An unparsable input leaves the tool without arguments; the
                 // tool then reports what is missing to the model.
                 input: serde_json::from_str(&call.arguments).unwrap_or_else(|_| json!({})),
             });
         }
-        ModelEvent::Message(content)
+        (ModelEvent::Message(content), extras)
     }
 }
 
 /// The reason in an error body; these APIs do not agree on where it goes.
-fn error_message(body: &Value) -> Option<String> {
+pub(crate) fn error_message(body: &Value) -> Option<String> {
+    // Some wrap the whole body in an array.
+    let body = body.get(0).unwrap_or(body);
     [
         &body["error"]["message"],
         &body["error"],
@@ -359,14 +620,21 @@ impl OpenAiCompatClient {
         tx: &mpsc::Sender<Result<ModelEvent, ModelError>>,
     ) -> Result<(), ModelError> {
         let key = current_key(&self.key).ok_or_else(|| ModelError::MissingApiKey {
-            provider: self.provider.to_string(),
+            provider: self.provider.clone(),
         })?;
+        let (path, body) = if self.responses {
+            let body = responses::request_body(&self.model, self.max_tokens, &request);
+            ("responses", body)
+        } else {
+            let extras = self.call_extras.lock().unwrap();
+            ("chat/completions", request_body(self, &extras, &request))
+        };
         let mut response = self
             .http
-            .post(format!("{}/chat/completions", self.base_url))
+            .post(format!("{}/{path}", self.base_url))
             .bearer_auth(key)
             .header("accept", "text/event-stream")
-            .json(&request_body(&self.model, self.max_tokens, &request))
+            .json(&body)
             .send()
             .await
             .map_err(|e| ModelError::Request(e.to_string()))?;
@@ -385,14 +653,20 @@ impl OpenAiCompatClient {
         }
 
         let mut parser = SseParser::default();
-        let mut assembler = StreamAssembler::default();
+        let mut chat = StreamAssembler::default();
+        let mut other = responses::ResponsesAssembler::default();
         while let Some(chunk) = response
             .chunk()
             .await
             .map_err(|e| ModelError::Stream(e.to_string()))?
         {
             for event in parser.push(&chunk) {
-                for model_event in assembler.handle(&event.data)? {
+                let handled = if self.responses {
+                    other.handle(&event.data)?
+                } else {
+                    chat.handle(&event.data)?
+                };
+                for model_event in handled {
                     if tx.send(Ok(model_event)).await.is_err() {
                         // The turn was dropped; stop reading the stream.
                         return Ok(());
@@ -400,7 +674,13 @@ impl OpenAiCompatClient {
                 }
             }
         }
-        let _ = tx.send(Ok(assembler.finish())).await;
+        if self.responses {
+            let _ = tx.send(Ok(other.finish())).await;
+            return Ok(());
+        }
+        let (message, extras) = chat.finish();
+        self.call_extras.lock().unwrap().extend(extras);
+        let _ = tx.send(Ok(message)).await;
         Ok(())
     }
 }
@@ -422,6 +702,24 @@ impl ModelClient for OpenAiCompatClient {
 mod tests {
     use super::*;
     use crate::tools::ToolSpec;
+
+    fn client(field: &'static str, max_tokens: Option<u32>) -> OpenAiCompatClient {
+        OpenAiCompatClient {
+            http: reqwest::Client::new(),
+            provider: "P".into(),
+            base_url: "http://unused".into(),
+            max_tokens_field: field,
+            responses: false,
+            key: Arc::default(),
+            model: "m1".into(),
+            max_tokens,
+            call_extras: Arc::default(),
+        }
+    }
+
+    fn body(max_tokens: Option<u32>, request: &ModelRequest) -> Value {
+        request_body(&client("max_tokens", max_tokens), &HashMap::new(), request)
+    }
 
     fn request(effort: Option<ReasoningEffort>) -> ModelRequest {
         ModelRequest {
@@ -446,7 +744,7 @@ mod tests {
 
     #[test]
     fn the_request_carries_the_conversation_without_thinking() {
-        let body = request_body("m1", Some(64_000), &request(Some(High)));
+        let body = body(Some(64_000), &request(Some(High)));
         assert_eq!(body["model"], "m1");
         assert_eq!(body["stream"], true);
         assert_eq!(body["max_tokens"], 64_000);
@@ -463,7 +761,7 @@ mod tests {
 
     #[test]
     fn a_model_without_an_effort_setting_sends_none() {
-        let body = request_body("m1", None, &request(None));
+        let body = body(None, &request(None));
         assert!(body.get("reasoning_effort").is_none());
         assert!(body.get("max_tokens").is_none());
     }
@@ -472,7 +770,7 @@ mod tests {
     fn a_request_cap_wins_over_the_models_limit() {
         let mut capped = request(None);
         capped.max_tokens = Some(1);
-        assert_eq!(request_body("m1", Some(64_000), &capped)["max_tokens"], 1);
+        assert_eq!(body(Some(64_000), &capped)["max_tokens"], 1);
     }
 
     #[test]
@@ -495,7 +793,7 @@ mod tests {
         assert!(assembler.handle(r#"{"choices":[]}"#).unwrap().is_empty());
         assert!(assembler.handle("[DONE]").unwrap().is_empty());
         assert_eq!(
-            assembler.finish(),
+            assembler.finish().0,
             ModelEvent::Message(vec![ContentBlock::Text {
                 text: "Hello".into()
             }])
@@ -523,7 +821,7 @@ mod tests {
             assembler.handle(&chunk.to_string()).unwrap();
         }
         assert_eq!(
-            assembler.finish(),
+            assembler.finish().0,
             ModelEvent::Message(vec![
                 ContentBlock::Text {
                     text: "Reading.".into()
@@ -552,7 +850,7 @@ mod tests {
         ] {
             assembler.add_call_fragment(&fragment);
         }
-        let ModelEvent::Message(content) = assembler.finish() else {
+        let (ModelEvent::Message(content), _) = assembler.finish() else {
             panic!("expected a message");
         };
         assert_eq!(content.len(), 2);
@@ -573,7 +871,7 @@ mod tests {
             &json!({ "index": 0, "function": { "name": "one", "arguments": "{\"x\"" } }),
         );
         assert_eq!(
-            assembler.finish(),
+            assembler.finish().0,
             ModelEvent::Message(vec![ContentBlock::ToolUse {
                 id: "call_0".into(),
                 name: "one".into(),
@@ -616,7 +914,7 @@ mod tests {
             effort: None,
             max_tokens: None,
         };
-        let body = request_body("m1", None, &req);
+        let body = body(None, &req);
         assert_eq!(
             body["tools"],
             json!([{ "type": "function", "function": {
@@ -637,6 +935,92 @@ mod tests {
                 { "role": "user", "content": "Try again" },
             ])
         );
+    }
+
+    #[test]
+    fn providers_that_need_it_get_their_tool_call_data_and_reasoning_back() {
+        let mut assembler = StreamAssembler::default();
+        for chunk in [
+            json!({ "choices": [{ "delta": { "reasoning_content": "Let me " } }] }),
+            json!({ "choices": [{ "delta": { "reasoning_content": "look." } }] }),
+            json!({ "choices": [{ "delta": { "tool_calls": [{
+                "index": 0, "id": "a", "function": { "name": "read_file", "arguments": "{}" },
+                "extra_content": { "google": { "thought_signature": "sig" } },
+            }] } }] }),
+        ] {
+            assembler.handle(&chunk.to_string()).unwrap();
+        }
+        let (ModelEvent::Message(content), extras) = assembler.finish() else {
+            panic!("expected a message");
+        };
+        let replay = ModelRequest {
+            messages: vec![ChatMessage::assistant(content)],
+            tools: vec![],
+            system: None,
+            effort: None,
+            max_tokens: None,
+        };
+
+        let body = request_body(
+            &client("max_tokens", None),
+            &extras.into_iter().collect(),
+            &replay,
+        );
+
+        let message = &body["messages"][0];
+        assert_eq!(message["reasoning_content"], "Let me look.");
+        assert_eq!(
+            message["tool_calls"][0]["extra_content"]["google"]["thought_signature"],
+            "sig"
+        );
+    }
+
+    #[test]
+    fn another_providers_signed_thinking_stays_out() {
+        let body = body(None, &request(None));
+        assert!(body["messages"][2].get("reasoning_content").is_none());
+    }
+
+    #[test]
+    fn the_reply_cap_uses_the_field_the_provider_expects() {
+        let body = request_body(
+            &client("max_completion_tokens", Some(64_000)),
+            &HashMap::new(),
+            &request(None),
+        );
+        assert_eq!(body["max_completion_tokens"], 64_000);
+        assert!(body.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn a_custom_base_url_must_protect_the_key() {
+        assert_eq!(
+            check_base_url(" https://gw.example.com/v1/ ").as_deref(),
+            Ok("https://gw.example.com/v1")
+        );
+        assert!(check_base_url("http://localhost:8000/v1").is_ok());
+        assert!(check_base_url("http://127.0.0.1:8000/v1").is_ok());
+        assert!(check_base_url("http://gw.example.com/v1").is_err());
+        assert!(check_base_url("ftp://gw.example.com").is_err());
+        assert!(check_base_url("gw.example.com").is_err());
+    }
+
+    #[test]
+    fn a_custom_provider_lists_its_models_without_an_effort_setting() {
+        let provider = OpenAiCompatProvider::custom(
+            "custom-gw",
+            "My GW",
+            "https://x",
+            false,
+            &[ProviderModel {
+                id: "a".into(),
+                name: "a".into(),
+            }],
+        );
+        assert_eq!(provider.id(), "custom-gw");
+        assert_eq!(provider.models()[0].id, "a");
+        assert!(provider.models()[0].efforts.is_empty());
+        assert!(!provider.is_configured());
     }
 
     #[test]
@@ -663,6 +1047,7 @@ mod tests {
             json!({ "error": "no" }),
             json!({ "detail": "no" }),
             json!({ "message": "no" }),
+            json!([{ "error": { "code": 400, "message": "no" } }]),
         ] {
             assert_eq!(error_message(&body).as_deref(), Some("no"), "{body}");
         }

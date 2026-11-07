@@ -3,9 +3,11 @@
 //! the agent loop only ever talks to the client, so adding a provider means
 //! registering an adapter here and nothing else.
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
-use api_types::{ModelCatalog, ModelOption, ProviderOption, ReasoningEffort, SessionModel};
+use api_types::{
+    ModelCatalog, ModelOption, ProviderModel, ProviderOption, ReasoningEffort, SessionModel,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{ChatMessage, ModelClient, ModelError, ModelRequest};
@@ -83,12 +85,97 @@ pub trait ModelProvider: Send + Sync {
     }
 }
 
+/// How to ask a provider which models it serves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelListRequest {
+    pub url: String,
+    pub headers: Vec<(&'static str, String)>,
+}
+
+/// A provider whose base URL and model list the user can change.
+pub trait CustomizableProvider: ModelProvider {
+    fn default_base_url(&self) -> String;
+    /// A copy with these changes, sharing this provider's key.
+    fn customized(
+        &self,
+        base_url: Option<&str>,
+        models: Option<&[ProviderModel]>,
+    ) -> Arc<dyn ModelProvider>;
+    fn models_request(&self, base_url: &str, key: &str) -> ModelListRequest;
+}
+
+/// `picks` as this provider's models: one it already knows keeps its effort
+/// options, and Forge assumes nothing about any other.
+pub fn fit_models(known: &[ModelInfo], picks: &[ProviderModel]) -> Vec<ModelInfo> {
+    picks
+        .iter()
+        .map(|pick| ModelInfo {
+            id: pick.id.clone(),
+            name: pick.name.clone(),
+            efforts: known
+                .iter()
+                .find(|m| m.id == pick.id)
+                .map(|m| m.efforts.clone())
+                .unwrap_or_default(),
+        })
+        .collect()
+}
+
+/// Asks a provider which models it serves.
+pub async fn fetch_models(request: ModelListRequest) -> Result<Vec<ProviderModel>, ModelError> {
+    let mut call = reqwest::Client::new().get(&request.url);
+    for (name, value) in &request.headers {
+        call = call.header(*name, value);
+    }
+    let response = call
+        .send()
+        .await
+        .map_err(|e| ModelError::Request(e.to_string()))?;
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| ModelError::Request(e.to_string()))?;
+    let parsed: Option<serde_json::Value> = serde_json::from_str(&body).ok();
+    if !status.is_success() {
+        return Err(ModelError::Api {
+            status: status.as_u16(),
+            message: parsed
+                .as_ref()
+                .and_then(crate::openai_compat::error_message)
+                .unwrap_or(body),
+        });
+    }
+    let parsed = parsed.ok_or_else(|| ModelError::Request("not a model list".to_string()))?;
+    let listed = parsed["data"]
+        .as_array()
+        .ok_or_else(|| ModelError::Request("not a model list".to_string()))?;
+    Ok(listed
+        .iter()
+        .filter_map(|model| {
+            let id = model["id"].as_str()?;
+            // Google lists "models/gemini-x", but its chat endpoint takes "gemini-x".
+            let id = id.strip_prefix("models/").unwrap_or(id);
+            let name = model["display_name"]
+                .as_str()
+                .or(model["name"].as_str())
+                .unwrap_or(id);
+            Some(ProviderModel {
+                id: id.to_string(),
+                name: name.to_string(),
+            })
+        })
+        .collect())
+}
+
 /// The registered providers, in the order they were registered; the first
 /// configured one is the default, and with none configured there is no
 /// default.
 #[derive(Clone, Default)]
 pub struct Providers {
-    list: Vec<Arc<dyn ModelProvider>>,
+    // Shared and locked because a custom provider can be added while the
+    // server runs.
+    list: Arc<RwLock<Vec<Arc<dyn ModelProvider>>>>,
 }
 
 impl Providers {
@@ -98,23 +185,34 @@ impl Providers {
 
     /// Adds `provider`, replacing one registered with the same id.
     pub fn register(&mut self, provider: Arc<dyn ModelProvider>) {
-        match self.list.iter_mut().find(|p| p.id() == provider.id()) {
+        self.add(provider);
+    }
+
+    /// Like [`Providers::register`], while the server runs.
+    pub fn add(&self, provider: Arc<dyn ModelProvider>) {
+        let mut list = self.list.write().unwrap();
+        match list.iter_mut().find(|p| p.id() == provider.id()) {
             Some(slot) => *slot = provider,
-            None => self.list.push(provider),
+            None => list.push(provider),
         }
     }
 
-    pub fn list(&self) -> &[Arc<dyn ModelProvider>] {
-        &self.list
+    /// Forgets a provider. Sessions already open keep their client.
+    pub fn remove(&self, id: &str) {
+        self.list.write().unwrap().retain(|p| p.id() != id);
     }
 
-    pub fn get(&self, id: &str) -> Option<&Arc<dyn ModelProvider>> {
-        self.list.iter().find(|p| p.id() == id)
+    pub fn list(&self) -> Vec<Arc<dyn ModelProvider>> {
+        self.list.read().unwrap().clone()
+    }
+
+    pub fn get(&self, id: &str) -> Option<Arc<dyn ModelProvider>> {
+        self.list().into_iter().find(|p| p.id() == id)
     }
 
     /// The providers a session can start with.
-    fn configured(&self) -> impl Iterator<Item = &Arc<dyn ModelProvider>> {
-        self.list.iter().filter(|p| p.is_configured())
+    fn configured(&self) -> impl Iterator<Item = Arc<dyn ModelProvider>> {
+        self.list().into_iter().filter(|p| p.is_configured())
     }
 
     /// The first configured provider's first model.
