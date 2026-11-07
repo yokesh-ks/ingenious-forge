@@ -138,6 +138,8 @@ describe("ProjectPage", () => {
           call_id: "t1",
           name: "edit_file",
           args: { path: "a.md" },
+          turn: 1,
+          step: 1,
         },
         {
           seq: 5,
@@ -146,6 +148,9 @@ describe("ProjectPage", () => {
           call_id: "t1",
           output: "Edited a.md",
           is_error: false,
+          meta: null,
+          started_at: 0,
+          ended_at: 0,
         },
         {
           seq: 6,

@@ -920,7 +920,7 @@ impl Agent {
                     is_error: true,
                 }
             } else {
-                self.run_tool(session_id, tools, call_id, name, input, cancelled.clone())
+                self.run_tool(at, tools, call_id, name, input, cancelled.clone())
                     .await
             });
         }
@@ -1078,18 +1078,21 @@ impl Agent {
 
     async fn run_tool(
         &self,
-        session_id: &str,
+        at: &StepAt<'_>,
         tools: &ToolBox,
         call_id: String,
         name: String,
         input: serde_json::Value,
         cancelled: watch::Receiver<bool>,
     ) -> ContentBlock {
+        let session_id = at.session_id;
         self.events.publish(SessionEvent::ToolCall {
             session_id: session_id.to_string(),
             call_id: call_id.clone(),
             name: name.clone(),
             args: input.clone(),
+            turn: at.turn,
+            step: at.step,
         });
         if let Some(denied) = self
             .approve(
@@ -1104,17 +1107,16 @@ impl Agent {
         {
             return denied;
         }
-        if name == tools::RUN_SHELL {
+        let started_at = services::log::now_ms();
+        if name == tools::BASH {
             return self
-                .run_shell(session_id, tools, call_id, &input, cancelled)
+                .run_shell(session_id, tools, call_id, &input, cancelled, started_at)
                 .await;
         }
-        // An edit is diffed against the file as it was before the agent's
-        // first edit to it in this session.
-        let edited = (name == tools::EDIT_FILE)
-            .then(|| input["path"].as_str())
-            .flatten()
-            .and_then(|path| tools.project_path(path).ok());
+        // A changed file is diffed against the file as it was before the
+        // agent's first change to it in this session.
+        let edited =
+            ToolBox::changed_path(&name, &input).and_then(|path| tools.project_path(&path).ok());
         let needs_baseline = edited.as_ref().is_some_and(|path| {
             let sessions = self.sessions.lock().unwrap();
             !sessions
@@ -1164,10 +1166,7 @@ impl Agent {
             })
             .await
             .unwrap_or_else(|err| {
-                let outcome = tools::ToolOutcome {
-                    output: format!("tool failed: {err}"),
-                    is_error: true,
-                };
+                let outcome = tools::ToolOutcome::error(format!("tool failed: {err}"));
                 (outcome, None, None, Vec::new(), None)
             });
         if let Some(loaded) = loaded {
@@ -1184,6 +1183,9 @@ impl Agent {
             output: outcome.output.clone(),
             is_error: outcome.is_error,
             exit_code: None,
+            meta: outcome.meta.clone(),
+            started_at,
+            ended_at: services::log::now_ms(),
         });
 
         if let (Some(path), Some(current)) = (edited, current) {
@@ -1238,11 +1240,13 @@ impl Agent {
         mut cancelled: watch::Receiver<bool>,
     ) -> Option<ContentBlock> {
         let (kind, key) = match name {
-            tools::EDIT_FILE => (
+            tools::EDIT | tools::WRITE => (
                 ApprovalKind::Edit,
-                tools.project_path(input["path"].as_str()?).ok()?,
+                tools
+                    .project_path(&ToolBox::changed_path(name, input)?)
+                    .ok()?,
             ),
-            tools::RUN_SHELL => (
+            tools::BASH => (
                 ApprovalKind::Command,
                 input["command"].as_str()?.to_string(),
             ),
@@ -1268,8 +1272,8 @@ impl Agent {
             ApprovalKind::Command => (Some(key.clone()), None, None),
             ApprovalKind::Edit => {
                 let preview = {
-                    let (tools, input) = (tools.clone(), input.clone());
-                    tokio::task::spawn_blocking(move || tools.preview_edit(&input))
+                    let (tools, input, name) = (tools.clone(), input.clone(), name.to_string());
+                    tokio::task::spawn_blocking(move || tools.preview_change(&name, &input))
                         .await
                         .ok()
                 };
@@ -1326,12 +1330,17 @@ impl Agent {
         } else {
             "The user denied this action, so it did not run.".to_string()
         };
+        // It never ran, so it starts and ends at once.
+        let now = services::log::now_ms();
         self.events.publish(SessionEvent::ToolResult {
             session_id: session_id.to_string(),
             call_id: call_id.to_string(),
             output: output.clone(),
             is_error: true,
             exit_code: None,
+            meta: None,
+            started_at: now,
+            ended_at: now,
         });
         Some(ContentBlock::ToolResult {
             tool_use_id: call_id.to_string(),
@@ -1348,6 +1357,7 @@ impl Agent {
         call_id: String,
         input: &serde_json::Value,
         cancelled: watch::Receiver<bool>,
+        started_at: u64,
     ) -> ContentBlock {
         let outcome = match input["command"].as_str().filter(|c| !c.trim().is_empty()) {
             Some(command) => {
@@ -1380,12 +1390,20 @@ impl Agent {
                 interrupted: false,
             },
         };
+        let ended_at = services::log::now_ms();
         self.events.publish(SessionEvent::ToolResult {
             session_id: session_id.to_string(),
             call_id: call_id.clone(),
             output: outcome.output.clone(),
             is_error: outcome.is_error,
             exit_code: outcome.exit_code,
+            meta: Some(serde_json::json!({
+                "cwd": tools.root().display().to_string(),
+                "exit_code": outcome.exit_code,
+                "duration_ms": ended_at.saturating_sub(started_at),
+            })),
+            started_at,
+            ended_at,
         });
         ContentBlock::ToolResult {
             tool_use_id: call_id,
@@ -1399,8 +1417,8 @@ impl Agent {
 /// whose folder's instructions apply.
 fn instruction_scope(name: &str, input: &serde_json::Value) -> Option<(String, bool)> {
     match name {
-        tools::READ_FILE | tools::EDIT_FILE => {
-            input["path"].as_str().map(|p| (p.to_string(), false))
+        tools::READ | tools::EDIT | tools::WRITE => {
+            input["file_path"].as_str().map(|p| (p.to_string(), false))
         }
         tools::LIST_DIRECTORY => Some((input["path"].as_str().unwrap_or(".").to_string(), true)),
         _ => None,

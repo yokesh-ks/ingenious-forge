@@ -17,11 +17,73 @@ function tool(overrides: Partial<ToolItem>): ToolItem {
     hiddenLines: 0,
     exitCode: null,
     approval: null,
+    meta: null,
     ...overrides,
   };
 }
 
 describe("ToolCallCard", () => {
+  describe("current tool names", () => {
+    it("shows a read's file and its lines from the result details", () => {
+      render(
+        <ToolCallCard
+          tool={tool({
+            name: "read",
+            args: { file_path: "README.md" },
+            output:
+              "<path>/p/README.md</path>\n<type>file</type>\n<content>\n1: # Title\n2: body\n</content>",
+            meta: {
+              path: "/p/README.md",
+              offset: 1,
+              lines: [
+                { number: 1, text: "# Title" },
+                { number: 2, text: "body" },
+              ],
+              total_lines: 2,
+            },
+          })}
+        />,
+      );
+      expect(screen.getByText("Read")).toBeInTheDocument();
+      expect(screen.getByText("README.md")).toBeInTheDocument();
+      const preview = screen.getByTestId("tool-output");
+      expect(preview).toHaveTextContent("# Title");
+      expect(preview).not.toHaveTextContent("<path>");
+    });
+
+    it("shows a bash call by its description, with the command below", () => {
+      render(
+        <ToolCallCard
+          tool={tool({
+            name: "bash",
+            args: { command: "ls -la", description: "List top-level project files" },
+            status: "done",
+            output: "a.txt",
+            lines: [{ stream: "stdout", text: "a.txt" }],
+            exitCode: 0,
+          })}
+        />,
+      );
+      expect(screen.getByText("Shell")).toBeInTheDocument();
+      expect(screen.getByText("List top-level project files")).toBeInTheDocument();
+      expect(screen.getByTestId("shell-command")).toHaveTextContent("ls -la");
+    });
+
+    it("labels write and edit by their file", () => {
+      render(
+        <ToolCallCard
+          tool={tool({
+            name: "write",
+            args: { file_path: "new.txt", content: "x" },
+            output: "Created new.txt (+1 −0 lines)",
+          })}
+        />,
+      );
+      expect(screen.getByText("Write")).toBeInTheDocument();
+      expect(screen.getByText("new.txt")).toBeInTheDocument();
+    });
+  });
+
   it("shows a Read card with the path and a content preview", () => {
     render(<ToolCallCard tool={tool({})} />);
     expect(screen.getByText("Read")).toBeInTheDocument();

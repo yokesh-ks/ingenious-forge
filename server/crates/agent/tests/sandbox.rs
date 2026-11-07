@@ -12,7 +12,7 @@ use agent::{
     model::{ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest},
     sandbox::{Policy, Sandbox},
     shell,
-    tools::{ToolBox, RUN_SHELL},
+    tools::{ToolBox, BASH},
     Agent,
 };
 use api_types::{SessionEvent, TurnEndReason};
@@ -220,7 +220,7 @@ async fn shell_result(sandbox: Sandbox, root: &Path, command: &str) -> (bool, Op
         vec![
             vec![ModelEvent::Message(vec![ContentBlock::ToolUse {
                 id: "t1".into(),
-                name: RUN_SHELL.into(),
+                name: BASH.into(),
                 input: json!({ "command": command }),
             }])],
             vec![ModelEvent::TextDelta("ok".into())],
@@ -313,7 +313,7 @@ fn bubblewrap_mounts_everything_read_only_except_the_writable_folders() {
             "--unshare-net",
             "--die-with-parent",
             "--",
-            "/bin/sh",
+            agent::sandbox::shell_program(),
             "-c",
             "make test",
         ]
@@ -528,7 +528,7 @@ async fn commands_follow_the_session_policy() {
         vec![
             vec![ModelEvent::Message(vec![ContentBlock::ToolUse {
                 id: "t1".into(),
-                name: RUN_SHELL.into(),
+                name: BASH.into(),
                 input: json!({ "command": format!("touch '{}/ok'", extra.display()) }),
             }])],
             vec![ModelEvent::TextDelta("done".into())],
@@ -575,7 +575,7 @@ async fn full_auto_runs_without_asking_but_still_inside_the_sandbox() {
         vec![
             vec![ModelEvent::Message(vec![ContentBlock::ToolUse {
                 id: "t1".into(),
-                name: RUN_SHELL.into(),
+                name: BASH.into(),
                 input: json!({ "command": format!("touch inside; touch '{}'", outside.display()) }),
             }])],
             vec![ModelEvent::TextDelta("done".into())],

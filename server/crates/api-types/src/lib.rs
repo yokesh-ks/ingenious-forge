@@ -634,6 +634,12 @@ pub enum SessionEvent {
         call_id: String,
         name: String,
         args: serde_json::Value,
+        /// The turn and step that made the call; 0 in logs written before
+        /// ADR 0012.
+        #[serde(default)]
+        turn: u32,
+        #[serde(default)]
+        step: u32,
     },
     /// A line of output from a running command, sent as it is produced.
     ToolOutput {
@@ -651,6 +657,18 @@ pub enum SessionEvent {
         /// for a command that did not exit normally.
         #[serde(default)]
         exit_code: Option<i32>,
+        /// Structured details of the result for the UI, such as the line
+        /// numbers of a read; `None` for failures and older logs.
+        #[serde(default)]
+        meta: Option<serde_json::Value>,
+        /// When the tool started and finished running, in milliseconds
+        /// since the Unix epoch; 0 in logs written before ADR 0012.
+        #[serde(default)]
+        #[ts(type = "number")]
+        started_at: u64,
+        #[serde(default)]
+        #[ts(type = "number")]
+        ended_at: u64,
     },
     /// A file the agent changed this session, as a unified diff from its
     /// content before the agent's first edit.

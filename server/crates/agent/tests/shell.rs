@@ -11,7 +11,7 @@ use std::{
 use agent::{
     model::{ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest},
     shell::{self, Line},
-    tools::{ToolBox, RUN_SHELL},
+    tools::{ToolBox, BASH},
     Agent,
 };
 use api_types::{OutputStream, SessionEnvelope, SessionEvent, TurnEndReason};
@@ -274,7 +274,7 @@ impl ModelClient for FakeModel {
 fn shell_call(command: serde_json::Value) -> Vec<ModelEvent> {
     vec![ModelEvent::Message(vec![ContentBlock::ToolUse {
         id: "t1".into(),
-        name: RUN_SHELL.into(),
+        name: BASH.into(),
         input: command,
     }])]
 }
@@ -312,7 +312,7 @@ fn setup(
 #[test]
 fn the_shell_tool_is_offered_to_the_model() {
     let names: Vec<_> = ToolBox::new(".").specs().iter().map(|s| s.name).collect();
-    assert!(names.contains(&RUN_SHELL), "{names:?}");
+    assert!(names.contains(&BASH), "{names:?}");
 }
 
 #[tokio::test]

@@ -122,6 +122,8 @@ describe("sessionReducer", () => {
       call_id: "t1",
       name: "read_file",
       args: { path: "a.txt" },
+      turn: 1,
+      step: 1,
     });
     expect(state.messages[1]).toEqual({
       id: "m1",
@@ -135,14 +137,31 @@ describe("sessionReducer", () => {
       hiddenLines: 0,
       exitCode: null,
       approval: null,
+      meta: null,
     });
   });
 
   it("fills in the result of the matching tool call", () => {
     const state = apply(
       sent("go"),
-      { type: "tool_call", session_id: S, call_id: "t1", name: "read_file", args: {} },
-      { type: "tool_call", session_id: S, call_id: "t2", name: "list_directory", args: {} },
+      {
+        type: "tool_call",
+        session_id: S,
+        call_id: "t1",
+        name: "read_file",
+        args: {},
+        turn: 1,
+        step: 1,
+      },
+      {
+        type: "tool_call",
+        session_id: S,
+        call_id: "t2",
+        name: "list_directory",
+        args: {},
+        turn: 1,
+        step: 1,
+      },
       {
         type: "tool_result",
         session_id: S,
@@ -150,6 +169,9 @@ describe("sessionReducer", () => {
         output: "a.txt",
         is_error: false,
         exit_code: null,
+        meta: null,
+        started_at: 0,
+        ended_at: 0,
       },
       {
         type: "tool_result",
@@ -158,6 +180,9 @@ describe("sessionReducer", () => {
         output: "nope",
         is_error: true,
         exit_code: null,
+        meta: null,
+        started_at: 0,
+        ended_at: 0,
       },
     );
     expect(state.messages.slice(1)).toMatchObject([
@@ -176,6 +201,9 @@ describe("sessionReducer", () => {
         output: "x",
         is_error: false,
         exit_code: null,
+        meta: null,
+        started_at: 0,
+        ended_at: 0,
       }),
     ).toEqual(state);
   });
@@ -184,7 +212,15 @@ describe("sessionReducer", () => {
     const state = apply(
       sent("go"),
       { type: "output", session_id: S, chunk: "Looking. " },
-      { type: "tool_call", session_id: S, call_id: "t1", name: "read_file", args: {} },
+      {
+        type: "tool_call",
+        session_id: S,
+        call_id: "t1",
+        name: "read_file",
+        args: {},
+        turn: 1,
+        step: 1,
+      },
       {
         type: "tool_result",
         session_id: S,
@@ -192,6 +228,9 @@ describe("sessionReducer", () => {
         output: "x",
         is_error: false,
         exit_code: null,
+        meta: null,
+        started_at: 0,
+        ended_at: 0,
       },
       { type: "output", session_id: S, chunk: "Found it." },
     );
@@ -202,7 +241,15 @@ describe("sessionReducer", () => {
   it("appends streamed shell lines to their tool call while it runs", () => {
     const state = apply(
       sent("go"),
-      { type: "tool_call", session_id: S, call_id: "t1", name: "run_shell", args: {} },
+      {
+        type: "tool_call",
+        session_id: S,
+        call_id: "t1",
+        name: "run_shell",
+        args: {},
+        turn: 1,
+        step: 1,
+      },
       { type: "tool_output", session_id: S, call_id: "t1", stream: "stdout", text: "hello" },
       { type: "tool_output", session_id: S, call_id: "t1", stream: "stderr", text: "warn" },
     );
@@ -218,7 +265,15 @@ describe("sessionReducer", () => {
   it("keeps the exit code from the tool result", () => {
     const state = apply(
       sent("go"),
-      { type: "tool_call", session_id: S, call_id: "t1", name: "run_shell", args: {} },
+      {
+        type: "tool_call",
+        session_id: S,
+        call_id: "t1",
+        name: "run_shell",
+        args: {},
+        turn: 1,
+        step: 1,
+      },
       {
         type: "tool_result",
         session_id: S,
@@ -226,6 +281,9 @@ describe("sessionReducer", () => {
         output: "Exit code: 3",
         is_error: false,
         exit_code: 3,
+        meta: null,
+        started_at: 0,
+        ended_at: 0,
       },
     );
     expect(state.messages[1]).toMatchObject({ status: "done", exitCode: 3 });
@@ -238,10 +296,21 @@ describe("sessionReducer", () => {
       call_id: "t1",
       output: "x",
       is_error: false,
+      meta: null,
+      started_at: 0,
+      ended_at: 0,
     } as unknown as SessionEvent;
     const state = apply(
       sent("go"),
-      { type: "tool_call", session_id: S, call_id: "t1", name: "read_file", args: {} },
+      {
+        type: "tool_call",
+        session_id: S,
+        call_id: "t1",
+        name: "read_file",
+        args: {},
+        turn: 1,
+        step: 1,
+      },
       old,
     );
     expect(state.messages[1]).toMatchObject({ status: "done", exitCode: null });
@@ -249,7 +318,15 @@ describe("sessionReducer", () => {
 
   it("keeps only the newest shell lines and counts the rest", () => {
     const events: SessionEvent[] = [
-      { type: "tool_call", session_id: S, call_id: "t1", name: "run_shell", args: {} },
+      {
+        type: "tool_call",
+        session_id: S,
+        call_id: "t1",
+        name: "run_shell",
+        args: {},
+        turn: 1,
+        step: 1,
+      },
     ];
     for (let i = 1; i <= MAX_SHELL_LINES + 500; i++) {
       events.push({
@@ -275,6 +352,8 @@ describe("sessionReducer", () => {
       call_id: "t1",
       name: "run_shell",
       args: {},
+      turn: 1,
+      step: 1,
     });
     const started = performance.now();
     for (let i = 0; i < 20_000; i++) {
@@ -299,7 +378,15 @@ describe("sessionReducer", () => {
   it("puts a pending approval on the tool call, then its answer", () => {
     const asked = apply(
       sent("go"),
-      { type: "tool_call", session_id: S, call_id: "t1", name: "run_shell", args: {} },
+      {
+        type: "tool_call",
+        session_id: S,
+        call_id: "t1",
+        name: "run_shell",
+        args: {},
+        turn: 1,
+        step: 1,
+      },
       {
         type: "approval_requested",
         session_id: S,
@@ -385,7 +472,15 @@ describe("sessionReducer", () => {
   it("marks tool calls still running as interrupted", () => {
     const state = apply(
       sent("go"),
-      { type: "tool_call", session_id: S, call_id: "t1", name: "read_file", args: {} },
+      {
+        type: "tool_call",
+        session_id: S,
+        call_id: "t1",
+        name: "read_file",
+        args: {},
+        turn: 1,
+        step: 1,
+      },
       { type: "interrupted", session_id: S },
     );
     expect(state.messages[1]).toMatchObject({ status: "error", output: "Interrupted" });
@@ -414,7 +509,15 @@ describe("sessionReducer", () => {
     it("ends an interrupted turn like interrupted", () => {
       const state = apply(
         sent("go"),
-        { type: "tool_call", session_id: S, call_id: "t1", name: "read_file", args: {} },
+        {
+          type: "tool_call",
+          session_id: S,
+          call_id: "t1",
+          name: "read_file",
+          args: {},
+          turn: 1,
+          step: 1,
+        },
         ended({ kind: "interrupted" }),
       );
       expect(state.running).toBe(false);

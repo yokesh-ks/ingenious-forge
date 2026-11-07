@@ -33,6 +33,8 @@ function longSession(steps: number, chunks = 20): SessionEvent[] {
       call_id: `t${i}`,
       name: "read_file",
       args: { path: `f${i}.ts` },
+      turn: 1,
+      step: 1,
     });
     events.push({
       type: "tool_result",
@@ -41,6 +43,9 @@ function longSession(steps: number, chunks = 20): SessionEvent[] {
       output: "ok",
       is_error: false,
       exit_code: null,
+      meta: null,
+      started_at: 0,
+      ended_at: 0,
     });
   }
   events.push({ type: "done", session_id: S });

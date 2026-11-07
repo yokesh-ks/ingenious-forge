@@ -12,7 +12,7 @@ use std::{
 use agent::{
     instructions,
     model::{ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest},
-    tools::{ToolBox, LIST_DIRECTORY, READ_FILE},
+    tools::{ToolBox, LIST_DIRECTORY, READ},
     Agent,
 };
 use api_types::{SessionEnvelope, SessionEvent, TurnEndReason};
@@ -227,8 +227,8 @@ async fn working_under_a_folder_adds_its_agents_md_to_the_tool_result_once() {
     let (agent, model, mut rx) = setup(
         root,
         vec![
-            vec![tool_use("t1", READ_FILE, json!({"path": "web/a.ts"}))],
-            vec![tool_use("t2", READ_FILE, json!({"path": "web/b.ts"}))],
+            vec![tool_use("t1", READ, json!({"file_path": "web/a.ts"}))],
+            vec![tool_use("t2", READ, json!({"file_path": "web/b.ts"}))],
             vec![ModelEvent::TextDelta("ok".into())],
         ],
     );
@@ -236,10 +236,18 @@ async fn working_under_a_folder_adds_its_agents_md_to_the_tool_result_once() {
     agent.send_message("s1", "read").unwrap();
     let outputs = tool_outputs(&turn(&mut rx).await);
 
-    assert!(outputs[0].starts_with('a'), "{}", outputs[0]);
+    assert!(
+        outputs[0].contains("<content>\n1: a\n</content>"),
+        "{}",
+        outputs[0]
+    );
     assert!(outputs[0].contains("web/AGENTS.md"), "{}", outputs[0]);
     assert!(outputs[0].contains("Use tabs in web/."), "{}", outputs[0]);
-    assert_eq!(outputs[1], "b");
+    assert!(
+        outputs[1].ends_with("<content>\n1: b\n</content>"),
+        "{}",
+        outputs[1]
+    );
 
     // The model saw the instructions in the tool result too.
     let requests = model.requests.lock().unwrap();
@@ -269,8 +277,8 @@ async fn a_failed_tool_call_does_not_load_instructions() {
     let (agent, _, mut rx) = setup(
         root,
         vec![
-            vec![tool_use("t1", READ_FILE, json!({"path": "web/missing.ts"}))],
-            vec![tool_use("t2", READ_FILE, json!({"path": "web/AGENTS.md"}))],
+            vec![tool_use("t1", READ, json!({"file_path": "web/missing.ts"}))],
+            vec![tool_use("t2", READ, json!({"file_path": "web/AGENTS.md"}))],
             vec![ModelEvent::TextDelta("ok".into())],
         ],
     );
@@ -279,7 +287,7 @@ async fn a_failed_tool_call_does_not_load_instructions() {
     let outputs = tool_outputs(&turn(&mut rx).await);
     assert!(!outputs[0].contains("web rules"), "{}", outputs[0]);
     // Reading the file itself shows it once, not twice.
-    assert_eq!(outputs[1], "web rules");
+    assert_eq!(outputs[1].matches("web rules").count(), 1, "{}", outputs[1]);
 }
 
 fn prompts(events: &[SessionEvent]) -> Vec<String> {

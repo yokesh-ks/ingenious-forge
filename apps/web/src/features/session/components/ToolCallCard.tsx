@@ -1,4 +1,5 @@
 import {
+  FilePlusIcon,
   FileTextIcon,
   FolderOpenIcon,
   PencilIcon,
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import DiffView from "@/features/git/components/DiffView";
 import type { Approval, ToolItem } from "@/features/session/session-reducer";
 import { cn } from "@/lib/utils";
+import { type ToolKind, toolKind } from "../tool-names";
 
 const ANSWERS: Record<ApprovalDecision, string> = {
   approve: "Approved",
@@ -72,23 +74,42 @@ function ApprovalPanel({
 
 const PREVIEW_LINES = 12;
 
-const TOOLS: Record<string, { label: string; icon: typeof FileTextIcon }> = {
-  read_file: { label: "Read", icon: FileTextIcon },
-  edit_file: { label: "Edit", icon: PencilIcon },
-  list_directory: { label: "List", icon: FolderOpenIcon },
-  run_shell: { label: "Shell", icon: SquareTerminalIcon },
+const TOOLS: Partial<Record<ToolKind, { label: string; icon: typeof FileTextIcon }>> = {
+  read: { label: "Read", icon: FileTextIcon },
+  write: { label: "Write", icon: FilePlusIcon },
+  edit: { label: "Edit", icon: PencilIcon },
+  list: { label: "List", icon: FolderOpenIcon },
+  bash: { label: "Shell", icon: SquareTerminalIcon },
 };
 
-function commandArg(args: JsonValue): string | null {
+function stringArg(args: JsonValue, key: string): string | null {
   if (args && typeof args === "object" && !Array.isArray(args)) {
-    const command = args.command;
-    if (typeof command === "string" && command !== "") return command;
+    const value = args[key];
+    if (typeof value === "string" && value !== "") return value;
   }
   return null;
 }
 
 /** A shell command's lines as they stream in, then its exit code. */
 function ShellOutput({ tool }: { tool: ToolItem }) {
+  const command = stringArg(tool.args, "command");
+  const described = stringArg(tool.args, "description") !== null;
+  return (
+    <>
+      {described && command && (
+        <pre
+          data-testid="shell-command"
+          className="mb-1 overflow-x-auto font-mono text-xs text-muted-foreground"
+        >
+          $ {command}
+        </pre>
+      )}
+      <ShellLines tool={tool} />
+    </>
+  );
+}
+
+function ShellLines({ tool }: { tool: ToolItem }) {
   if (tool.status === "error" && tool.lines.length === 0) {
     return (
       <p data-testid="tool-output" className="text-xs text-destructive">
@@ -142,16 +163,26 @@ function ShellOutput({ tool }: { tool: ToolItem }) {
   );
 }
 
+/** The file a call works on: `file_path` now, `path` in older sessions. */
 function pathArg(args: JsonValue): string | null {
-  if (args && typeof args === "object" && !Array.isArray(args)) {
-    const path = args.path;
-    if (typeof path === "string" && path !== "") return path;
-  }
-  return null;
+  return stringArg(args, "file_path") ?? stringArg(args, "path");
 }
 
-function ReadPreview({ output }: { output: string }) {
-  const lines = output.split("\n");
+/** A read's lines from its result details, or its text in older sessions. */
+function readLines(tool: ToolItem): string[] {
+  const meta = tool.meta;
+  if (meta && typeof meta === "object" && !Array.isArray(meta) && Array.isArray(meta.lines)) {
+    return meta.lines.map((line) =>
+      line && typeof line === "object" && !Array.isArray(line) && typeof line.text === "string"
+        ? line.text
+        : "",
+    );
+  }
+  return (tool.output ?? "").split("\n");
+}
+
+function ReadPreview({ tool }: { tool: ToolItem }) {
+  const lines = readLines(tool);
   const hidden = lines.length - PREVIEW_LINES;
   return (
     <>
@@ -174,7 +205,8 @@ function Listing({ output }: { output: string }) {
 }
 
 function ToolOutput({ tool }: { tool: ToolItem }) {
-  if (tool.name === "run_shell") return <ShellOutput tool={tool} />;
+  const kind = toolKind(tool.name);
+  if (kind === "bash") return <ShellOutput tool={tool} />;
   if (tool.status === "running" || tool.output === null) {
     return (
       <p role="status" className="text-xs text-muted-foreground">
@@ -189,8 +221,8 @@ function ToolOutput({ tool }: { tool: ToolItem }) {
       </p>
     );
   }
-  if (tool.name === "read_file") return <ReadPreview output={tool.output} />;
-  if (tool.name === "list_directory") return <Listing output={tool.output} />;
+  if (kind === "read") return <ReadPreview tool={tool} />;
+  if (kind === "list") return <Listing output={tool.output} />;
   return (
     <p data-testid="tool-output" className="text-xs whitespace-pre-wrap">
       {tool.output}
@@ -208,12 +240,13 @@ export default function ToolCallCard({
   onAnswer?: (callId: string, decision: ApprovalDecision) => void;
 }) {
   const waiting = tool.approval?.status === "pending";
-  const known = TOOLS[tool.name];
+  const kind = toolKind(tool.name);
+  const known = TOOLS[kind];
   const Icon = known?.icon ?? WrenchIcon;
   const path =
-    tool.name === "run_shell"
-      ? commandArg(tool.args)
-      : (pathArg(tool.args) ?? (tool.name === "list_directory" ? "." : null));
+    kind === "bash"
+      ? (stringArg(tool.args, "description") ?? stringArg(tool.args, "command"))
+      : (pathArg(tool.args) ?? (kind === "list" ? "." : null));
 
   return (
     <article

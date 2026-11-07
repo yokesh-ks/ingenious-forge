@@ -11,7 +11,7 @@ use std::{
 use agent::{
     commands,
     model::{ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest},
-    tools::{ToolBox, EDIT_FILE},
+    tools::{ToolBox, WRITE},
     Agent,
 };
 use api_types::{SessionEnvelope, SessionEvent};
@@ -205,8 +205,8 @@ async fn the_written_agents_md_shows_as_a_changed_file() {
         vec![
             vec![ModelEvent::Message(vec![ContentBlock::ToolUse {
                 id: "t1".into(),
-                name: EDIT_FILE.into(),
-                input: json!({"path": "AGENTS.md", "old_string": "", "new_string": "# Agents\n"}),
+                name: WRITE.into(),
+                input: json!({"file_path": "AGENTS.md", "content": "# Agents\n"}),
             }])],
             vec![ModelEvent::TextDelta("Wrote AGENTS.md".into())],
         ],
