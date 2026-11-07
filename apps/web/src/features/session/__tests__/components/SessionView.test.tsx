@@ -20,6 +20,22 @@ describe("SessionView", () => {
     expect(texts).toEqual(["hi", "Hello there"]);
   });
 
+  it("renders assistant replies as Markdown and user text literally", () => {
+    render(
+      <SessionView
+        messages={[
+          { id: "u", role: "user", text: "**not bold**" },
+          { id: "a", role: "assistant", text: "### Integration\n\nUses **two** parts." },
+        ]}
+        running={false}
+        error={null}
+      />,
+    );
+    expect(screen.getByRole("heading", { level: 3, name: "Integration" })).toBeInTheDocument();
+    expect(screen.getByText("two").tagName).toBe("STRONG");
+    expect(screen.getByText("**not bold**")).toBeInTheDocument();
+  });
+
   it("shows a thinking indicator while waiting for the first token", () => {
     render(<SessionView messages={conversation.slice(0, 1)} running error={null} />);
     expect(screen.getByRole("status")).toHaveTextContent(/thinking/i);

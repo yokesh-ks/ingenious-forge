@@ -118,9 +118,11 @@ working.
   `message-scroller`, `message`, `bubble` — kept apart from `ui/` since
   they are not CLI-managed; see ADR
   [0002](docs/decisions/0002-shadcn-tailwind-web-ui.md) and
-  [0010](docs/decisions/0010-full-shadcn-component-catalog.md)), `hooks/`
-  (`use-theme`, `use-mobile`), `lib/` (utils, router, platform, approval-modes,
-  slash-commands, file-tree, models), `api/` (typed client, generated
+  [0010](docs/decisions/0010-full-shadcn-component-catalog.md)),
+  `components/markdown/` (the shared Markdown renderer and code card; ADR
+  [0013](docs/decisions/0013-render-markdown-with-react-markdown-and-shiki.md)),
+  `hooks/` (`use-theme`, `use-mobile`), `lib/` (utils, router, platform,
+  approval-modes, slash-commands, file-tree, models, highlight), `api/` (typed client, generated
   types), `pages/` (route-level composition) and `test/` (test helpers).
   Tests live in a sibling `__tests__/` folder next to the code they
   cover, mirroring its subfolders (for example

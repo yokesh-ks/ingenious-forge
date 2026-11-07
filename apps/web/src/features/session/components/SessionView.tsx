@@ -10,6 +10,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ai-elements/message-scroller";
+import Markdown from "@/components/markdown/Markdown";
 import type { SessionItem } from "@/features/session/session-reducer";
 import ToolCallCard from "./ToolCallCard";
 
@@ -50,10 +51,14 @@ const TimelineItem = memo(function TimelineItem({
         <ToolCallCard tool={item} onAnswer={onAnswerApproval} />
       ) : item.role === "notice" ? (
         <p className="text-center text-xs text-muted-foreground">{item.text}</p>
+      ) : item.role === "assistant" ? (
+        <div data-testid="message-text">
+          <Markdown text={item.text} />
+        </div>
       ) : (
-        <Message align={item.role === "user" ? "end" : "start"}>
+        <Message align="end">
           <MessageContent>
-            <Bubble align={item.role === "user" ? "end" : "start"} variant="muted">
+            <Bubble align="end" variant="muted">
               <BubbleContent className="whitespace-pre-wrap" data-testid="message-text">
                 {item.text}
               </BubbleContent>
