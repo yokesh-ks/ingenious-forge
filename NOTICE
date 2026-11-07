@@ -75,3 +75,9 @@ own license:
   because the shadcn CLI registry did not yet serve these items (ADR
   0002); trimmed of the template's Next.js/Vercel-AI-SDK wiring, which
   Forge does not use.
+
+- apps/web/src/features/settings/logos/provider-logos.ts holds SVG paths from
+  Lobe Icons, https://github.com/lobehub/lobe-icons, package
+  @lobehub/icons-static-svg 1.102.0, under the MIT License. See
+  apps/web/src/features/settings/logos/LICENSE.lobe-icons. The logos are
+  trademarks of their owners and are used only to identify each provider.

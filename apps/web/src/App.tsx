@@ -5,7 +5,9 @@ import AppSidebar from "@/components/layout/AppSidebar";
 import AppTopBar from "@/components/layout/AppTopBar";
 import { sectionForPath } from "@/components/layout/app-sections";
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
-import { Link, matchPath, usePath } from "@/lib/router";
+import SettingsSidebar from "@/features/settings/components/SettingsSidebar";
+import { SETTINGS_SECTIONS, settingsSectionForPath } from "@/features/settings/settings-sections";
+import { Link, matchPath, navigate, usePath } from "@/lib/router";
 import ComingSoonPage from "@/pages/ComingSoonPage";
 import EmptyMainView from "@/pages/EmptyMainView";
 import ProjectPage from "@/pages/ProjectPage";
@@ -13,7 +15,10 @@ import SettingsPage from "@/pages/SettingsPage";
 
 function Page({ path }: { path: string }) {
   if (matchPath("/", path)) return <EmptyMainView />;
-  if (matchPath("/settings", path)) return <SettingsPage />;
+  const settingsPage = settingsSectionForPath(path);
+  if (settingsPage) return <SettingsPage key={settingsPage.id} section={settingsPage.id} />;
+  // Replaced straight away: see `useSettingsOpensItsFirstPage`.
+  if (matchPath("/settings", path)) return null;
   const section = sectionForPath(path);
   if (section?.comingSoon) return <ComingSoonPage title={section.label} />;
   const session = matchPath("/projects/:id/sessions/:sessionId", path);
@@ -54,10 +59,20 @@ function useTextFieldsKeepSidebarShortcut() {
   }, []);
 }
 
+/** `/settings` has no page of its own: it opens the first one. */
+function useSettingsOpensItsFirstPage(path: string) {
+  useEffect(() => {
+    if (matchPath("/settings", path)) navigate(SETTINGS_SECTIONS[0].to, { replace: true });
+  }, [path]);
+}
+
 export default function App() {
   const path = usePath();
-  const onWork = sectionForPath(path)?.id === "work";
+  const sectionId = sectionForPath(path)?.id;
+  const onWork = sectionId === "work";
+  const onSettings = sectionId === "settings";
   useTextFieldsKeepSidebarShortcut();
+  useSettingsOpensItsFirstPage(path);
 
   return (
     <div className="flex h-svh flex-col bg-sidebar">
@@ -71,9 +86,10 @@ export default function App() {
             style={{ "--sidebar-width": "15.625rem" } as React.CSSProperties}
           >
             {onWork && <AppSidebar />}
+            {onSettings && <SettingsSidebar path={path} />}
             <SidebarInset className="min-h-0 min-w-0">
               <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-                {onWork && <ReopenSidebarTrigger />}
+                {(onWork || onSettings) && <ReopenSidebarTrigger />}
                 <AppBreadcrumb path={path} />
               </header>
               <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">

@@ -8,9 +8,9 @@
       (() => {
         try {
           const stored = localStorage.getItem("forge-theme");
-          const dark = stored
-            ? stored === "dark"
-            : window.matchMedia("(prefers-color-scheme: dark)").matches;
+          const dark =
+            stored === "dark" ||
+            (stored !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
           document.documentElement.classList.toggle("dark", dark);
         } catch (_e) {
           // ignore - e.g. storage disabled

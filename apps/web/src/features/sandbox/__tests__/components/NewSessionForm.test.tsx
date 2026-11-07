@@ -110,7 +110,7 @@ describe("NewSessionForm", () => {
     expect(screen.getByText(/no model provider/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /open settings/i })).toHaveAttribute(
       "href",
-      "/settings",
+      "/settings/providers",
     );
     expect(screen.queryByRole("button", { name: /start session/i })).not.toBeInTheDocument();
   });

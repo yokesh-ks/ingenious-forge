@@ -46,5 +46,8 @@ export function sectionForPath(path: string): AppSection | null {
   if (path === "/" || path.startsWith("/projects/")) {
     return APP_SECTIONS[0];
   }
+  if (path.startsWith("/settings/")) {
+    return APP_SECTIONS.find((section) => section.id === "settings") ?? null;
+  }
   return APP_SECTIONS.find((section) => section.id !== "work" && section.to === path) ?? null;
 }

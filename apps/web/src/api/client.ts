@@ -1,9 +1,12 @@
 import type {
+  AddCustomProviderRequest,
   ApiError,
   ApprovalMode,
   CommitMessageDraft,
   CommitResult,
   DirListing,
+  FetchCustomModelsRequest,
+  FetchModelsRequest,
   FileContent,
   FileList,
   GitHubConnection,
@@ -11,8 +14,10 @@ import type {
   ModelCatalog,
   OpenProjectRequest,
   Project,
+  ProviderCustomization,
   ProviderKeyStatus,
   ProviderKeyTest,
+  ProviderModel,
   PushResult,
   SandboxInfo,
   Session,
@@ -90,6 +95,25 @@ export const api = {
     ),
   removeProviderKey: (provider: string) =>
     request<ProviderKeyStatus>(`/api/settings/providers/${encodeURIComponent(provider)}/key`, {
+      method: "DELETE",
+    }),
+  setProviderCustomization: (provider: string, customization: ProviderCustomization) =>
+    post<ProviderKeyStatus>(
+      `/api/settings/providers/${encodeURIComponent(provider)}/customization`,
+      customization,
+      "PUT",
+    ),
+  fetchProviderModels: (provider: string, form: FetchModelsRequest) =>
+    post<ProviderModel[]>(
+      `/api/settings/providers/${encodeURIComponent(provider)}/models/fetch`,
+      form,
+    ),
+  fetchCustomProviderModels: (form: FetchCustomModelsRequest) =>
+    post<ProviderModel[]>("/api/settings/custom-providers/models", form),
+  addCustomProvider: (provider: AddCustomProviderRequest) =>
+    post<ProviderKeyStatus>("/api/settings/custom-providers", provider),
+  removeCustomProvider: (id: string) =>
+    request<void>(`/api/settings/custom-providers/${encodeURIComponent(id)}`, {
       method: "DELETE",
     }),
   testProviderKey: (provider: string) =>

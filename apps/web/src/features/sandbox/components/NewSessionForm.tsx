@@ -25,7 +25,7 @@ export function NoProviderPrompt({ onCancel }: { onCancel?: () => void }) {
       </p>
       <div className="flex gap-2">
         <Button asChild size="sm">
-          <Link to="/settings">Open Settings</Link>
+          <Link to="/settings/providers">Open Settings</Link>
         </Button>
         {onCancel && (
           <Button variant="outline" size="sm" onClick={onCancel}>

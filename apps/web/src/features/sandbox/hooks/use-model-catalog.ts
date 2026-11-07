@@ -1,35 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { ModelCatalog } from "@/api/types";
 
-/** The providers, models and efforts a new session can pick from. Call
- * `reload` after a provider key changes, since keys decide what is listed. */
+/** The providers, models and efforts a new session can pick from. */
 export function useModelCatalog() {
   const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Only the latest request may set the state.
-  const latest = useRef(0);
-
-  const reload = useCallback(() => {
-    const request = ++latest.current;
-    api.modelCatalog().then(
-      (found) => {
-        if (request !== latest.current) return;
-        setCatalog(found);
-        setError(null);
-      },
-      (err: Error) => {
-        if (request === latest.current) setError(err.message);
-      },
-    );
-  }, []);
 
   useEffect(() => {
-    reload();
+    let cancelled = false;
+    api.modelCatalog().then(
+      (found) => !cancelled && setCatalog(found),
+      (err: Error) => !cancelled && setError(err.message),
+    );
     return () => {
-      latest.current++;
+      cancelled = true;
     };
-  }, [reload]);
+  }, []);
 
-  return { catalog, error, reload };
+  return { catalog, error };
 }
