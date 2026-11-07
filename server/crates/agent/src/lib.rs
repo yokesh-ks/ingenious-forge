@@ -133,6 +133,11 @@ impl Agent {
         &self.sandbox
     }
 
+    /// Closes a session that no longer exists, so nothing can use it again.
+    pub fn close_session(&self, session_id: &str) {
+        self.sessions.lock().unwrap().remove(session_id);
+    }
+
     /// The sandbox and writable folders of an open session.
     pub fn sandbox_info(&self, session_id: &str) -> Option<api_types::SandboxInfo> {
         let policy = self.policy(session_id)?;

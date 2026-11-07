@@ -45,9 +45,19 @@ pub struct SessionRow {
     /// Milliseconds since the Unix epoch.
     pub created_at: i64,
     pub updated_at: i64,
-    /// The model the session was started with, if one was recorded.
+    /// The session's current model, if one was recorded.
     pub model: Option<SessionModelRow>,
     pub approval_mode: Option<String>,
+    pub pinned: bool,
+    pub archived: bool,
+}
+
+/// What to change about a session; `None` leaves that part as it is.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SessionUpdate<'a> {
+    pub title: Option<&'a str>,
+    pub pinned: Option<bool>,
+    pub archived: Option<bool>,
 }
 
 /// A session's provider, model and reasoning effort, as stored.
@@ -80,14 +90,27 @@ type SessionTuple = (
     Option<String>,
     Option<String>,
     Option<String>,
+    Option<i64>,
+    Option<i64>,
 );
 
-const SESSION_COLUMNS: &str =
-    "id, project_id, title, created_at, updated_at, provider, model, effort, approval_mode";
+const SESSION_COLUMNS: &str = "id, project_id, title, created_at, updated_at, provider, model, \
+     effort, approval_mode, pinned_at, archived_at";
 
 fn session(row: SessionTuple) -> SessionRow {
-    let (id, project_id, title, created_at, updated_at, provider, model, effort, approval_mode) =
-        row;
+    let (
+        id,
+        project_id,
+        title,
+        created_at,
+        updated_at,
+        provider,
+        model,
+        effort,
+        approval_mode,
+        pinned_at,
+        archived_at,
+    ) = row;
     let model = match (provider, model, effort) {
         (Some(provider), Some(model), Some(effort)) => Some(SessionModelRow {
             provider,
@@ -104,7 +127,43 @@ fn session(row: SessionTuple) -> SessionRow {
         updated_at,
         model,
         approval_mode,
+        pinned: pinned_at.is_some(),
+        archived: archived_at.is_some(),
     }
+}
+
+/// Applies `update` to a session without counting as activity; false when
+/// the session does not exist.
+pub async fn update_session(
+    pool: &SqlitePool,
+    id: &str,
+    update: SessionUpdate<'_>,
+    now: i64,
+) -> Result<bool, DbError> {
+    let done = sqlx::query(
+        "UPDATE sessions SET
+             title = coalesce(?2, title),
+             pinned_at = CASE ?3 WHEN 1 THEN coalesce(pinned_at, ?5) WHEN 0 THEN NULL ELSE pinned_at END,
+             archived_at = CASE ?4 WHEN 1 THEN coalesce(archived_at, ?5) WHEN 0 THEN NULL ELSE archived_at END
+         WHERE id = ?1",
+    )
+    .bind(id)
+    .bind(update.title)
+    .bind(update.pinned)
+    .bind(update.archived)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+/// Deletes one session; false when it does not exist.
+pub async fn delete_session(pool: &SqlitePool, id: &str) -> Result<bool, DbError> {
+    let done = sqlx::query("DELETE FROM sessions WHERE id = ?1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(done.rows_affected() == 1)
 }
 
 /// Sets a session's approval mode; false when the session does not exist.
@@ -128,7 +187,7 @@ pub async fn upsert_project(
     let row: ProjectTuple = sqlx::query_as(
         "INSERT INTO projects (id, path, name, last_opened_at)
          VALUES (lower(hex(randomblob(16))), ?1, ?2, ?3)
-         ON CONFLICT(path) DO UPDATE SET name = excluded.name, last_opened_at = excluded.last_opened_at
+         ON CONFLICT(path) DO UPDATE SET last_opened_at = excluded.last_opened_at
          RETURNING id, path, name, last_opened_at",
     )
     .bind(path)
@@ -157,6 +216,32 @@ pub async fn get_project(pool: &SqlitePool, id: &str) -> Result<Option<ProjectRo
             .fetch_optional(pool)
             .await?;
     Ok(row.map(project))
+}
+
+/// Sets a project's name; `false` when there is no such project.
+pub async fn rename_project(pool: &SqlitePool, id: &str, name: &str) -> Result<bool, DbError> {
+    let result = sqlx::query("UPDATE projects SET name = ?2 WHERE id = ?1")
+        .bind(id)
+        .bind(name)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+/// Deletes a project and its sessions together; `false` when there is no
+/// such project.
+pub async fn delete_project(pool: &SqlitePool, id: &str) -> Result<bool, DbError> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM sessions WHERE project_id = ?1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    let result = sqlx::query("DELETE FROM projects WHERE id = ?1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(result.rows_affected() > 0)
 }
 
 pub async fn create_session(
@@ -209,7 +294,8 @@ pub async fn list_sessions(
 ) -> Result<Vec<SessionRow>, DbError> {
     let rows: Vec<SessionTuple> = sqlx::query_as(&format!(
         "SELECT {SESSION_COLUMNS} FROM sessions
-         WHERE project_id = ?1 ORDER BY updated_at DESC, created_at DESC"
+         WHERE project_id = ?1
+         ORDER BY pinned_at IS NULL, pinned_at DESC, updated_at DESC, created_at DESC"
     ))
     .bind(project_id)
     .fetch_all(pool)

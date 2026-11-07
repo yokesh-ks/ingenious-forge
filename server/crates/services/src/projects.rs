@@ -19,6 +19,10 @@ pub enum ProjectError {
     Folder(#[from] FolderError),
     #[error("project not found")]
     NotFound,
+    #[error("the project name cannot be empty")]
+    BlankName,
+    #[error("the session title cannot be empty")]
+    BlankTitle,
     #[error(transparent)]
     Db(#[from] DbError),
 }
@@ -54,6 +58,8 @@ fn session(row: SessionRow) -> Session {
             .approval_mode
             .and_then(|m| m.parse().ok())
             .unwrap_or_default(),
+        pinned: row.pinned,
+        archived: row.archived,
     }
 }
 
@@ -85,6 +91,30 @@ pub async fn get_project(pool: &SqlitePool, id: &str) -> Result<Project, Project
         .await?
         .map(project)
         .ok_or(ProjectError::NotFound)
+}
+
+/// Changes the name Forge shows for a project; its folder stays as it is.
+pub async fn rename_project(
+    pool: &SqlitePool,
+    id: &str,
+    name: &str,
+) -> Result<Project, ProjectError> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(ProjectError::BlankName);
+    }
+    if !db::rename_project(pool, id, name).await? {
+        return Err(ProjectError::NotFound);
+    }
+    get_project(pool, id).await
+}
+
+/// Forgets a project and its sessions. Its folder on disk is not touched.
+pub async fn delete_project(pool: &SqlitePool, id: &str) -> Result<(), ProjectError> {
+    if !db::delete_project(pool, id).await? {
+        return Err(ProjectError::NotFound);
+    }
+    Ok(())
 }
 
 /// Creates a session in a project, recording the model it starts with;
@@ -167,6 +197,56 @@ pub async fn list_sessions(
     get_project(pool, project_id).await?;
     let rows = db::list_sessions(pool, project_id).await?;
     Ok(rows.into_iter().map(session).collect())
+}
+
+/// Renames, pins or archives a session and returns the updated session.
+pub async fn update_session(
+    pool: &SqlitePool,
+    id: &str,
+    title: Option<&str>,
+    pinned: Option<bool>,
+    archived: Option<bool>,
+) -> Result<Session, ProjectError> {
+    let title = title.map(str::trim);
+    if title.is_some_and(str::is_empty) {
+        return Err(ProjectError::BlankTitle);
+    }
+    let update = db::SessionUpdate {
+        title,
+        pinned,
+        archived,
+    };
+    if !db::update_session(pool, id, update, now_ms()).await? {
+        return Err(ProjectError::NotFound);
+    }
+    get_session(pool, id).await
+}
+
+/// Creates the record of a fork of `session_id`: same project, model and
+/// approval mode. The caller copies the session's log.
+pub async fn create_fork(pool: &SqlitePool, session_id: &str) -> Result<Session, ProjectError> {
+    let source = db::get_session(pool, session_id)
+        .await?
+        .ok_or(ProjectError::NotFound)?;
+    let title = format!("{} (fork)", source.title);
+    let row = db::create_session_with(
+        pool,
+        &source.project_id,
+        &title,
+        now_ms(),
+        source.model.as_ref(),
+    )
+    .await?;
+    if let Some(mode) = &source.approval_mode {
+        db::set_approval_mode(pool, &row.id, mode).await?;
+    }
+    get_session(pool, &row.id).await
+}
+
+/// Deletes one session's record, as when its fork could not be completed.
+pub async fn delete_session(pool: &SqlitePool, id: &str) -> Result<(), ProjectError> {
+    db::delete_session(pool, id).await?;
+    Ok(())
 }
 
 /// A session title from the first line of a message.

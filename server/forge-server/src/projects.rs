@@ -1,13 +1,13 @@
 //! HTTP API for projects, their sessions and the folder picker.
 
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
 use agent::{model::ModelError, tools::ToolBox};
 use api_types::{
     ApiError, CommitMessageDraft, CommitRequest, CommitResult, CreateBranchRequest,
-    CreateSessionRequest, DirListing, FileContent, FileList, GitStatus, ModelCatalog,
-    OpenProjectRequest, Project, PushResult, SandboxInfo, Session, SessionEnvelope, SessionEvent,
-    SetApprovalModeRequest,
+    CreateSessionRequest, FileContent, FileList, GitStatus, ModelCatalog, OpenInRequest,
+    OpenProjectRequest, PickedFolder, Project, PushResult, RenameProjectRequest, SandboxInfo,
+    Session, SessionEnvelope, SessionEvent, SetApprovalModeRequest, UpdateSessionRequest,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -27,7 +27,15 @@ use crate::state::AppState;
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/projects", get(recent_projects).post(open_project))
-        .route("/projects/{id}", get(get_project))
+        .route(
+            "/projects/{id}",
+            get(get_project)
+                .patch(rename_project)
+                .delete(delete_project),
+        )
+        .route("/projects/{id}/open-in", post(open_project_in))
+        .route("/sessions/{id}", axum::routing::patch(update_session))
+        .route("/sessions/{id}/fork", post(fork_session))
         .route("/projects/{id}/files", get(project_files))
         .route("/projects/{id}/file", get(project_file))
         .route("/projects/{id}/git/status", get(git_status))
@@ -46,7 +54,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/sessions/{id}/events", get(session_events))
         .route("/sessions/{id}/approval-mode", put(set_approval_mode))
         .route("/sessions/{id}/sandbox", get(session_sandbox))
-        .route("/fs/dirs", get(list_dirs))
+        .route("/fs/pick-folder", post(pick_folder))
         .route("/models", get(model_catalog))
 }
 
@@ -72,7 +80,9 @@ impl IntoResponse for ApiFailure {
 impl From<ProjectError> for ApiFailure {
     fn from(err: ProjectError) -> Self {
         let status = match &err {
-            ProjectError::Folder(_) => StatusCode::BAD_REQUEST,
+            ProjectError::Folder(_) | ProjectError::BlankName | ProjectError::BlankTitle => {
+                StatusCode::BAD_REQUEST
+            }
             ProjectError::NotFound => StatusCode::NOT_FOUND,
             ProjectError::Db(e) => {
                 tracing::error!(error = %e, "database error");
@@ -101,6 +111,110 @@ async fn get_project(
     Path(id): Path<String>,
 ) -> ApiResult<Project> {
     Ok(Json(projects::get_project(&state.db, &id).await?))
+}
+
+async fn rename_project(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<RenameProjectRequest>,
+) -> ApiResult<Project> {
+    Ok(Json(
+        projects::rename_project(&state.db, &id, &body.name).await?,
+    ))
+}
+
+/// Removes a project from Forge with its sessions' records and logs and its
+/// terminal. The folder on disk is not touched. Returns the deleted project.
+async fn delete_project(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<Project> {
+    let project = projects::get_project(&state.db, &id).await?;
+    let sessions = projects::list_sessions(&state.db, &id).await?;
+    if sessions.iter().any(|s| state.agent.is_running(&s.id)) {
+        return Err(ApiFailure::new(
+            StatusCode::CONFLICT,
+            "a session in this workspace is still running; stop it first",
+        ));
+    }
+    projects::delete_project(&state.db, &id).await?;
+    for session in &sessions {
+        state.agent.close_session(&session.id);
+    }
+    if let Some(log) = state.events.log() {
+        for session in &sessions {
+            if let Err(error) = log.remove(&session.id) {
+                tracing::warn!(%error, session = %session.id, "cannot delete session log");
+            }
+        }
+    }
+    state.terminals.close(&id);
+    Ok(Json(project))
+}
+
+/// Opens the project's folder in a program on the user's machine.
+async fn open_project_in(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<OpenInRequest>,
+) -> ApiResult<Project> {
+    let project = projects::get_project(&state.db, &id).await?;
+    let path = std::path::PathBuf::from(&project.path);
+    tokio::task::spawn_blocking(move || folders::open_folder_in(body.app, &path))
+        .await
+        .map_err(|e| ApiFailure::internal(e.to_string()))?
+        .map_err(ApiFailure::internal)?;
+    Ok(Json(project))
+}
+
+/// Refuses work that needs the session idle.
+fn ensure_idle(state: &AppState, session_id: &str, action: &str) -> Result<(), ApiFailure> {
+    if state.agent.is_running(session_id) {
+        return Err(ApiFailure::new(
+            StatusCode::CONFLICT,
+            format!("this session is still running; stop it before {action} it"),
+        ));
+    }
+    Ok(())
+}
+
+/// Renames, pins or archives a session.
+async fn update_session(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<UpdateSessionRequest>,
+) -> ApiResult<Session> {
+    if body.archived == Some(true) {
+        ensure_idle(&state, &id, "archiving")?;
+    }
+    let mut session = projects::update_session(
+        &state.db,
+        &id,
+        body.title.as_deref(),
+        body.pinned,
+        body.archived,
+    )
+    .await?;
+    session.running = state.agent.is_running(&id);
+    Ok(Json(session))
+}
+
+/// Starts a new session from a copy of this one's conversation and events.
+async fn fork_session(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<Session> {
+    ensure_idle(&state, &id, "forking")?;
+    let fork = projects::create_fork(&state.db, &id).await?;
+    if let Some(log) = state.events.log() {
+        if let Err(err) = log.fork(&id, &fork.id) {
+            projects::delete_session(&state.db, &fork.id).await?;
+            return Err(ApiFailure::internal(format!(
+                "could not copy the session: {err}"
+            )));
+        }
+    }
+    Ok(Json(fork))
 }
 
 /// Most files listed in the workspace file tree.
@@ -387,24 +501,14 @@ async fn session_events(
     Ok(Json(events))
 }
 
-#[derive(Deserialize)]
-struct DirQuery {
-    path: Option<String>,
-}
-
-async fn list_dirs(Query(query): Query<DirQuery>) -> ApiResult<DirListing> {
-    let path = query
-        .path
-        .map(PathBuf::from)
-        .or_else(folders::home_dir)
-        .unwrap_or_else(|| PathBuf::from("/"));
-    let listing = tokio::task::spawn_blocking(move || {
-        folders::list_dirs(&path).map_err(|e| format!("cannot list {}: {e}", path.display()))
-    })
-    .await
-    .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-    .map_err(|e| ApiFailure(StatusCode::BAD_REQUEST, e))?;
-    Ok(Json(listing))
+/// Shows the operating system's folder dialog on the user's machine and
+/// waits for their choice.
+async fn pick_folder() -> ApiResult<PickedFolder> {
+    let path = tokio::task::spawn_blocking(folders::pick_folder)
+        .await
+        .map_err(|e| ApiFailure::internal(e.to_string()))?
+        .map_err(ApiFailure::internal)?;
+    Ok(Json(PickedFolder { path }))
 }
 
 #[cfg(test)]
@@ -412,6 +516,7 @@ mod tests {
     use api_types::ReasoningEffort;
     use std::{
         fs,
+        path::PathBuf,
         sync::atomic::{AtomicUsize, Ordering},
     };
 
@@ -1219,45 +1324,174 @@ mod tests {
         assert_eq!(status, StatusCode::NOT_FOUND);
     }
 
-    #[tokio::test]
-    async fn the_folder_picker_lists_sub_folders_and_marks_repositories() {
-        let (api, _) = start().await;
-        let dir = folders();
-
-        let url = reqwest::Url::parse_with_params(
-            &format!("{api}/fs/dirs"),
-            &[("path", dir.to_str().unwrap())],
-        )
-        .unwrap();
-        let (status, listing) = get_json(url.as_str()).await;
-
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(listing["path"], dir.to_string_lossy().as_ref());
-        assert_eq!(
-            listing["entries"],
-            json!([
-                { "name": "plain", "path": dir.join("plain"), "is_git_repo": false },
-                { "name": "repo", "path": dir.join("repo"), "is_git_repo": true },
-            ])
-        );
+    async fn send(method: reqwest::Method, url: &str, body: Value) -> (StatusCode, Value) {
+        let res = reqwest::Client::new()
+            .request(method, url)
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        (res.status(), res.json().await.unwrap())
     }
 
     #[tokio::test]
-    async fn the_folder_picker_starts_at_home_and_rejects_missing_folders() {
+    async fn a_renamed_project_keeps_its_name_when_its_folder_is_reopened() {
         let (api, _) = start().await;
-        let (status, listing) = get_json(&format!("{api}/fs/dirs")).await;
-        assert_eq!(status, StatusCode::OK);
-        assert!(listing["path"].as_str().is_some_and(|p| !p.is_empty()));
+        let repo = folders().join("repo");
+        let (_, project) = post_json(&format!("{api}/projects"), json!({ "path": repo })).await;
+        let url = format!("{api}/projects/{}", project["id"].as_str().unwrap());
 
-        let missing = folders().join("missing");
-        let url = reqwest::Url::parse_with_params(
-            &format!("{api}/fs/dirs"),
-            &[("path", missing.to_str().unwrap())],
+        let (status, renamed) = send(
+            reqwest::Method::PATCH,
+            &url,
+            json!({ "name": "  My app  " }),
         )
-        .unwrap();
-        let (status, body) = get_json(url.as_str()).await;
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(renamed["name"], "My app");
+
+        let (_, reopened) = post_json(&format!("{api}/projects"), json!({ "path": repo })).await;
+        assert_eq!(reopened["id"], project["id"]);
+        assert_eq!(reopened["name"], "My app");
+
+        let (status, body) = send(reqwest::Method::PATCH, &url, json!({ "name": "  " })).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert!(body["error"].as_str().unwrap().contains("cannot list"));
+        assert!(body["error"].as_str().unwrap().contains("empty"));
+    }
+
+    #[tokio::test]
+    async fn deleting_a_workspace_forgets_its_sessions_and_keeps_the_folder() {
+        let (api, state) = start().await;
+        let (project_id, sessions) = project_with_sessions(&api, 2).await;
+        let first = sessions[0]["id"].as_str().unwrap();
+        let log = state.events.log().unwrap();
+        log.append_event(&SessionEvent::Done {
+            session_id: first.to_string(),
+        })
+        .unwrap();
+        assert_eq!(log.events_after(first, 0).unwrap().len(), 1);
+        let (_, project) = get_json(&format!("{api}/projects/{project_id}")).await;
+        let folder = PathBuf::from(project["path"].as_str().unwrap());
+        let url = format!("{api}/projects/{project_id}");
+
+        let (status, deleted) = send(reqwest::Method::DELETE, &url, json!({})).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(deleted["id"], project_id.as_str());
+        assert!(folder.join(".git").exists());
+        assert_eq!(log.events_after(first, 0).unwrap().len(), 0);
+        let (status, _) = get_json(&url).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, _) = get_json(&format!("{api}/sessions/{first}/sandbox")).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, _) = send(reqwest::Method::DELETE, &url, json!({})).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn sessions_can_be_renamed_pinned_and_archived_without_counting_as_activity() {
+        let (api, _) = start().await;
+        let (project_id, sessions) = project_with_sessions(&api, 2).await;
+        let sid = sessions[0]["id"].as_str().unwrap();
+        let url = format!("{api}/sessions/{sid}");
+
+        let (status, renamed) =
+            send(reqwest::Method::PATCH, &url, json!({ "title": " Mine " })).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(renamed["title"], "Mine");
+        assert_eq!(renamed["updated_at"], sessions[0]["updated_at"]);
+
+        let (status, body) = send(reqwest::Method::PATCH, &url, json!({ "title": " " })).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body["error"].as_str().unwrap().contains("empty"));
+
+        let (_, pinned) = send(reqwest::Method::PATCH, &url, json!({ "pinned": true })).await;
+        assert_eq!(pinned["pinned"], true);
+        assert_eq!(pinned["title"], "Mine");
+        let (_, listed) = get_json(&format!("{api}/projects/{project_id}/sessions")).await;
+        assert_eq!(listed[0]["id"], sid);
+
+        let (_, archived) = send(reqwest::Method::PATCH, &url, json!({ "archived": true })).await;
+        assert_eq!(archived["archived"], true);
+        let (_, restored) = send(reqwest::Method::PATCH, &url, json!({ "archived": false })).await;
+        assert_eq!(restored["archived"], false);
+        assert_eq!(restored["pinned"], true);
+
+        let (status, _) = send(
+            reqwest::Method::PATCH,
+            &format!("{api}/sessions/nope"),
+            json!({ "pinned": true }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn a_fork_copies_the_history_under_its_own_id() {
+        let (api, state) = start().await;
+        let (project_id, sessions) = project_with_sessions(&api, 1).await;
+        let sid = sessions[0]["id"].as_str().unwrap();
+        state
+            .events
+            .log()
+            .unwrap()
+            .append_event(&SessionEvent::Done {
+                session_id: sid.to_string(),
+            })
+            .unwrap();
+
+        let (status, fork) = post_json(&format!("{api}/sessions/{sid}/fork"), json!(null)).await;
+
+        assert_eq!(status, StatusCode::OK);
+        let fid = fork["id"].as_str().unwrap();
+        assert_ne!(fid, sid);
+        assert_eq!(fork["project_id"], project_id.as_str());
+        assert_eq!(fork["title"], "New session (fork)");
+        assert_eq!(fork["model"], sessions[0]["model"]);
+        let (_, events) = get_json(&format!("{api}/sessions/{fid}/events")).await;
+        assert_eq!(events.as_array().unwrap().len(), 1);
+        assert_eq!(events[0]["session_id"], fid);
+        let (_, original) = get_json(&format!("{api}/sessions/{sid}/events")).await;
+        assert_eq!(original[0]["session_id"], sid);
+    }
+
+    #[tokio::test]
+    async fn a_running_session_is_neither_forked_nor_archived() {
+        let (api, state) = start_with(Arc::new(HangModel::default())).await;
+        let (_, sessions) = project_with_sessions(&api, 1).await;
+        let sid = sessions[0]["id"].as_str().unwrap();
+        state.agent.send_message(sid, "work").unwrap();
+
+        let (status, body) = post_json(&format!("{api}/sessions/{sid}/fork"), json!(null)).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(body["error"].as_str().unwrap().contains("forking"));
+
+        let (status, body) = send(
+            reqwest::Method::PATCH,
+            &format!("{api}/sessions/{sid}"),
+            json!({ "archived": true }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(body["error"].as_str().unwrap().contains("archiving"));
+    }
+
+    #[tokio::test]
+    async fn a_workspace_with_a_running_session_is_not_deleted() {
+        let (api, state) = start_with(Arc::new(HangModel::default())).await;
+        let (project_id, sessions) = project_with_sessions(&api, 1).await;
+        state
+            .agent
+            .send_message(sessions[0]["id"].as_str().unwrap(), "work")
+            .unwrap();
+        let url = format!("{api}/projects/{project_id}");
+
+        let (status, body) = send(reqwest::Method::DELETE, &url, json!({})).await;
+
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(body["error"].as_str().unwrap().contains("running"));
+        let (status, _) = get_json(&url).await;
+        assert_eq!(status, StatusCode::OK);
     }
 
     async fn project_with_sessions(api: &str, count: usize) -> (String, Vec<Value>) {

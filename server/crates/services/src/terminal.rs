@@ -119,6 +119,12 @@ impl Terminals {
         Ok(attached)
     }
 
+    /// Forgets the terminal of project `key`; its shell ends once no browser
+    /// is attached.
+    pub fn close(&self, key: &str) {
+        self.open.lock().unwrap().remove(key);
+    }
+
     fn spawn(&self, cwd: &Path) -> Result<Arc<Terminal>, String> {
         if !cwd.is_dir() {
             return Err(format!("{} is not a folder", cwd.display()));

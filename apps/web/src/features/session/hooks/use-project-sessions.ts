@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { Session } from "@/api/types";
 import { sessionSocketUrl } from "./use-session";
@@ -21,25 +21,37 @@ const REFRESH_ON = new Set([
 /** Tells every mounted copy of a project's list (page, sidebar, breadcrumb) to refetch. */
 const SESSIONS_CHANGED = "forge:sessions-changed";
 
-/** A project's sessions, kept current as turns start and end; `null` while there is no project. */
+interface SessionsChanged {
+  projectId: string | null;
+  /** A session gone from the list, dropped at once so nothing opens it meanwhile. */
+  hidden?: string;
+}
+
+export function notifySessionsChanged(projectId: string | null, hidden?: string) {
+  const detail: SessionsChanged = { projectId, hidden };
+  window.dispatchEvent(new CustomEvent(SESSIONS_CHANGED, { detail }));
+}
+
+/**
+ * A project's sessions, kept current as turns start and end; `null` while there
+ * is no project. Archived ones are apart, since only restoring them applies.
+ */
 export function useProjectSessions(
   projectId: string | null,
   { createSocket = defaultCreateSocket }: Options = {},
 ) {
-  const [sessions, setSessions] = useState<Session[] | null>(null);
+  const [all, setAll] = useState<Session[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const reload = useCallback(() => {
-    window.dispatchEvent(new CustomEvent(SESSIONS_CHANGED, { detail: projectId }));
-  }, [projectId]);
+  const reload = useCallback(() => notifySessionsChanged(projectId), [projectId]);
 
   useEffect(() => {
-    setSessions(null);
+    setAll(null);
     if (projectId === null) return;
     const load = () =>
       api.listSessions(projectId).then(
         (list) => {
-          setSessions(list);
+          setAll(list);
           setError(null);
         },
         (err: Error) => setError(err.message),
@@ -47,7 +59,10 @@ export function useProjectSessions(
     load();
 
     const onChanged = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === projectId) load();
+      const { projectId: changed, hidden } = (event as CustomEvent<SessionsChanged>).detail;
+      if (changed !== projectId) return;
+      if (hidden) setAll((list) => list?.filter((s) => s.id !== hidden) ?? null);
+      load();
     };
     window.addEventListener(SESSIONS_CHANGED, onChanged);
 
@@ -66,5 +81,8 @@ export function useProjectSessions(
     };
   }, [projectId, createSocket]);
 
-  return { sessions, error, reload };
+  const sessions = useMemo(() => all?.filter((s) => !s.archived) ?? null, [all]);
+  const archived = useMemo(() => all?.filter((s) => s.archived) ?? [], [all]);
+
+  return { sessions, archived, error, reload };
 }

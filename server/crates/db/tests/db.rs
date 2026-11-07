@@ -64,6 +64,8 @@ async fn sessions_are_created_in_a_project_and_found_by_id() {
             updated_at: 5,
             model: None,
             approval_mode: None,
+            pinned: false,
+            archived: false,
         }
     );
     assert_eq!(db::get_session(&pool, &s.id).await.unwrap(), Some(s));

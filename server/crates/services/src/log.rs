@@ -84,6 +84,50 @@ impl SessionLog {
         self.dir.join(format!("{session_id}.jsonl"))
     }
 
+    /// Starts `to`'s log as a copy of `from`'s, with its events re-addressed
+    /// to `to`. A session with no log yet leaves nothing to copy.
+    pub fn fork(&self, from: &str, to: &str) -> io::Result<()> {
+        for id in [from, to] {
+            if !is_safe_id(id) {
+                return Err(unsafe_id(id));
+            }
+        }
+        let _order = self.seqs.lock().unwrap();
+        let text = match fs::read_to_string(self.path(from)) {
+            Ok(text) => text,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        let mut copy = String::with_capacity(text.len());
+        for line in text.lines().filter(|line| !line.trim().is_empty()) {
+            let mut record: Value = match serde_json::from_str(line) {
+                Ok(record) => record,
+                Err(err) => {
+                    tracing::warn!(session_id = %from, %err, "skipping unreadable log line");
+                    continue;
+                }
+            };
+            if let Some(event) = record.get_mut("event").and_then(Value::as_object_mut) {
+                event.insert("session_id".to_string(), Value::from(to));
+            }
+            copy.push_str(&serde_json::to_string(&record)?);
+            copy.push('\n');
+        }
+        fs::write(self.path(to), copy)
+    }
+
+    /// Deletes a session's log. A session with no log is fine.
+    pub fn remove(&self, session_id: &str) -> io::Result<()> {
+        if !is_safe_id(session_id) {
+            return Err(unsafe_id(session_id));
+        }
+        self.seqs.lock().unwrap().remove(session_id);
+        match fs::remove_file(self.path(session_id)) {
+            Err(err) if err.kind() != io::ErrorKind::NotFound => Err(err),
+            _ => Ok(()),
+        }
+    }
+
     /// Numbers `event`, appends it and returns its sequence number, or
     /// `None` when the session id cannot name a log file. A failed write
     /// still uses up its number, so no later event repeats it; the error

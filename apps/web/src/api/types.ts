@@ -53,13 +53,27 @@ running: boolean,
  * The model the session was started with; `None` for sessions created
  * before models could be picked.
  */
-model: SessionModel | null, approval_mode: ApprovalMode, };
+model: SessionModel | null, approval_mode: ApprovalMode, 
+/**
+ * Pinned sessions stay at the top of the project's list.
+ */
+pinned: boolean, 
+/**
+ * Archived sessions are hidden from the list until restored.
+ */
+archived: boolean, };
 
 export type OpenProjectRequest = { path: string, };
 
-export type DirEntry = { name: string, path: string, is_git_repo: boolean, };
+export type RenameProjectRequest = { name: string, };
 
-export type DirListing = { path: string, parent: string | null, is_git_repo: boolean, entries: Array<DirEntry>, };
+export type UpdateSessionRequest = { title?: string, pinned?: boolean, archived?: boolean, };
+
+export type OpenApp = "file_manager" | "vs_code" | "terminal";
+
+export type OpenInRequest = { app: OpenApp, };
+
+export type PickedFolder = { path: string | null, };
 
 export type FileList = { 
 /**

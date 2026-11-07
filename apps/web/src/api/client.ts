@@ -4,7 +4,6 @@ import type {
   ApprovalMode,
   CommitMessageDraft,
   CommitResult,
-  DirListing,
   FetchCustomModelsRequest,
   FetchModelsRequest,
   FileContent,
@@ -12,19 +11,24 @@ import type {
   GitHubConnection,
   GitStatus,
   ModelCatalog,
+  OpenApp,
+  OpenInRequest,
   OpenProjectRequest,
+  PickedFolder,
   Project,
   ProviderCustomization,
   ProviderKeyStatus,
   ProviderKeyTest,
   ProviderModel,
   PushResult,
+  RenameProjectRequest,
   SandboxInfo,
   Session,
   SessionDefaults,
   SessionEnvelope,
   SessionModel,
   SetApprovalModeRequest,
+  UpdateSessionRequest,
 } from "./types";
 
 /** A failed API call, carrying the server's message for the user. */
@@ -68,6 +72,26 @@ export const api = {
   openProject: (path: string) =>
     post<Project>("/api/projects", { path } satisfies OpenProjectRequest),
   getProject: (id: string) => request<Project>(`/api/projects/${encodeURIComponent(id)}`),
+  renameProject: (id: string, name: string) =>
+    post<Project>(
+      `/api/projects/${encodeURIComponent(id)}`,
+      { name } satisfies RenameProjectRequest,
+      "PATCH",
+    ),
+  /** Removes the project from Forge; its folder on disk stays. */
+  deleteProject: (id: string) =>
+    request<Project>(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** Opens the project's folder in a program on the user's machine. */
+  openProjectIn: (id: string, app: OpenApp) =>
+    post<Project>(`/api/projects/${encodeURIComponent(id)}/open-in`, {
+      app,
+    } satisfies OpenInRequest),
+  /** Renames, pins or archives a session. */
+  updateSession: (id: string, update: UpdateSessionRequest) =>
+    post<Session>(`/api/sessions/${encodeURIComponent(id)}`, update, "PATCH"),
+  /** Starts a new session from a copy of this one. */
+  forkSession: (id: string) =>
+    request<Session>(`/api/sessions/${encodeURIComponent(id)}/fork`, { method: "POST" }),
   listSessions: (projectId: string) =>
     request<Session[]>(`/api/projects/${encodeURIComponent(projectId)}/sessions`),
   /** Creates a session with `model`, or the server's default without one. */
@@ -147,8 +171,6 @@ export const api = {
     request<SessionEnvelope[]>(
       `/api/sessions/${encodeURIComponent(sessionId)}/events?${new URLSearchParams({ after: String(after) })}`,
     ),
-  listDirs: (path?: string) =>
-    request<DirListing>(
-      path === undefined ? "/api/fs/dirs" : `/api/fs/dirs?${new URLSearchParams({ path })}`,
-    ),
+  /** Shows the OS folder dialog and resolves when the user has answered it. */
+  pickFolder: () => post<PickedFolder>("/api/fs/pick-folder", {}),
 };

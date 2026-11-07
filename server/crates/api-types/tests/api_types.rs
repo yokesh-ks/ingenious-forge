@@ -233,8 +233,8 @@ fn revert_all_and_changes_reverted_round_trip() {
 }
 
 #[test]
-fn project_and_listing_types_serialize_as_the_frontend_expects() {
-    use api_types::{DirEntry, DirListing, Project};
+fn project_and_picked_folder_types_serialize_as_the_frontend_expects() {
+    use api_types::{PickedFolder, Project};
     let project = Project {
         id: "p1".into(),
         name: "forge".into(),
@@ -245,24 +245,9 @@ fn project_and_listing_types_serialize_as_the_frontend_expects() {
         serde_json::to_value(&project).unwrap(),
         json!({ "id": "p1", "name": "forge", "path": "/code/forge", "last_opened_at": 1_700_000_000_000_i64 })
     );
-    let listing = DirListing {
-        path: "/code".into(),
-        parent: Some("/".into()),
-        is_git_repo: false,
-        entries: vec![DirEntry {
-            name: "forge".into(),
-            path: "/code/forge".into(),
-            is_git_repo: true,
-        }],
-    };
     assert_eq!(
-        serde_json::to_value(&listing).unwrap(),
-        json!({
-            "path": "/code",
-            "parent": "/",
-            "is_git_repo": false,
-            "entries": [{ "name": "forge", "path": "/code/forge", "is_git_repo": true }]
-        })
+        serde_json::to_value(PickedFolder { path: None }).unwrap(),
+        json!({ "path": null })
     );
     let ts = typescript_bindings();
     assert!(ts.contains("last_opened_at: number"), "{ts}");
