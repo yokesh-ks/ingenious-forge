@@ -8,7 +8,9 @@ use api_types::ReasoningEffort::{self, High, Low, Max, Medium, Xhigh};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-use crate::model::{ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest, Role};
+use crate::model::{
+    ChatMessage, ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest, Role,
+};
 use crate::providers::{current_key, KeyHandle, ModelInfo, ModelProvider};
 use crate::sse::SseParser;
 
@@ -153,29 +155,63 @@ struct OpenAiCompatClient {
     max_tokens: Option<u32>,
 }
 
-/// The conversation as chat messages: the system prompt, then each message's
-/// text. Thinking blocks are another provider's format and are left out.
+/// One of our messages as chat messages. A tool result is a message of its
+/// own, and must directly follow the assistant message that called the tool,
+/// so results come before any text in the same message. Thinking blocks are
+/// another provider's format and are left out.
+fn to_chat_messages(message: &ChatMessage) -> Vec<Value> {
+    let mut text = String::new();
+    let mut calls = Vec::new();
+    let mut out = Vec::new();
+    for block in &message.content {
+        match block {
+            ContentBlock::Text { text: piece } => text.push_str(piece),
+            ContentBlock::ToolUse { id, name, input } => calls.push(json!({
+                "id": id,
+                "type": "function",
+                "function": { "name": name, "arguments": input.to_string() },
+            })),
+            ContentBlock::ToolResult {
+                tool_use_id,
+                content,
+                is_error,
+            } => {
+                // The format has no error flag, so the text has to say it.
+                let content = if *is_error {
+                    format!("Error: {content}")
+                } else {
+                    content.clone()
+                };
+                out.push(json!({
+                    "role": "tool",
+                    "tool_call_id": tool_use_id,
+                    "content": content,
+                }));
+            }
+            ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } => {}
+        }
+    }
+    let role = match message.role {
+        Role::User => "user",
+        Role::Assistant => "assistant",
+    };
+    if !calls.is_empty() {
+        out.push(json!({ "role": role, "content": text, "tool_calls": calls }));
+    } else if !text.is_empty() {
+        out.push(json!({ "role": role, "content": text }));
+    }
+    out
+}
+
+/// The system prompt, then the conversation.
 fn chat_messages(request: &ModelRequest) -> Vec<Value> {
     let system = request
         .system
         .iter()
         .map(|text| json!({ "role": "system", "content": text }));
-    let conversation = request.messages.iter().filter_map(|message| {
-        let text: String = message
-            .content
-            .iter()
-            .filter_map(|block| match block {
-                ContentBlock::Text { text } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect();
-        let role = match message.role {
-            Role::User => "user",
-            Role::Assistant => "assistant",
-        };
-        (!text.is_empty()).then(|| json!({ "role": role, "content": text }))
-    });
-    system.chain(conversation).collect()
+    system
+        .chain(request.messages.iter().flat_map(to_chat_messages))
+        .collect()
 }
 
 fn request_body(model: &str, max_tokens: Option<u32>, request: &ModelRequest) -> Value {
@@ -184,6 +220,23 @@ fn request_body(model: &str, max_tokens: Option<u32>, request: &ModelRequest) ->
         "stream": true,
         "messages": chat_messages(request),
     });
+    if !request.tools.is_empty() {
+        let tools: Vec<Value> = request
+            .tools
+            .iter()
+            .map(|tool| {
+                json!({
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.input_schema,
+                    },
+                })
+            })
+            .collect();
+        body["tools"] = json!(tools);
+    }
     if let Some(max_tokens) = request.max_tokens.or(max_tokens) {
         body["max_tokens"] = json!(max_tokens);
     }
@@ -193,11 +246,20 @@ fn request_body(model: &str, max_tokens: Option<u32>, request: &ModelRequest) ->
     body
 }
 
+/// A tool call while its fragments are still arriving.
+#[derive(Default)]
+struct PartialCall {
+    id: String,
+    name: String,
+    arguments: String,
+}
+
 /// Turns the chat completions event stream into model events: text deltas as
 /// they arrive, then the whole message once the stream ends.
 #[derive(Default)]
 struct StreamAssembler {
     text: String,
+    calls: Vec<PartialCall>,
 }
 
 impl StreamAssembler {
@@ -217,7 +279,11 @@ impl StreamAssembler {
         if choice["finish_reason"] == "content_filter" {
             return Err(ModelError::Refusal);
         }
-        match choice["delta"]["content"].as_str() {
+        let delta = &choice["delta"];
+        for fragment in delta["tool_calls"].as_array().into_iter().flatten() {
+            self.add_call_fragment(fragment);
+        }
+        match delta["content"].as_str() {
             Some(piece) if !piece.is_empty() => {
                 self.text.push_str(piece);
                 Ok(vec![ModelEvent::TextDelta(piece.to_string())])
@@ -226,10 +292,49 @@ impl StreamAssembler {
         }
     }
 
+    /// Fragments name their call by `index`. Where a provider leaves it out, a
+    /// fragment with an id starts a new call and any other continues the last.
+    fn add_call_fragment(&mut self, fragment: &Value) {
+        let starts_call = fragment["id"].as_str().is_some_and(|id| !id.is_empty());
+        let index = match fragment["index"].as_u64() {
+            Some(index) => index as usize,
+            None if starts_call => self.calls.len(),
+            None => self.calls.len().saturating_sub(1),
+        };
+        while self.calls.len() <= index {
+            self.calls.push(PartialCall::default());
+        }
+        let call = &mut self.calls[index];
+        if let Some(id) = fragment["id"].as_str() {
+            call.id = id.to_string();
+        }
+        let function = &fragment["function"];
+        if let Some(name) = function["name"].as_str() {
+            call.name.push_str(name);
+        }
+        if let Some(arguments) = function["arguments"].as_str() {
+            call.arguments.push_str(arguments);
+        }
+    }
+
     fn finish(self) -> ModelEvent {
         let mut content = Vec::new();
         if !self.text.is_empty() {
             content.push(ContentBlock::Text { text: self.text });
+        }
+        for (i, call) in self.calls.into_iter().enumerate() {
+            content.push(ContentBlock::ToolUse {
+                // The result has to name the call, so each needs some id.
+                id: if call.id.is_empty() {
+                    format!("call_{i}")
+                } else {
+                    call.id
+                },
+                name: call.name,
+                // An unparsable input leaves the tool without arguments; the
+                // tool then reports what is missing to the model.
+                input: serde_json::from_str(&call.arguments).unwrap_or_else(|_| json!({})),
+            });
         }
         ModelEvent::Message(content)
     }
@@ -316,7 +421,7 @@ impl ModelClient for OpenAiCompatClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::ChatMessage;
+    use crate::tools::ToolSpec;
 
     fn request(effort: Option<ReasoningEffort>) -> ModelRequest {
         ModelRequest {
@@ -394,6 +499,143 @@ mod tests {
             ModelEvent::Message(vec![ContentBlock::Text {
                 text: "Hello".into()
             }])
+        );
+    }
+
+    #[test]
+    fn tool_call_fragments_are_assembled_by_index() {
+        let mut assembler = StreamAssembler::default();
+        for chunk in [
+            json!({ "choices": [{ "delta": { "content": "Reading." } }] }),
+            json!({ "choices": [{ "delta": { "tool_calls": [
+                { "index": 0, "id": "a", "function": { "name": "read_file", "arguments": "" } }
+            ] } }] }),
+            json!({ "choices": [{ "delta": { "tool_calls": [
+                { "index": 1, "id": "b", "function": { "name": "list_dir", "arguments": "{}" } }
+            ] } }] }),
+            json!({ "choices": [{ "delta": { "tool_calls": [
+                { "index": 0, "function": { "arguments": "{\"path\":" } }
+            ] } }] }),
+            json!({ "choices": [{ "delta": { "tool_calls": [
+                { "index": 0, "function": { "arguments": "\"a.rs\"}" } }
+            ] } }] }),
+        ] {
+            assembler.handle(&chunk.to_string()).unwrap();
+        }
+        assert_eq!(
+            assembler.finish(),
+            ModelEvent::Message(vec![
+                ContentBlock::Text {
+                    text: "Reading.".into()
+                },
+                ContentBlock::ToolUse {
+                    id: "a".into(),
+                    name: "read_file".into(),
+                    input: json!({ "path": "a.rs" }),
+                },
+                ContentBlock::ToolUse {
+                    id: "b".into(),
+                    name: "list_dir".into(),
+                    input: json!({}),
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn fragments_without_an_index_follow_the_id() {
+        let mut assembler = StreamAssembler::default();
+        for fragment in [
+            json!({ "id": "a", "function": { "name": "one", "arguments": "{\"x\":" } }),
+            json!({ "function": { "arguments": "1}" } }),
+            json!({ "id": "b", "function": { "name": "two", "arguments": "{}" } }),
+        ] {
+            assembler.add_call_fragment(&fragment);
+        }
+        let ModelEvent::Message(content) = assembler.finish() else {
+            panic!("expected a message");
+        };
+        assert_eq!(content.len(), 2);
+        assert_eq!(
+            content[0],
+            ContentBlock::ToolUse {
+                id: "a".into(),
+                name: "one".into(),
+                input: json!({ "x": 1 }),
+            }
+        );
+    }
+
+    #[test]
+    fn a_broken_call_still_gets_an_id_and_empty_arguments() {
+        let mut assembler = StreamAssembler::default();
+        assembler.add_call_fragment(
+            &json!({ "index": 0, "function": { "name": "one", "arguments": "{\"x\"" } }),
+        );
+        assert_eq!(
+            assembler.finish(),
+            ModelEvent::Message(vec![ContentBlock::ToolUse {
+                id: "call_0".into(),
+                name: "one".into(),
+                input: json!({}),
+            }])
+        );
+    }
+
+    #[test]
+    fn tools_and_a_tool_round_trip_use_the_chat_format() {
+        let req = ModelRequest {
+            messages: vec![
+                ChatMessage::assistant(vec![
+                    ContentBlock::Text {
+                        text: "Reading.".into(),
+                    },
+                    ContentBlock::ToolUse {
+                        id: "a".into(),
+                        name: "read_file".into(),
+                        input: json!({ "path": "a.rs" }),
+                    },
+                ]),
+                ChatMessage::user(vec![
+                    ContentBlock::ToolResult {
+                        tool_use_id: "a".into(),
+                        content: "no such file".into(),
+                        is_error: true,
+                    },
+                    ContentBlock::Text {
+                        text: "Try again".into(),
+                    },
+                ]),
+            ],
+            tools: vec![ToolSpec {
+                name: "read_file",
+                description: "Reads a file",
+                input_schema: json!({ "type": "object" }),
+            }],
+            system: None,
+            effort: None,
+            max_tokens: None,
+        };
+        let body = request_body("m1", None, &req);
+        assert_eq!(
+            body["tools"],
+            json!([{ "type": "function", "function": {
+                "name": "read_file",
+                "description": "Reads a file",
+                "parameters": { "type": "object" },
+            } }])
+        );
+        assert_eq!(
+            body["messages"],
+            json!([
+                { "role": "assistant", "content": "Reading.", "tool_calls": [{
+                    "id": "a",
+                    "type": "function",
+                    "function": { "name": "read_file", "arguments": "{\"path\":\"a.rs\"}" },
+                }] },
+                { "role": "tool", "tool_call_id": "a", "content": "Error: no such file" },
+                { "role": "user", "content": "Try again" },
+            ])
         );
     }
 
