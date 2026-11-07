@@ -160,6 +160,39 @@ pub struct Session {
     /// before models could be picked.
     pub model: Option<SessionModel>,
     pub approval_mode: ApprovalMode,
+    /// Pinned sessions stay at the top of the project's list.
+    pub pinned: bool,
+    /// Archived sessions are hidden from the list until restored.
+    pub archived: bool,
+}
+
+/// Body of `PATCH /api/sessions/{id}`: what to change about a session.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct UpdateSessionRequest {
+    #[serde(default)]
+    #[ts(optional)]
+    pub title: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub pinned: Option<bool>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub archived: Option<bool>,
+}
+
+/// A program that can open a project's folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenApp {
+    FileManager,
+    VsCode,
+    Terminal,
+}
+
+/// Body of `POST /api/projects/{id}/open-in`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct OpenInRequest {
+    pub app: OpenApp,
 }
 
 /// Body of `POST /api/projects`.
@@ -168,21 +201,17 @@ pub struct OpenProjectRequest {
     pub path: String,
 }
 
-/// A sub-folder shown in the folder picker.
+/// Body of `PATCH /api/projects/{id}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct DirEntry {
+pub struct RenameProjectRequest {
     pub name: String,
-    pub path: String,
-    pub is_git_repo: bool,
 }
 
-/// One folder in the folder picker and its visible sub-folders.
+/// Body of the `POST /api/fs/pick-folder` response: the folder chosen in
+/// the operating system's dialog, or `null` when it was closed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct DirListing {
-    pub path: String,
-    pub parent: Option<String>,
-    pub is_git_repo: bool,
-    pub entries: Vec<DirEntry>,
+pub struct PickedFolder {
+    pub path: Option<String>,
 }
 
 /// Body of `GET /api/projects/{id}/files`: the project's files for the
@@ -609,8 +638,11 @@ pub fn typescript_bindings() -> String {
         SessionDefaults::decl(&cfg),
         Session::decl(&cfg),
         OpenProjectRequest::decl(&cfg),
-        DirEntry::decl(&cfg),
-        DirListing::decl(&cfg),
+        RenameProjectRequest::decl(&cfg),
+        UpdateSessionRequest::decl(&cfg),
+        OpenApp::decl(&cfg),
+        OpenInRequest::decl(&cfg),
+        PickedFolder::decl(&cfg),
         FileList::decl(&cfg),
         FileContent::decl(&cfg),
         KeySource::decl(&cfg),

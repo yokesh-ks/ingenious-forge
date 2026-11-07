@@ -61,14 +61,37 @@ describe("api client", () => {
     expect(String(fetch.mock.calls[1][0])).toBe("/api/projects/p1/file?path=a+b.txt");
   });
 
-  it("encodes the folder picker path as a query parameter", async () => {
+  it("renames, opens and deletes a project by its encoded id", async () => {
+    const project = { id: "a b", name: "n", path: "/p", last_opened_at: 1 };
     const fetch = fakeFetch({
-      "GET /api/fs/dirs": { path: "/a b", parent: "/", is_git_repo: false, entries: [] },
+      "PATCH /api/projects/a%20b": project,
+      "POST /api/projects/a%20b/open-in": project,
+      "DELETE /api/projects/a%20b": project,
     });
-    await api.listDirs("/a b");
-    expect(String(fetch.mock.calls[0][0])).toBe("/api/fs/dirs?path=%2Fa+b");
-    await api.listDirs();
-    expect(String(fetch.mock.calls[1][0])).toBe("/api/fs/dirs");
+    await api.renameProject("a b", "n");
+    await api.openProjectIn("a b", "vs_code");
+    await api.deleteProject("a b");
+    expect(fetch.mock.calls.map(([url, init]) => `${init?.method} ${url}`)).toEqual([
+      "PATCH /api/projects/a%20b",
+      "POST /api/projects/a%20b/open-in",
+      "DELETE /api/projects/a%20b",
+    ]);
+  });
+
+  it("updates and forks a session by its encoded id", async () => {
+    const fetch = fakeFetch({
+      "PATCH /api/sessions/a%20b": { id: "a b" },
+      "POST /api/sessions/a%20b/fork": { id: "c" },
+    });
+    await api.updateSession("a b", { pinned: true });
+    expect(fetch.mock.calls[0][1]?.body).toBe(JSON.stringify({ pinned: true }));
+    await expect(api.forkSession("a b")).resolves.toEqual({ id: "c" });
+  });
+
+  it("asks the server to show the folder dialog", async () => {
+    const fetch = fakeFetch({ "POST /api/fs/pick-folder": { path: "/a b" } });
+    await expect(api.pickFolder()).resolves.toEqual({ path: "/a b" });
+    expect(String(fetch.mock.calls[0][0])).toBe("/api/fs/pick-folder");
   });
 
   it("throws the server's error message on failure", async () => {

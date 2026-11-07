@@ -4,7 +4,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use services::folders::{inspect_folder, list_dirs, FolderError};
+use services::folders::{inspect_folder, FolderError};
 
 struct Dir(PathBuf);
 
@@ -90,37 +90,103 @@ fn errors_read_as_sentences() {
     );
 }
 
-#[test]
-fn listing_shows_visible_subfolders_sorted_and_marks_repositories() {
-    let dir = Dir::new();
-    dir.mkdir("beta");
-    dir.mkdir("Alpha");
-    dir.mkdir(".hidden");
-    fs::create_dir_all(dir.mkdir("repo").join(".git")).unwrap();
-    fs::write(dir.path().join("file.txt"), "x").unwrap();
+#[cfg(unix)]
+mod open_with {
+    use std::time::{Duration, Instant};
 
-    let listing = list_dirs(dir.path()).unwrap();
+    use super::Dir;
+    use services::folders::open_with;
 
-    assert_eq!(listing.path, dir.path().to_string_lossy());
-    assert_eq!(
-        listing.parent.as_deref(),
-        dir.path().parent().map(|p| p.to_string_lossy()).as_deref()
-    );
-    assert!(!listing.is_git_repo);
-    let entries: Vec<_> = listing
-        .entries
-        .iter()
-        .map(|e| (e.name.as_str(), e.is_git_repo))
-        .collect();
-    assert_eq!(entries, [("Alpha", false), ("beta", false), ("repo", true)]);
-    assert_eq!(
-        listing.entries[2].path,
-        dir.path().join("repo").to_string_lossy()
-    );
+    #[test]
+    fn a_program_runs_in_the_folder() {
+        let dir = Dir::new();
+        let marker = dir.path().join("ran");
+        let script = format!("[ \"$PWD\" = '{}' ] && touch ran", dir.path().display());
+        assert_eq!(
+            open_with(&[vec!["sh", "-c", &script]], dir.path(), false),
+            Ok(())
+        );
+        assert!(marker.exists());
+    }
+
+    #[test]
+    fn a_failing_program_is_reported_unless_its_exit_means_nothing() {
+        let dir = Dir::new();
+        assert!(open_with(&[vec!["false"]], dir.path(), false)
+            .unwrap_err()
+            .contains("could not open"));
+        assert_eq!(open_with(&[vec!["false"]], dir.path(), true), Ok(()));
+    }
+
+    #[test]
+    fn the_next_program_runs_when_one_is_not_installed() {
+        let dir = Dir::new();
+        let commands = [vec!["forge-no-such-program"], vec!["true"]];
+        assert_eq!(open_with(&commands, dir.path(), false), Ok(()));
+        let error = open_with(&[vec!["forge-no-such-program"]], dir.path(), false).unwrap_err();
+        assert!(error.contains("not installed"), "{error}");
+    }
+
+    #[test]
+    fn a_program_that_keeps_running_counts_as_opened_without_waiting_for_it() {
+        let dir = Dir::new();
+        let started = Instant::now();
+        assert_eq!(open_with(&[vec!["sleep", "5"]], dir.path(), false), Ok(()));
+        assert!(started.elapsed() < Duration::from_secs(4));
+    }
+
+    #[test]
+    fn a_missing_folder_is_reported_without_running_anything() {
+        let dir = Dir::new();
+        let error = open_with(&[vec!["true"]], &dir.path().join("gone"), false).unwrap_err();
+        assert!(error.contains("no longer exists"), "{error}");
+    }
 }
 
-#[test]
-fn listing_a_missing_folder_fails() {
-    let dir = Dir::new();
-    assert!(list_dirs(&dir.path().join("missing")).is_err());
+#[cfg(unix)]
+mod folder_dialog {
+    use services::folders::pick_folder_with;
+
+    #[test]
+    fn the_chosen_folder_comes_back_without_its_line_ending() {
+        let dialog: &[&[&str]] = &[&["sh", "-c", "echo '/code/my app/'"]];
+        assert_eq!(
+            pick_folder_with(dialog, None),
+            Ok(Some("/code/my app/".to_string()))
+        );
+    }
+
+    #[test]
+    fn closing_the_dialog_is_no_choice() {
+        let empty: &[&[&str]] = &[&["sh", "-c", "echo"]];
+        assert_eq!(pick_folder_with(empty, None), Ok(None));
+
+        let cancel_code: &[&[&str]] = &[&["sh", "-c", "exit 1"]];
+        assert_eq!(pick_folder_with(cancel_code, Some(1)), Ok(None));
+    }
+
+    #[test]
+    fn a_failing_dialog_reports_its_error() {
+        let dialog: &[&[&str]] = &[&["sh", "-c", "echo broken >&2; exit 2"]];
+        assert_eq!(
+            pick_folder_with(dialog, Some(1)),
+            Err("the folder dialog failed: broken".to_string())
+        );
+    }
+
+    #[test]
+    fn the_next_dialog_runs_when_one_is_not_installed() {
+        let dialogs: &[&[&str]] = &[&["forge-no-such-dialog"], &["sh", "-c", "echo /code"]];
+        assert_eq!(
+            pick_folder_with(dialogs, None),
+            Ok(Some("/code".to_string()))
+        );
+    }
+
+    #[test]
+    fn no_installed_dialog_says_what_to_install() {
+        let dialogs: &[&[&str]] = &[&["forge-no-such-dialog"]];
+        let error = pick_folder_with(dialogs, None).unwrap_err();
+        assert!(error.contains("zenity"), "{error}");
+    }
 }

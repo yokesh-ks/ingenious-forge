@@ -119,7 +119,7 @@ working.
   they are not CLI-managed; see ADR
   [0002](docs/decisions/0002-shadcn-tailwind-web-ui.md) and
   [0010](docs/decisions/0010-full-shadcn-component-catalog.md)), `hooks/`
-  (`use-theme`, `use-mobile`), `lib/` (utils, time, router, approval-modes,
+  (`use-theme`, `use-mobile`), `lib/` (utils, router, platform, approval-modes,
   slash-commands, file-tree, models), `api/` (typed client, generated
   types), `pages/` (route-level composition) and `test/` (test helpers).
   Tests live in a sibling `__tests__/` folder next to the code they

@@ -126,7 +126,9 @@ describe("App", () => {
       "aria-current",
       "page",
     );
-    expect(screen.queryByText(/open folder/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Select Project Directory" }),
+    ).not.toBeInTheDocument();
 
     await userEvent.click(within(nav).getByRole("link", { name: "Providers" }));
 

@@ -1,11 +1,17 @@
-import { FolderGit2Icon, PlusIcon } from "lucide-react";
+import {
+  ArchiveRestoreIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  FolderPlusIcon,
+  PinIcon,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
-import type { Project } from "@/api/types";
+import type { Project, Session } from "@/api/types";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   SidebarGroup,
+  SidebarGroupAction,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
@@ -15,51 +21,110 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
-import FolderPicker from "@/features/sandbox/components/FolderPicker";
-import { useProjectSessions } from "@/features/session/hooks/use-project-sessions";
+import ProjectRowActions from "@/features/session/components/ProjectRowActions";
+import SessionRowActions from "@/features/session/components/SessionRowActions";
+import {
+  notifySessionsChanged,
+  useProjectSessions,
+} from "@/features/session/hooks/use-project-sessions";
 import { Link, matchPath, navigate, usePath } from "@/lib/router";
-import { timeAgo } from "@/lib/time";
+
+type OnError = (message: string | null) => void;
+
+function ArchivedSessions({ sessions, onError }: { sessions: Session[]; onError: OnError }) {
+  async function restore(session: Session) {
+    onError(null);
+    try {
+      await api.updateSession(session.id, { archived: false });
+      notifySessionsChanged(session.project_id);
+    } catch (err) {
+      onError((err as Error).message);
+    }
+  }
+
+  return (
+    <Collapsible>
+      <CollapsibleTrigger className="flex w-full items-center gap-1 py-1 pr-2 pl-4 text-xs text-muted-foreground hover:text-foreground [&[data-state=open]>svg]:rotate-90">
+        <ChevronRightIcon className="size-3 transition-transform" />
+        Archived ({sessions.length})
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <ul>
+          {sessions.map((session) => (
+            <li key={session.id} className="flex items-center gap-1 py-1 pr-2 pl-4 text-xs">
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">{session.title}</span>
+              <button
+                type="button"
+                title="Restore session"
+                aria-label={`Restore ${session.title}`}
+                className="flex size-5 shrink-0 items-center justify-center rounded-md hover:bg-sidebar-accent"
+                onClick={() => restore(session)}
+              >
+                <ArchiveRestoreIcon className="size-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
 
 function ProjectSessions({
-  projectId,
+  project,
   activeSessionId,
+  onError,
 }: {
-  projectId: string;
+  project: Project;
   activeSessionId: string | null;
+  onError: OnError;
 }) {
-  const { sessions } = useProjectSessions(projectId);
+  const { sessions, archived } = useProjectSessions(project.id);
 
   if (sessions === null) {
-    return <p className="px-2 py-1 text-xs text-muted-foreground">Loading…</p>;
-  }
-  if (sessions.length === 0) {
-    return <p className="px-2 py-1 text-xs text-muted-foreground">No sessions yet.</p>;
+    return <p className="py-1 pr-2 pl-4 text-xs text-muted-foreground">Loading…</p>;
   }
   return (
-    <SidebarMenuSub>
-      {sessions.map((session) => (
-        <SidebarMenuSubItem key={session.id}>
-          <SidebarMenuSubButton asChild isActive={session.id === activeSessionId}>
-            <Link
-              to={`/projects/${projectId}/sessions/${session.id}`}
-              aria-current={session.id === activeSessionId ? "page" : undefined}
-            >
-              {session.running && (
-                <span
-                  role="status"
-                  aria-label="Running"
-                  className="size-2 shrink-0 animate-pulse rounded-full bg-primary"
-                />
-              )}
-              <span className="truncate">{session.title}</span>
-              <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                {timeAgo(session.updated_at)}
-              </span>
-            </Link>
-          </SidebarMenuSubButton>
-        </SidebarMenuSubItem>
-      ))}
-    </SidebarMenuSub>
+    <>
+      {sessions.length === 0 ? (
+        <p className="py-1 pr-2 pl-4 text-xs text-muted-foreground">No sessions yet.</p>
+      ) : (
+        <SidebarMenuSub className="mx-0 translate-x-0 border-l-0 px-0">
+          {sessions.map((session) => (
+            <SidebarMenuSubItem key={session.id}>
+              <SidebarMenuSubButton
+                asChild
+                isActive={session.id === activeSessionId}
+                className="translate-x-0 pl-4 group-focus-within/menu-sub-item:pr-18 group-hover/menu-sub-item:pr-18"
+              >
+                <Link
+                  to={`/projects/${project.id}/sessions/${session.id}`}
+                  aria-current={session.id === activeSessionId ? "page" : undefined}
+                >
+                  {session.running && (
+                    <span
+                      role="status"
+                      aria-label="Running"
+                      className="size-2 shrink-0 animate-pulse rounded-full bg-primary"
+                    />
+                  )}
+                  {session.pinned && <PinIcon aria-label="Pinned" className="shrink-0" />}
+                  <span className="truncate">{session.title}</span>
+                </Link>
+              </SidebarMenuSubButton>
+              <SessionRowActions
+                session={session}
+                project={project}
+                active={session.id === activeSessionId}
+                nextSessionId={sessions.find((s) => s.id !== session.id)?.id ?? null}
+                onError={onError}
+              />
+            </SidebarMenuSubItem>
+          ))}
+        </SidebarMenuSub>
+      )}
+      {archived.length > 0 && <ArchivedSessions sessions={archived} onError={onError} />}
+    </>
   );
 }
 
@@ -67,10 +132,16 @@ function ProjectTreeItem({
   project,
   activeProjectId,
   activeSessionId,
+  onRenamed,
+  onDeleted,
+  onError,
 }: {
   project: Project;
   activeProjectId: string | null;
   activeSessionId: string | null;
+  onRenamed: (project: Project) => void;
+  onDeleted: (projectId: string) => void;
+  onError: OnError;
 }) {
   const isActiveProject = project.id === activeProjectId;
   const [open, setOpen] = useState(isActiveProject);
@@ -89,20 +160,36 @@ function ProjectTreeItem({
     >
       <SidebarMenuItem>
         <CollapsibleTrigger asChild>
-          <SidebarMenuButton isActive={isActiveProject && !activeSessionId}>
-            <FolderGit2Icon />
+          <SidebarMenuButton
+            isActive={isActiveProject && !activeSessionId}
+            className="group-has-data-[sidebar=menu-action]/menu-item:pr-14 data-[state=closed]:[&>svg]:-rotate-90"
+          >
             <span className="truncate">{project.name}</span>
+            <ChevronDownIcon className="size-3.5! text-muted-foreground transition-transform" />
           </SidebarMenuButton>
         </CollapsibleTrigger>
+        <ProjectRowActions
+          project={project}
+          onSessionCreated={() => setOpen(true)}
+          onRenamed={onRenamed}
+          onDeleted={onDeleted}
+          onError={onError}
+        />
         <CollapsibleContent>
-          {open && <ProjectSessions projectId={project.id} activeSessionId={activeSessionId} />}
+          {open && (
+            <ProjectSessions
+              project={project}
+              activeSessionId={activeSessionId}
+              onError={onError}
+            />
+          )}
         </CollapsibleContent>
       </SidebarMenuItem>
     </Collapsible>
   );
 }
 
-/** The left sidebar's project tree: open a folder, pick a project, pick a session. */
+/** The left sidebar's project tree: choose a folder, pick a project, pick a session. */
 export default function ProjectsNav() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -118,35 +205,37 @@ export default function ProjectsNav() {
   const activeProjectId = sessionMatch?.id ?? projectMatch?.id ?? null;
   const activeSessionId = sessionMatch?.sessionId ?? null;
 
-  async function open(folderPath: string) {
+  async function pickFolder() {
     setError(null);
+    setPicking(true);
     try {
+      const { path: folderPath } = await api.pickFolder();
+      if (folderPath === null) return;
       const project = await api.openProject(folderPath);
-      setPicking(false);
       setProjects((prev) => [project, ...(prev ?? []).filter((p) => p.id !== project.id)]);
       navigate(`/projects/${project.id}`);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setPicking(false);
     }
   }
 
   return (
     <SidebarGroup>
       <SidebarGroupLabel>Projects</SidebarGroupLabel>
+      <SidebarGroupAction
+        type="button"
+        title="Select Project Directory"
+        aria-label="Select Project Directory"
+        disabled={picking}
+        className="disabled:opacity-50"
+        onClick={pickFolder}
+      >
+        <FolderPlusIcon />
+      </SidebarGroupAction>
       <SidebarGroupContent>
         <SidebarMenu>
-          <SidebarMenuItem>
-            <Popover open={picking} onOpenChange={setPicking}>
-              <PopoverTrigger asChild>
-                <SidebarMenuButton>
-                  <PlusIcon /> Open folder
-                </SidebarMenuButton>
-              </PopoverTrigger>
-              <PopoverContent side="right" align="start" className="w-96">
-                <FolderPicker onPick={open} onCancel={() => setPicking(false)} />
-              </PopoverContent>
-            </Popover>
-          </SidebarMenuItem>
           {error && (
             <p role="alert" className="px-2 py-1 text-xs text-destructive">
               {error}
@@ -164,6 +253,14 @@ export default function ProjectsNav() {
               project={project}
               activeProjectId={activeProjectId}
               activeSessionId={activeSessionId}
+              onRenamed={(renamed) =>
+                setProjects((prev) => (prev ?? []).map((p) => (p.id === renamed.id ? renamed : p)))
+              }
+              onDeleted={(id) => {
+                setProjects((prev) => (prev ?? []).filter((p) => p.id !== id));
+                if (id === activeProjectId) navigate("/");
+              }}
+              onError={setError}
             />
           ))}
         </SidebarMenu>
