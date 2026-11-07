@@ -14,6 +14,7 @@ const REFRESH_ON = new Set([
   "file_changed",
   "changes_reverted",
   "tool_result",
+  "turn_ended",
   "done",
   "error",
   "interrupted",

@@ -22,7 +22,7 @@ const S = "s1";
 function longSession(steps: number, chunks = 20): SessionEvent[] {
   const events: SessionEvent[] = [
     { type: "user_message", session_id: S, text: "do the big job" },
-    { type: "turn_started", session_id: S },
+    { type: "turn_started", session_id: S, turn: 1 },
   ];
   for (let i = 0; i < steps; i++) {
     for (let c = 0; c < chunks; c++)
@@ -122,5 +122,9 @@ describe("long sessions", () => {
 
     expect(container.textContent).toContain("more");
     expect(toolCardRenders.count).toBe(0);
-  });
+    // This test counts renders, not time. Mounting 1,000 Markdown replies
+    // takes about 1.6 s in jsdom, which can pass the default 5 s limit when
+    // the whole suite runs in parallel; virtual rows (plan step 8) remove
+    // that cost.
+  }, 15_000);
 });

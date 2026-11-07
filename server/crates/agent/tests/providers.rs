@@ -14,7 +14,7 @@ use agent::{
     tools::ToolBox,
     Agent, AgentError,
 };
-use api_types::SessionEvent;
+use api_types::{SessionEvent, TurnEndReason};
 use services::EventService;
 use tokio::sync::mpsc;
 
@@ -111,7 +111,13 @@ async fn a_session_that_changes_model_sends_its_next_message_to_the_new_one() {
 
     agent.send_message("s", "hi").unwrap();
     tokio::time::timeout(Duration::from_secs(5), async {
-        while !matches!(rx.recv().await.unwrap().event, SessionEvent::Done { .. }) {}
+        while !matches!(
+            rx.recv().await.unwrap().event,
+            SessionEvent::TurnEnded {
+                reason: TurnEndReason::Completed,
+                ..
+            }
+        ) {}
     })
     .await
     .unwrap();
@@ -262,8 +268,14 @@ async fn reply_text(
         }
         match event {
             SessionEvent::Output { chunk, .. } => text.push_str(&chunk),
-            SessionEvent::Done { .. } => return text,
-            SessionEvent::Error { message, .. } => panic!("{message}"),
+            SessionEvent::TurnEnded {
+                reason: TurnEndReason::Completed,
+                ..
+            } => return text,
+            SessionEvent::TurnEnded {
+                reason: TurnEndReason::Error { message, .. },
+                ..
+            } => panic!("{message}"),
             _ => {}
         }
     }
@@ -319,7 +331,11 @@ async fn an_agent_with_no_providers_reports_it_when_a_turn_starts() {
             .unwrap()
             .unwrap()
             .event;
-        if let SessionEvent::Error { message, .. } = event {
+        if let SessionEvent::TurnEnded {
+            reason: TurnEndReason::Error { message, .. },
+            ..
+        } = event
+        {
             assert!(message.contains("no model provider"), "{message}");
             break;
         }

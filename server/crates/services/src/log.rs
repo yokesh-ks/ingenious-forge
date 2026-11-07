@@ -16,8 +16,14 @@ use serde_json::Value;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LogRecord {
-    /// An event shown in the session, with its sequence number.
-    Event { seq: u64, event: SessionEvent },
+    /// An event shown in the session, with its sequence number and the
+    /// time it was published (0 in logs written before ADR 0012).
+    Event {
+        seq: u64,
+        #[serde(default)]
+        ts: u64,
+        event: SessionEvent,
+    },
     /// A message of the model conversation.
     Message { message: Value },
     /// A file's content before the agent's first edit (`None`: it did not
@@ -61,6 +67,14 @@ fn ends_without_newline(path: &std::path::Path) -> io::Result<bool> {
     let mut last = [0u8; 1];
     file.read_exact(&mut last)?;
     Ok(last[0] != b'\n')
+}
+
+/// Milliseconds since the Unix epoch.
+pub fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn unsafe_id(session_id: &str) -> io::Error {
@@ -133,6 +147,11 @@ impl SessionLog {
     /// still uses up its number, so no later event repeats it; the error
     /// is only reported, and the file has a gap there.
     pub fn append_event(&self, event: &SessionEvent) -> io::Result<Option<u64>> {
+        self.append_event_at(event, now_ms())
+    }
+
+    /// Like [`SessionLog::append_event`], stamped with `ts`.
+    pub fn append_event_at(&self, event: &SessionEvent, ts: u64) -> io::Result<Option<u64>> {
         let session_id = event.session_id();
         if !is_safe_id(session_id) {
             return Ok(None);
@@ -150,6 +169,7 @@ impl SessionLog {
         seqs.insert(session_id.to_string(), seq);
         let record = LogRecord::Event {
             seq,
+            ts,
             event: event.clone(),
         };
         if let Err(err) = self.write(session_id, &record) {
@@ -206,15 +226,36 @@ impl SessionLog {
     /// The logged events of a session with a sequence number above `after`.
     pub fn events_after(&self, session_id: &str, after: u64) -> io::Result<Vec<SessionEnvelope>> {
         Ok(self
+            .envelopes(session_id)?
+            .filter(|envelope| envelope.seq > after)
+            .collect())
+    }
+
+    /// Up to `limit` of a session's latest logged events with a sequence
+    /// number below `before` (`None`: the newest), oldest first, so a long
+    /// session can open at its tail and page backwards.
+    pub fn events_before(
+        &self,
+        session_id: &str,
+        before: Option<u64>,
+        limit: usize,
+    ) -> io::Result<Vec<SessionEnvelope>> {
+        let mut events: Vec<_> = self
+            .envelopes(session_id)?
+            .filter(|envelope| before.is_none_or(|before| envelope.seq < before))
+            .collect();
+        let start = events.len().saturating_sub(limit);
+        Ok(events.split_off(start))
+    }
+
+    fn envelopes(&self, session_id: &str) -> io::Result<impl Iterator<Item = SessionEnvelope>> {
+        Ok(self
             .read(session_id)?
             .into_iter()
             .filter_map(|record| match record {
-                LogRecord::Event { seq, event } if seq > after => {
-                    Some(SessionEnvelope { seq, event })
-                }
+                LogRecord::Event { seq, ts, event } => Some(SessionEnvelope { seq, ts, event }),
                 _ => None,
-            })
-            .collect())
+            }))
     }
 
     fn last_seq(&self, session_id: &str) -> io::Result<u64> {

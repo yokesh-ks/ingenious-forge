@@ -1,4 +1,4 @@
-use api_types::{typescript_bindings, ClientMessage, SessionEvent};
+use api_types::{typescript_bindings, ClientMessage, SessionEvent, TurnEndReason, Usage};
 use serde_json::json;
 
 const GENERATED_TS: &str = "../../../apps/web/src/api/types.ts";
@@ -56,6 +56,25 @@ fn event_session_id_accessor_covers_every_variant() {
     let events = [
         SessionEvent::TurnStarted {
             session_id: "a".into(),
+            turn: 1,
+        },
+        SessionEvent::StepStarted {
+            session_id: "a".into(),
+            turn: 1,
+            step: 1,
+        },
+        SessionEvent::StepEnded {
+            session_id: "a".into(),
+            turn: 1,
+            step: 1,
+            usage: None,
+            first_token_ms: None,
+            generation_ms: None,
+        },
+        SessionEvent::TurnEnded {
+            session_id: "a".into(),
+            turn: 1,
+            reason: TurnEndReason::Completed,
         },
         SessionEvent::Output {
             session_id: "a".into(),
@@ -259,6 +278,7 @@ fn project_and_picked_folder_types_serialize_as_the_frontend_expects() {
 fn an_envelope_puts_seq_beside_the_event_fields() {
     let envelope = api_types::SessionEnvelope {
         seq: 7,
+        ts: 1_700_000_000_000,
         event: SessionEvent::Done {
             session_id: "s1".into(),
         },
@@ -266,11 +286,72 @@ fn an_envelope_puts_seq_beside_the_event_fields() {
     let value = serde_json::to_value(&envelope).unwrap();
     assert_eq!(
         value,
-        json!({ "seq": 7, "type": "done", "session_id": "s1" })
+        json!({ "seq": 7, "ts": 1_700_000_000_000u64, "type": "done", "session_id": "s1" })
     );
     let back: api_types::SessionEnvelope = serde_json::from_value(value).unwrap();
-    assert_eq!(back.seq, 7);
+    assert_eq!((back.seq, back.ts), (7, 1_700_000_000_000));
     assert!(typescript_bindings().contains("export type SessionEnvelope"));
+}
+
+#[test]
+fn an_envelope_without_a_timestamp_reads_as_zero() {
+    let back: api_types::SessionEnvelope =
+        serde_json::from_value(json!({ "seq": 1, "type": "turn_started", "session_id": "s1" }))
+            .unwrap();
+    assert_eq!(back.ts, 0);
+    assert!(matches!(
+        back.event,
+        SessionEvent::TurnStarted { turn: 0, .. }
+    ));
+}
+
+#[test]
+fn turn_and_step_events_serialize() {
+    let ended = SessionEvent::TurnEnded {
+        session_id: "s1".into(),
+        turn: 2,
+        reason: TurnEndReason::Error {
+            code: "PROVIDER_ERROR".into(),
+            message: "boom".into(),
+        },
+    };
+    assert_eq!(
+        serde_json::to_value(&ended).unwrap(),
+        json!({
+            "type": "turn_ended",
+            "session_id": "s1",
+            "turn": 2,
+            "reason": { "kind": "error", "code": "PROVIDER_ERROR", "message": "boom" }
+        })
+    );
+    let step = SessionEvent::StepEnded {
+        session_id: "s1".into(),
+        turn: 2,
+        step: 1,
+        usage: Some(Usage {
+            input: 10,
+            output: 5,
+            cache_read: 3,
+            cache_write: 0,
+        }),
+        first_token_ms: Some(120),
+        generation_ms: None,
+    };
+    assert_eq!(
+        serde_json::to_value(&step).unwrap(),
+        json!({
+            "type": "step_ended",
+            "session_id": "s1",
+            "turn": 2,
+            "step": 1,
+            "usage": { "input": 10, "output": 5, "cache_read": 3, "cache_write": 0 },
+            "first_token_ms": 120,
+            "generation_ms": null
+        })
+    );
+    let ts = typescript_bindings();
+    assert!(ts.contains("export type TurnEndReason"));
+    assert!(ts.contains("export type Usage"));
 }
 
 #[test]

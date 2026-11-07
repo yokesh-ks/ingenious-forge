@@ -81,10 +81,7 @@ async fn turn(rx: &mut broadcast::Receiver<SessionEnvelope>) -> Vec<SessionEvent
             .expect("timed out waiting for a session event")
             .unwrap()
             .event;
-        let end = matches!(
-            event,
-            SessionEvent::Done { .. } | SessionEvent::Error { .. }
-        );
+        let end = matches!(event, SessionEvent::TurnEnded { .. });
         out.push(event);
         if end {
             return out;

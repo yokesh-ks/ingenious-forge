@@ -244,12 +244,20 @@ mod tests {
                 .unwrap();
             if let WsMessage::Text(text) = msg {
                 let mut value: Value = serde_json::from_str(&text).unwrap();
-                // Sequence numbers and the echoed user message have their
-                // own tests.
-                if value["type"] == "user_message" {
+                // Sequence numbers, the echoed user message and step
+                // boundaries have their own tests.
+                if ["user_message", "step_started", "step_ended"]
+                    .contains(&value["type"].as_str().unwrap_or_default())
+                {
                     continue;
                 }
-                value.as_object_mut().unwrap().remove("seq");
+                let fields = value.as_object_mut().unwrap();
+                fields.remove("seq");
+                let ts = fields.remove("ts").and_then(|ts| ts.as_u64());
+                assert!(
+                    ts.is_some_and(|ts| ts > 0),
+                    "every frame carries a timestamp"
+                );
                 return value;
             }
         }
@@ -259,7 +267,7 @@ mod tests {
         let mut out = Vec::new();
         loop {
             let event = next_event(ws).await;
-            let end = event["type"] == "done" || event["type"] == "error";
+            let end = event["type"] == "turn_ended" || event["type"] == "error";
             out.push(event);
             if end {
                 return out;
@@ -338,7 +346,7 @@ mod tests {
         assert_eq!(rest[0]["decision"], "approve");
         let result = rest.iter().find(|e| e["type"] == "tool_result").unwrap();
         assert_eq!(result["exit_code"], 0);
-        assert_eq!(rest.last().unwrap()["type"], "done");
+        assert_eq!(rest.last().unwrap()["reason"]["kind"], "completed");
     }
 
     #[tokio::test]
@@ -351,10 +359,10 @@ mod tests {
         assert_eq!(
             until_end(&mut ws).await,
             vec![
-                json!({"type":"turn_started","session_id":"s1"}),
+                json!({"type":"turn_started","session_id":"s1","turn":1}),
                 json!({"type":"output","session_id":"s1","chunk":"Hel"}),
                 json!({"type":"output","session_id":"s1","chunk":"lo"}),
-                json!({"type":"done","session_id":"s1"}),
+                json!({"type":"turn_ended","session_id":"s1","turn":1,"reason":{"kind":"completed"}}),
             ]
         );
     }
@@ -407,7 +415,12 @@ mod tests {
 
         assert_eq!(
             next_event(&mut ws).await,
-            json!({ "type": "interrupted", "session_id": "s1" })
+            json!({
+                "type": "turn_ended",
+                "session_id": "s1",
+                "turn": 1,
+                "reason": { "kind": "interrupted" }
+            })
         );
     }
 
@@ -481,7 +494,8 @@ mod tests {
         let WsMessage::Text(text) = msg else {
             panic!("expected text")
         };
-        let value: Value = serde_json::from_str(&text).unwrap();
+        let mut value: Value = serde_json::from_str(&text).unwrap();
+        value.as_object_mut().unwrap().remove("ts");
         assert_eq!(
             value,
             json!({ "seq": 1, "type": "user_message", "session_id": "s1", "text": "hi" })
@@ -503,13 +517,22 @@ mod tests {
                 .unwrap();
             let WsMessage::Text(text) = msg else { continue };
             let value: Value = serde_json::from_str(&text).unwrap();
-            seqs.push(value["seq"].as_u64().unwrap());
-            if value["type"] == "done" {
+            seqs.push((value["seq"].as_u64().unwrap(), value["type"].clone()));
+            if value["type"] == "turn_ended" {
                 break;
             }
         }
-        // user_message, turn_started, output, done
-        assert_eq!(seqs, [1, 2, 3, 4]);
+        assert_eq!(
+            seqs,
+            [
+                (1, json!("user_message")),
+                (2, json!("turn_started")),
+                (3, json!("step_started")),
+                (4, json!("output")),
+                (5, json!("step_ended")),
+                (6, json!("turn_ended"))
+            ]
+        );
     }
 
     #[tokio::test]
@@ -524,7 +547,7 @@ mod tests {
             if event["type"] == "output" {
                 received_at.push(Instant::now());
             }
-            if event["type"] == "done" {
+            if event["type"] == "turn_ended" {
                 break;
             }
         }

@@ -179,3 +179,61 @@ async fn without_a_log_sequence_numbers_still_increase() {
     assert_eq!(rx.recv().await.unwrap().seq, 2);
     assert_eq!(rx.recv().await.unwrap().seq, 1);
 }
+
+#[test]
+fn events_carry_the_time_they_were_logged() {
+    let log = SessionLog::open(dir()).unwrap();
+    let before = services::log::now_ms();
+    log.append_event(&output("a", "x")).unwrap();
+    log.append_event_at(&output("a", "y"), 42).unwrap();
+
+    let events = log.events_after("a", 0).unwrap();
+    assert!(events[0].ts >= before);
+    assert_eq!(events[1].ts, 42);
+}
+
+#[test]
+fn events_logged_before_timestamps_read_back_with_zero() {
+    let path = dir();
+    fs::create_dir_all(&path).unwrap();
+    fs::write(
+        path.join("a.jsonl"),
+        "{\"kind\":\"event\",\"seq\":1,\"event\":{\"type\":\"done\",\"session_id\":\"a\"}}\n",
+    )
+    .unwrap();
+    let log = SessionLog::open(&path).unwrap();
+
+    let events = log.events_after("a", 0).unwrap();
+    assert_eq!((events[0].seq, events[0].ts), (1, 0));
+    assert!(matches!(events[0].event, SessionEvent::Done { .. }));
+}
+
+#[test]
+fn events_before_pages_back_from_the_tail_oldest_first() {
+    let log = SessionLog::open(dir()).unwrap();
+    for i in 1..=7 {
+        log.append_event(&output("a", &i.to_string())).unwrap();
+    }
+    let seqs = |events: Vec<api_types::SessionEnvelope>| -> Vec<u64> {
+        events.iter().map(|e| e.seq).collect()
+    };
+
+    assert_eq!(seqs(log.events_before("a", None, 3).unwrap()), [5, 6, 7]);
+    assert_eq!(seqs(log.events_before("a", Some(5), 3).unwrap()), [2, 3, 4]);
+    assert_eq!(seqs(log.events_before("a", Some(2), 3).unwrap()), [1]);
+    assert!(log.events_before("a", Some(1), 3).unwrap().is_empty());
+    assert!(log.events_before("missing", None, 3).unwrap().is_empty());
+}
+
+#[test]
+fn published_events_share_one_timestamp_between_log_and_browser() {
+    let log = Arc::new(SessionLog::open(dir()).unwrap());
+    let events = EventService::with_log(log.clone());
+    let mut rx = events.subscribe();
+
+    events.publish(output("a", "x"));
+
+    let live = rx.try_recv().unwrap();
+    assert!(live.ts > 0);
+    assert_eq!(log.events_after("a", 0).unwrap()[0].ts, live.ts);
+}

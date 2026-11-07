@@ -9,7 +9,7 @@ use agent::{
     tools::ToolBox,
     Agent, AgentError,
 };
-use api_types::{SessionEnvelope, SessionEvent};
+use api_types::{SessionEnvelope, SessionEvent, TurnEndReason};
 use serde_json::json;
 use services::EventService;
 use tokio::sync::{broadcast, mpsc, Semaphore};
@@ -80,12 +80,7 @@ async fn turn_events(
         if event.session_id() != session_id {
             continue;
         }
-        let end = matches!(
-            event,
-            SessionEvent::Done { .. }
-                | SessionEvent::Error { .. }
-                | SessionEvent::Interrupted { .. }
-        );
+        let end = matches!(event, SessionEvent::TurnEnded { .. });
         out.push(event);
         if end {
             return out;
@@ -97,7 +92,14 @@ async fn turn_events(
 fn describe(events: &[SessionEvent]) -> Vec<String> {
     events
         .iter()
-        .filter(|e| !matches!(e, SessionEvent::UserMessage { .. }))
+        .filter(|e| {
+            !matches!(
+                e,
+                SessionEvent::UserMessage { .. }
+                    | SessionEvent::StepStarted { .. }
+                    | SessionEvent::StepEnded { .. }
+            )
+        })
         .map(|e| match e {
             SessionEvent::TurnStarted { .. } => "started".to_string(),
             SessionEvent::Output { chunk, .. } => format!("out:{chunk}"),
@@ -116,8 +118,15 @@ fn describe(events: &[SessionEvent]) -> Vec<String> {
             SessionEvent::Error { message, .. } => format!("error:{message}"),
             SessionEvent::Done { .. } => "done".to_string(),
             SessionEvent::Interrupted { .. } => "interrupted".to_string(),
+            SessionEvent::TurnEnded { reason, .. } => match reason {
+                TurnEndReason::Completed => "done".to_string(),
+                TurnEndReason::Interrupted => "interrupted".to_string(),
+                TurnEndReason::Error { message, .. } => format!("error:{message}"),
+            },
             SessionEvent::FileChanged { path, .. } => format!("changed:{path}"),
-            SessionEvent::UserMessage { .. } => unreachable!(),
+            SessionEvent::UserMessage { .. }
+            | SessionEvent::StepStarted { .. }
+            | SessionEvent::StepEnded { .. } => unreachable!(),
             SessionEvent::ChangesReverted { paths, .. } => format!("reverted:{paths:?}"),
         })
         .collect()
@@ -470,7 +479,7 @@ async fn output_is_published_within_200ms_of_model_emission() {
     loop {
         match next(&mut rx).await {
             SessionEvent::Output { .. } => received_at.push(Instant::now()),
-            SessionEvent::Done { .. } => break,
+            SessionEvent::TurnEnded { .. } => break,
             _ => {}
         }
     }
@@ -1072,8 +1081,10 @@ mod restart {
     async fn a_turn_cut_off_by_the_restart_is_closed_with_an_error() {
         let (dir, root) = (log_dir(), project(&[]));
         let log = SessionLog::open(&dir).unwrap();
+        // A log from before turn numbers.
         log.append_event(&SessionEvent::TurnStarted {
             session_id: "s1".into(),
+            turn: 0,
         })
         .unwrap();
         drop(log);
@@ -1082,9 +1093,14 @@ mod restart {
 
         let closing = rx.try_recv().unwrap();
         assert_eq!(closing.seq, 2);
+        assert!(closing.ts > 0);
         assert!(matches!(
             closing.event,
-            SessionEvent::Error { ref message, .. } if message.contains("server stopped")
+            SessionEvent::TurnEnded {
+                turn: 1,
+                reason: TurnEndReason::Error { ref code, ref message },
+                ..
+            } if code == "SERVER_RESTARTED" && message.contains("server stopped")
         ));
 
         // Opening again does not add a second error.
@@ -1109,9 +1125,173 @@ mod restart {
         assert_eq!(closing.seq, 2);
         assert!(matches!(
             closing.event,
-            SessionEvent::Error { ref message, .. } if message.contains("server stopped")
+            SessionEvent::TurnEnded {
+                turn: 1,
+                reason: TurnEndReason::Error { ref code, .. },
+                ..
+            } if code == "SERVER_RESTARTED"
         ));
     }
+
+    #[tokio::test]
+    async fn turn_numbers_continue_after_a_restart() {
+        let (dir, root) = (log_dir(), project(&[]));
+        let log = SessionLog::open(&dir).unwrap();
+        for turn in [1, 2] {
+            log.append_event(&SessionEvent::TurnStarted {
+                session_id: "s1".into(),
+                turn,
+            })
+            .unwrap();
+            log.append_event(&SessionEvent::TurnEnded {
+                session_id: "s1".into(),
+                turn,
+                reason: TurnEndReason::Completed,
+            })
+            .unwrap();
+        }
+        drop(log);
+
+        let (agent, _, mut rx) = start(FakeModel::replying(vec![vec![text("ok")]]), &dir, &root);
+        agent.send_message("s1", "again").unwrap();
+        let events = turn_events(&mut rx, "s1").await;
+
+        assert!(matches!(
+            events[1],
+            SessionEvent::TurnStarted { turn: 3, .. }
+        ));
+        assert!(matches!(
+            events.last(),
+            Some(SessionEvent::TurnEnded { turn: 3, .. })
+        ));
+    }
+}
+
+/// Turn and step boundaries as `(name, turn, step)`.
+fn boundaries(events: &[SessionEvent]) -> Vec<(&'static str, u32, u32)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            SessionEvent::TurnStarted { turn, .. } => Some(("turn", *turn, 0)),
+            SessionEvent::StepStarted { turn, step, .. } => Some(("step", *turn, *step)),
+            SessionEvent::StepEnded { turn, step, .. } => Some(("/step", *turn, *step)),
+            SessionEvent::TurnEnded { turn, .. } => Some(("/turn", *turn, 0)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn end_code(events: &[SessionEvent]) -> Option<String> {
+    match events.last() {
+        Some(SessionEvent::TurnEnded {
+            reason: TurnEndReason::Error { code, .. },
+            ..
+        }) => Some(code.clone()),
+        _ => None,
+    }
+}
+
+#[tokio::test]
+async fn turns_and_steps_are_numbered_and_bounded() {
+    let (agent, _, mut rx) = setup_in(
+        FakeModel::replying(vec![
+            vec![tool_use("t1", "list_directory", json!({}))],
+            vec![text("done")],
+            vec![text("again")],
+        ]),
+        project(&[]),
+    );
+
+    agent.send_message("s1", "go").unwrap();
+    let first = turn_events(&mut rx, "s1").await;
+    agent.send_message("s1", "more").unwrap();
+    let second = turn_events(&mut rx, "s1").await;
+
+    assert_eq!(
+        boundaries(&first),
+        [
+            ("turn", 1, 0),
+            ("step", 1, 1),
+            ("/step", 1, 1),
+            ("step", 1, 2),
+            ("/step", 1, 2),
+            ("/turn", 1, 0)
+        ]
+    );
+    assert_eq!(
+        boundaries(&second),
+        [
+            ("turn", 2, 0),
+            ("step", 2, 1),
+            ("/step", 2, 1),
+            ("/turn", 2, 0)
+        ]
+    );
+    // A step's tool calls run between its start and end.
+    let at = |pred: fn(&SessionEvent) -> bool| first.iter().position(pred).unwrap();
+    assert!(
+        at(|e| matches!(e, SessionEvent::ToolResult { .. }))
+            < at(|e| matches!(e, SessionEvent::StepEnded { step: 1, .. }))
+    );
+}
+
+#[tokio::test]
+async fn a_model_failure_ends_its_step_and_the_turn_with_a_provider_code() {
+    let (agent, _, mut rx) = setup(FakeModel::replying(vec![vec![(
+        Duration::ZERO,
+        Err(ModelError::Stream("broken".into())),
+    )]]));
+
+    agent.send_message("s1", "hi").unwrap();
+    let events = turn_events(&mut rx, "s1").await;
+
+    assert_eq!(
+        boundaries(&events),
+        [
+            ("turn", 1, 0),
+            ("step", 1, 1),
+            ("/step", 1, 1),
+            ("/turn", 1, 0)
+        ]
+    );
+    assert_eq!(end_code(&events).as_deref(), Some("PROVIDER_ERROR"));
+}
+
+#[tokio::test]
+async fn the_step_limit_ends_the_turn_with_its_own_code() {
+    let replies = (0..60)
+        .map(|i| vec![tool_use(&format!("t{i}"), "list_directory", json!({}))])
+        .collect();
+    let (agent, _, mut rx) = setup_in(FakeModel::replying(replies), project(&[]));
+
+    agent.send_message("s1", "loop").unwrap();
+    let events = turn_events(&mut rx, "s1").await;
+
+    assert_eq!(end_code(&events).as_deref(), Some("MAX_STEPS"));
+    let steps = boundaries(&events)
+        .iter()
+        .filter(|(name, ..)| *name == "/step")
+        .count();
+    assert_eq!(steps, 50);
+}
+
+#[tokio::test]
+async fn an_interrupted_turn_ends_its_step_first() {
+    let (agent, _, mut rx) = setup(FakeModel::replying(vec![vec![text("a"), slow("b")]]));
+
+    agent.send_message("s1", "hi").unwrap();
+    until(&mut rx, "s1", is_output).await;
+    assert!(agent.interrupt("s1"));
+    let events = turn_events(&mut rx, "s1").await;
+
+    assert_eq!(boundaries(&events), [("/step", 1, 1), ("/turn", 1, 0)]);
+    assert!(matches!(
+        events.last(),
+        Some(SessionEvent::TurnEnded {
+            reason: TurnEndReason::Interrupted,
+            ..
+        })
+    ));
 }
 
 #[tokio::test]

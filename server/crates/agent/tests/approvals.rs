@@ -14,7 +14,9 @@ use agent::{
     tools::{ToolBox, EDIT_FILE, READ_FILE, RUN_SHELL},
     Agent,
 };
-use api_types::{ApprovalDecision, ApprovalKind, ApprovalMode, SessionEnvelope, SessionEvent};
+use api_types::{
+    ApprovalDecision, ApprovalKind, ApprovalMode, SessionEnvelope, SessionEvent, TurnEndReason,
+};
 use serde_json::{json, Value};
 use services::EventService;
 use tokio::sync::{broadcast, mpsc};
@@ -108,7 +110,7 @@ async fn until_request(rx: &mut broadcast::Receiver<SessionEnvelope>) -> Session
         let event = next(rx).await;
         match event {
             SessionEvent::ApprovalRequested { .. } => return event,
-            SessionEvent::Done { .. } | SessionEvent::Error { .. } => {
+            SessionEvent::TurnEnded { .. } => {
                 panic!("the turn ended without asking: {event:?}")
             }
             _ => {}
@@ -120,12 +122,7 @@ async fn until_end(rx: &mut broadcast::Receiver<SessionEnvelope>) -> Vec<Session
     let mut out = Vec::new();
     loop {
         let event = next(rx).await;
-        let end = matches!(
-            event,
-            SessionEvent::Done { .. }
-                | SessionEvent::Error { .. }
-                | SessionEvent::Interrupted { .. }
-        );
+        let end = matches!(event, SessionEvent::TurnEnded { .. });
         out.push(event);
         if end {
             return out;
@@ -232,7 +229,13 @@ async fn deny_skips_the_command_and_the_agent_continues() {
     let (is_error, output) = &results(&events)[0];
     assert!(is_error);
     assert!(output.contains("denied"), "{output}");
-    assert!(matches!(events.last(), Some(SessionEvent::Done { .. })));
+    assert!(matches!(
+        events.last(),
+        Some(SessionEvent::TurnEnded {
+            reason: TurnEndReason::Completed,
+            ..
+        })
+    ));
     // The model is told and gets to continue.
     let sent = serde_json::to_string(&s.model.requests.lock().unwrap()[1].messages).unwrap();
     assert!(sent.contains("denied"));
@@ -317,7 +320,13 @@ async fn full_auto_never_asks() {
     let events = until_end(&mut s.rx).await;
 
     assert!(!asked(&events));
-    assert!(matches!(events.last(), Some(SessionEvent::Done { .. })));
+    assert!(matches!(
+        events.last(),
+        Some(SessionEvent::TurnEnded {
+            reason: TurnEndReason::Completed,
+            ..
+        })
+    ));
     assert_eq!(
         std::fs::read_to_string(s.root.join("a.txt")).unwrap(),
         "new"
@@ -381,7 +390,10 @@ async fn stopping_the_turn_while_a_card_waits_ends_it() {
 
     assert!(matches!(
         events.last(),
-        Some(SessionEvent::Interrupted { .. })
+        Some(SessionEvent::TurnEnded {
+            reason: TurnEndReason::Interrupted,
+            ..
+        })
     ));
     assert!(events.iter().any(|e| matches!(
         e,

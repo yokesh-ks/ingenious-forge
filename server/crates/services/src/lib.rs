@@ -53,12 +53,14 @@ impl EventService {
         self.log.as_ref()
     }
 
-    /// Publishes `event` and returns its sequence number.
+    /// Publishes `event` and returns its sequence number. The log and the
+    /// browsers receive the same timestamp.
     pub fn publish(&self, event: SessionEvent) -> u64 {
+        let ts = log::now_ms();
         let logged = self
             .log
             .as_ref()
-            .and_then(|log| match log.append_event(&event) {
+            .and_then(|log| match log.append_event_at(&event, ts) {
                 Ok(seq) => seq,
                 Err(err) => {
                     tracing::error!(%err, "cannot write session log");
@@ -73,7 +75,7 @@ impl EventService {
             *last = logged.unwrap_or(*last + 1);
             *last
         };
-        if let Err(err) = self.tx.send(SessionEnvelope { seq, event }) {
+        if let Err(err) = self.tx.send(SessionEnvelope { seq, ts, event }) {
             tracing::debug!(?err, "no subscribers for session event");
         }
         seq
