@@ -1,5 +1,5 @@
 import { ArrowUpIcon, SquareIcon } from "lucide-react";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import {
   InputGroup,
   InputGroupAddon,
@@ -17,6 +17,10 @@ interface ComposerProps {
   onStop?: () => void;
   /** Focus the message box when the composer appears. */
   focusOnMount?: boolean;
+  /** Controls at the left of the box's bottom row. */
+  startControls?: ReactNode;
+  /** Controls at the right of the box's bottom row, before the send button. */
+  endControls?: ReactNode;
 }
 
 export default function Composer({
@@ -24,6 +28,8 @@ export default function Composer({
   busy = false,
   onStop,
   focusOnMount = false,
+  startControls,
+  endControls,
 }: ComposerProps) {
   const [value, setValue] = useState("");
   /** The text the slash-command menu was dismissed for with Escape. */
@@ -110,28 +116,30 @@ export default function Composer({
           }}
         />
         <InputGroupAddon align="block-end">
-          {busy && onStop && (
+          {startControls}
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            {endControls}
+            {busy && onStop && (
+              <InputGroupButton
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label="Stop the agent"
+                onClick={onStop}
+              >
+                <SquareIcon />
+              </InputGroupButton>
+            )}
             <InputGroupButton
-              type="button"
+              type="submit"
               size="icon-sm"
-              variant="outline"
-              aria-label="Stop the agent"
-              className="ml-auto"
-              onClick={onStop}
+              variant="default"
+              aria-label="Send message"
+              disabled={!canSend}
             >
-              <SquareIcon />
+              <ArrowUpIcon />
             </InputGroupButton>
-          )}
-          <InputGroupButton
-            type="submit"
-            size="icon-sm"
-            variant="default"
-            aria-label="Send message"
-            className={busy && onStop ? undefined : "ml-auto"}
-            disabled={!canSend}
-          >
-            <ArrowUpIcon />
-          </InputGroupButton>
+          </div>
         </InputGroupAddon>
       </InputGroup>
     </form>

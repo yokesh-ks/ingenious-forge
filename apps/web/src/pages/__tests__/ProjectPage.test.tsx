@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -91,26 +91,6 @@ describe("ProjectPage", () => {
     expect(JSON.parse(socket.sent[0]).session_id).toBe("s2");
   });
 
-  it("New session creates a session, opens it and lists it at once", async () => {
-    let list = [session("s1", "Older")];
-    fakeFetch({
-      "GET /api/projects/p1": project,
-      "GET /api/models": catalog,
-      "GET /api/projects/p1/sessions": () => ({ body: list }),
-      "POST /api/projects/p1/sessions": () => {
-        list = [session("s3", "New session"), ...list];
-        return { body: list[0] };
-      },
-    });
-    const { rerender } = render(<ProjectPage projectId="p1" sessionId="s1" />);
-    await userEvent.click(await screen.findByRole("button", { name: /new session/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /start session/i }));
-
-    await waitFor(() => expect(window.location.pathname).toBe("/projects/p1/sessions/s3"));
-    rerender(<ProjectPage projectId="p1" sessionId="s3" />);
-    expect(screen.getByPlaceholderText(/ask forge/i)).toHaveFocus();
-  });
-
   it("asks for a provider instead of starting a first session when none is configured", async () => {
     const fetch = fakeFetch({
       "GET /api/projects/p1": project,
@@ -125,18 +105,15 @@ describe("ProjectPage", () => {
     expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
   });
 
-  it("shows why a new session could not be created", async () => {
+  it("shows why a first session could not be created", async () => {
     fakeFetch({
       "GET /api/projects/p1": project,
-      "GET /api/projects/p1/sessions": [session("s1", "Older")],
+      "GET /api/projects/p1/sessions": [],
       "GET /api/models": catalog,
       "POST /api/projects/p1/sessions": () => ({ status: 500, body: { error: "disk full" } }),
     });
-    render(<ProjectPage projectId="p1" sessionId="s1" />);
-    await userEvent.click(await screen.findByRole("button", { name: /new session/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /start session/i }));
+    render(<ProjectPage projectId="p1" sessionId={null} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
-    expect(window.location.pathname).toBe("/projects/p1");
   });
 
   it("opening an old session shows its messages, tool calls and diffs in order", async () => {
@@ -200,40 +177,7 @@ describe("ProjectPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("project not found");
   });
 
-  it("New session asks for a model and effort and sends the choice", async () => {
-    const fetch = fakeFetch({
-      "GET /api/projects/p1": project,
-      "GET /api/models": catalog,
-      "GET /api/projects/p1/sessions": [session("s1", "Older")],
-      "POST /api/projects/p1/sessions": session("s4", "New session"),
-    });
-    render(<ProjectPage projectId="p1" sessionId="s1" />);
-    await userEvent.click(await screen.findByRole("button", { name: /new session/i }));
-    await userEvent.selectOptions(await screen.findByLabelText(/^model$/i), "claude-sonnet-5-5");
-    await userEvent.selectOptions(screen.getByLabelText(/reasoning effort/i), "low");
-    await userEvent.click(screen.getByRole("button", { name: /start session/i }));
-
-    await waitFor(() => expect(window.location.pathname).toBe("/projects/p1/sessions/s4"));
-    const post = fetch.mock.calls.find(([, init]) => init?.method === "POST");
-    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
-      model: { provider: "anthropic", model: "claude-sonnet-5-5", effort: "low" },
-    });
-  });
-
-  it("cancelling the new-session form creates nothing", async () => {
-    const fetch = fakeFetch({
-      "GET /api/projects/p1": project,
-      "GET /api/models": catalog,
-      "GET /api/projects/p1/sessions": [session("s1", "Older")],
-    });
-    render(<ProjectPage projectId="p1" sessionId="s1" />);
-    await userEvent.click(await screen.findByRole("button", { name: /new session/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /cancel/i }));
-    expect(screen.queryByRole("button", { name: /start session/i })).not.toBeInTheDocument();
-    expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
-  });
-
-  it("the header shows each session's own model", async () => {
+  it("the composer shows each session's own model", async () => {
     fakeFetch({
       "GET /api/projects/p1": project,
       "GET /api/models": catalog,
@@ -247,22 +191,52 @@ describe("ProjectPage", () => {
       ],
     });
     const { rerender } = render(<ProjectPage projectId="p1" sessionId="s1" />);
-    const header = await screen.findByRole("group", { name: /session settings/i });
-    await waitFor(() => expect(header).toHaveTextContent("Claude Opus 5.5"));
-    expect(header).toHaveTextContent("Max effort");
+    const composer = await screen.findByRole("form", { name: /composer/i });
+    const opus = await within(composer).findByRole("button", { name: "Model: Claude Opus 5.5" });
+    expect(opus).toHaveTextContent("Max");
 
     rerender(<ProjectPage projectId="p1" sessionId="s2" />);
-    await waitFor(() =>
-      expect(screen.getByRole("group", { name: /session settings/i })).toHaveTextContent(
-        "Claude Sonnet 5.5",
-      ),
-    );
-    expect(screen.getByRole("group", { name: /session settings/i })).toHaveTextContent(
-      "Low effort",
-    );
+    const sonnet = await screen.findByRole("button", { name: "Model: Claude Sonnet 5.5" });
+    expect(sonnet).toHaveTextContent("Low");
   });
 
-  it("changes the approval mode from the header", async () => {
+  it("changes the session's model from the composer", async () => {
+    const sonnet = { provider: "anthropic", model: "claude-sonnet-5-5", effort: "max" };
+    let model: SessionModel = { ...sonnet, model: "claude-opus-5-5" } as SessionModel;
+    const fetch = fakeFetch({
+      "GET /api/projects/p1": project,
+      "GET /api/models": catalog,
+      "GET /api/projects/p1/sessions": () => ({ body: [session("s1", "Older", model)] }),
+      "PUT /api/sessions/s1/model": (init: RequestInit | undefined) => {
+        model = JSON.parse(String(init?.body)).model;
+        return { body: session("s1", "Older", model) };
+      },
+    });
+    render(<ProjectPage projectId="p1" sessionId="s1" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Model: Claude Opus 5.5" }));
+    await userEvent.click(screen.getByRole("menuitemradio", { name: "Claude Sonnet 5.5" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Model: Claude Sonnet 5.5" }),
+    ).toBeInTheDocument();
+    const put = fetch.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(String(put?.[1]?.body))).toEqual({ model: sonnet });
+  });
+
+  it("shows why the model could not be changed", async () => {
+    fakeFetch({
+      "GET /api/projects/p1": project,
+      "GET /api/models": catalog,
+      "GET /api/projects/p1/sessions": [session("s1", "Older")],
+      "PUT /api/sessions/s1/model": () => ({ status: 409, body: { error: "no API key" } }),
+    });
+    render(<ProjectPage projectId="p1" sessionId="s1" />);
+    await userEvent.click(await screen.findByRole("button", { name: /^model:/i }));
+    await userEvent.click(screen.getByRole("menuitemradio", { name: "Echo" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("no API key");
+  });
+
+  it("changes the approval mode from the composer", async () => {
     let mode: ApprovalMode = "ask";
     const fetch = fakeFetch({
       "GET /api/projects/p1": project,
@@ -297,7 +271,7 @@ describe("ProjectPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("db locked");
   });
 
-  it("the header shows the project's branch and changes", async () => {
+  it("above the composer, shows the project on the left and its branch and changes on the right", async () => {
     fakeFetch({
       "GET /api/projects/p1": project,
       "GET /api/projects/p1/sessions": [session("s1", "Older")],
@@ -305,25 +279,28 @@ describe("ProjectPage", () => {
     });
     render(<ProjectPage projectId="p1" sessionId="s1" />);
     const badge = await screen.findByRole("group", { name: /git status/i });
+    const bar = badge.parentElement as HTMLElement;
+    expect(bar.firstElementChild).toHaveAccessibleName("Project: forge");
+    expect(bar.lastElementChild).toBe(badge);
     expect(badge).toHaveTextContent("main");
     expect(badge).toHaveTextContent("1 staged");
   });
 
-  it("the header shows the session's sandbox and writable folders", async () => {
+  it("warns above the chat when the sandbox is unavailable", async () => {
     fakeFetch({
       "GET /api/projects/p1": project,
       "GET /api/projects/p1/sessions": [session("s1", "Older")],
       "GET /api/sessions/s1/sandbox": {
-        name: "sandbox-exec",
-        active: true,
-        writable: ["/code/forge"],
+        name: "none",
+        active: false,
+        writable: [],
         network: false,
-        problem: null,
+        problem: "bwrap is not installed",
       },
     });
     render(<ProjectPage projectId="p1" sessionId="s1" />);
-    const badge = await screen.findByRole("group", { name: /sandbox/i });
-    expect(badge).toHaveTextContent("sandbox-exec");
-    expect(badge).toHaveTextContent("forge");
+    expect(await screen.findByRole("group", { name: /sandbox/i })).toHaveTextContent(
+      "bwrap is not installed",
+    );
   });
 });

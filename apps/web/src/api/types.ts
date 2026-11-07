@@ -13,6 +13,8 @@ export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export type SessionModel = { provider: string, model: string, effort: ReasoningEffort, };
 
+export type SetSessionModelRequest = { model: SessionModel, };
+
 export type ModelOption = { id: string, name: string, 
 /**
  * The efforts this model accepts; empty when it has no effort setting.

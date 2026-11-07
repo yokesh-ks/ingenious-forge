@@ -46,7 +46,7 @@ export default function ApprovalModePicker({
       <Button
         type="button"
         size="sm"
-        variant="outline"
+        variant="ghost"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Approval mode: ${approvalModeLabel(mode)}`}
@@ -61,7 +61,7 @@ export default function ApprovalModePicker({
         <div
           role="menu"
           aria-label="Approval mode"
-          className="absolute right-0 z-10 mt-1 w-64 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+          className="absolute bottom-full left-0 z-10 mb-1 w-64 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
         >
           {APPROVAL_MODES.map((option) => (
             <button

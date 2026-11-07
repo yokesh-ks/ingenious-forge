@@ -1,14 +1,15 @@
-import { PlusIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { ApprovalMode, SessionModel } from "@/api/types";
-import { Button } from "@/components/ui/button";
-import GitActions from "@/features/git/components/GitActions";
+import GitBadge from "@/features/git/components/GitBadge";
 import { useGitStatus } from "@/features/git/hooks/use-git-status";
-import NewSessionForm, { NoProviderPrompt } from "@/features/sandbox/components/NewSessionForm";
+import ApprovalModePicker from "@/features/sandbox/components/ApprovalModePicker";
+import ModelPicker from "@/features/sandbox/components/ModelPicker";
+import { NoProviderPrompt } from "@/features/sandbox/components/NewSessionForm";
+import SandboxBadge from "@/features/sandbox/components/SandboxBadge";
 import { useModelCatalog } from "@/features/sandbox/hooks/use-model-catalog";
 import { useSandbox } from "@/features/sandbox/hooks/use-sandbox";
-import SessionHeader from "@/features/session/components/SessionHeader";
+import ProjectPicker from "@/features/session/components/ProjectPicker";
 import SessionRightSidebar from "@/features/session/components/SessionRightSidebar";
 import SessionWorkspace from "@/features/session/components/SessionWorkspace";
 import { useProjectSessions } from "@/features/session/hooks/use-project-sessions";
@@ -30,8 +31,8 @@ function SessionPane({
   approvalMode,
   onApprovalModeChange,
   savingMode,
-  onNewSession,
-  creatingNew,
+  onModelChange,
+  savingModel,
 }: {
   projectId: string;
   sessionId: string;
@@ -40,8 +41,8 @@ function SessionPane({
   approvalMode: ApprovalMode;
   onApprovalModeChange: (mode: ApprovalMode) => void;
   savingMode: boolean;
-  onNewSession: () => void;
-  creatingNew: boolean;
+  onModelChange: (model: SessionModel) => void;
+  savingModel: boolean;
 }) {
   const git = useGitStatus(projectId);
   const { sandbox } = useSandbox(sessionId);
@@ -50,36 +51,34 @@ function SessionPane({
   return (
     <div className="flex min-h-0 flex-1 gap-4">
       <div className="flex min-w-0 flex-1 flex-col gap-3">
-        <div className="flex items-center justify-end">
-          <Button size="sm" variant="outline" disabled={creatingNew} onClick={onNewSession}>
-            <PlusIcon /> New session
-          </Button>
-        </div>
-        <SessionHeader
-          model={model}
-          catalog={catalog}
-          approvalMode={approvalMode}
-          onApprovalModeChange={onApprovalModeChange}
-          savingMode={savingMode}
-          git={git.status}
-          sandbox={sandbox}
-          actions={
-            git.status && (
-              <GitActions
-                projectId={projectId}
-                sessionId={sessionId}
-                status={git.status}
-                onChanged={git.reload}
-              />
-            )
-          }
-        />
+        <SandboxBadge sandbox={sandbox} />
         <SessionWorkspace
           state={state}
           connected={connected}
           onSend={send}
           onStop={stop}
           onAnswerApproval={answerApproval}
+          composerBar={
+            <div className="flex items-center justify-between gap-2">
+              <ProjectPicker projectId={projectId} />
+              <GitBadge status={git.status} />
+            </div>
+          }
+          startControls={
+            <ApprovalModePicker
+              mode={approvalMode}
+              onChange={onApprovalModeChange}
+              saving={savingMode}
+            />
+          }
+          endControls={
+            <ModelPicker
+              model={model}
+              catalog={catalog}
+              onChange={onModelChange}
+              disabled={savingModel || state.running}
+            />
+          }
         />
       </div>
       <SessionRightSidebar
@@ -95,11 +94,9 @@ function SessionPane({
 export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) {
   const [error, setError] = useState<string | null>(null);
   const { sessions, error: sessionsError, reload } = useProjectSessions(projectId);
-  const [creatingNew, setCreatingNew] = useState(false);
-  /** True while the new-session form is shown. */
-  const [picking, setPicking] = useState(false);
   const models = useModelCatalog();
   const [savingMode, setSavingMode] = useState(false);
+  const [savingModel, setSavingModel] = useState(false);
   const active = sessions?.find((s) => s.id === sessionId) ?? null;
   // Guards against creating a second first session when the effect below
   // runs again before the first request returns.
@@ -134,21 +131,6 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
     );
   }, [projectId, sessionId, sessions, reload, catalogKnown, noProvider]);
 
-  async function newSession(model: SessionModel) {
-    setCreatingNew(true);
-    setError(null);
-    try {
-      const created = await api.createSession(projectId, model);
-      setPicking(false);
-      reload();
-      navigate(`/projects/${projectId}/sessions/${created.id}`);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setCreatingNew(false);
-    }
-  }
-
   async function changeApprovalMode(mode: ApprovalMode) {
     if (!sessionId) return;
     setSavingMode(true);
@@ -163,6 +145,20 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
     }
   }
 
+  async function changeModel(model: SessionModel) {
+    if (!sessionId) return;
+    setSavingModel(true);
+    setError(null);
+    try {
+      await api.setSessionModel(sessionId, model);
+      reload();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSavingModel(false);
+    }
+  }
+
   const shownError = error ?? sessionsError;
 
   return (
@@ -172,17 +168,7 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
           {shownError}
         </p>
       )}
-      {picking ? (
-        <div className="flex min-w-0 flex-1 items-start justify-center">
-          <NewSessionForm
-            catalog={models.catalog}
-            error={models.error}
-            onStart={newSession}
-            onCancel={() => setPicking(false)}
-            starting={creatingNew}
-          />
-        </div>
-      ) : !sessionId && noProvider && sessions?.length === 0 ? (
+      {!sessionId && noProvider && sessions?.length === 0 ? (
         <div className="flex min-w-0 flex-1 items-start justify-center">
           <NoProviderPrompt />
         </div>
@@ -197,8 +183,8 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
             approvalMode={active?.approval_mode ?? "ask"}
             onApprovalModeChange={changeApprovalMode}
             savingMode={savingMode}
-            onNewSession={() => setPicking(true)}
-            creatingNew={creatingNew}
+            onModelChange={changeModel}
+            savingModel={savingModel}
           />
         )
       )}

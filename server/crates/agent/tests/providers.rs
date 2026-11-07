@@ -90,6 +90,34 @@ fn choice(provider: &str, model: &str) -> ModelChoice {
     }
 }
 
+#[tokio::test]
+async fn a_session_that_changes_model_sends_its_next_message_to_the_new_one() {
+    let (a, calls) = echo("a", vec!["x", "y"]);
+    let mut providers = Providers::new();
+    providers.register(a);
+    let events = EventService::new();
+    let mut rx = events.subscribe();
+    let agent = Agent::with_providers(providers, events);
+    agent
+        .open_session_with("s", ToolBox::new(std::env::temp_dir()), &choice("a", "x"))
+        .unwrap();
+
+    assert!(agent.set_model("s", &choice("a", "y")).unwrap());
+    assert!(matches!(
+        agent.set_model("s", &choice("a", "nope")),
+        Err(AgentError::Model(_))
+    ));
+    assert!(!agent.set_model("closed", &choice("a", "y")).unwrap());
+
+    agent.send_message("s", "hi").unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !matches!(rx.recv().await.unwrap().event, SessionEvent::Done { .. }) {}
+    })
+    .await
+    .unwrap();
+    assert_eq!(*calls.lock().unwrap(), vec!["a:y".to_string()]);
+}
+
 // ---- registry ----
 
 #[test]

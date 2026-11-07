@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { ApprovalDecision } from "@/api/types";
 import type { SessionState } from "@/features/session/session-reducer";
 import Composer from "./Composer";
@@ -9,6 +10,12 @@ interface SessionWorkspaceProps {
   onSend: (text: string) => boolean;
   onStop: () => void;
   onAnswerApproval: (callId: string, decision: ApprovalDecision) => void;
+  /** A row directly above the composer, as wide as it is. */
+  composerBar?: ReactNode;
+  /** Controls at the left of the composer's bottom row. */
+  startControls?: ReactNode;
+  /** Controls at the right of the composer's bottom row. */
+  endControls?: ReactNode;
 }
 
 /** One session: the conversation and the composer. */
@@ -18,6 +25,9 @@ export default function SessionWorkspace({
   onSend,
   onStop,
   onAnswerApproval,
+  composerBar,
+  startControls,
+  endControls,
 }: SessionWorkspaceProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -34,7 +44,17 @@ export default function SessionWorkspace({
           onAnswerApproval={onAnswerApproval}
         />
       </div>
-      <Composer onSend={onSend} busy={state.running} onStop={onStop} focusOnMount />
+      <div className="flex flex-col gap-2">
+        {composerBar && <div className="mx-auto w-full max-w-3xl">{composerBar}</div>}
+        <Composer
+          onSend={onSend}
+          busy={state.running}
+          onStop={onStop}
+          focusOnMount
+          startControls={startControls}
+          endControls={endControls}
+        />
+      </div>
     </div>
   );
 }

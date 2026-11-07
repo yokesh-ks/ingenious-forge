@@ -321,6 +321,24 @@ impl Agent {
         }
     }
 
+    /// Moves an open session to the model in `choice`, from its next model
+    /// call. False when the session is not open.
+    pub fn set_model(&self, session_id: &str, choice: &ModelChoice) -> Result<bool, AgentError> {
+        let model = self.providers.resolve(choice)?;
+        let effort = self.providers.effort_for(choice);
+        let mut sessions = self.sessions.lock().unwrap();
+        Ok(
+            match sessions.get_mut(session_id).filter(|s| s.tools.is_some()) {
+                Some(session) => {
+                    session.model = Some(model);
+                    session.effort = effort;
+                    true
+                }
+                None => false,
+            },
+        )
+    }
+
     /// Answers the approval card for `call_id`. False when no card for it
     /// is waiting.
     pub fn answer_approval(
