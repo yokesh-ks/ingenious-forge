@@ -3,7 +3,7 @@
 Index of product work on the [Ingenious Forge board](https://github.com/users/yokesh-ks/projects/34).
 Scope comes from [PRD.md](PRD.md); detail lives in the linked issues.
 
-Last synced: 2026-10-31
+Last synced: 2026-11-07
 
 > **Note — milestones pending:** The five Phase milestones need to be created on
 > GitHub (Settings → Milestones) with the titles and exit criteria below, then
@@ -17,9 +17,9 @@ Exit: `npx ingenious-forge` opens the browser, and a prompt there edits a file a
 
 | Epic | PRD | Refined | Stories | State |
 | --- | --- | --- | --- | --- |
-| [#62 `npx` starts the server and opens the browser](https://github.com/yokesh-ks/ingenious-forge/issues/62) | §6.2, §8 | yes | #75, #76, #77 | open |
-| [#63 Agent works and streams live in the browser](https://github.com/yokesh-ks/ingenious-forge/issues/63) | §6.1, §6.2 | yes | #78, #79, #80, #81 | open |
-| [#64 Changed files and diff review](https://github.com/yokesh-ks/ingenious-forge/issues/64) | §6.2 | yes | #82, #83 | open |
+| [#62 `npx` starts the server and opens the browser](https://github.com/yokesh-ks/ingenious-forge/issues/62) | §6.2, §8 | yes | #75, #76, #77 | closed |
+| [#63 Agent works and streams live in the browser](https://github.com/yokesh-ks/ingenious-forge/issues/63) | §6.1, §6.2 | yes | #78, #79, #80, #81 | closed |
+| [#64 Changed files and diff review](https://github.com/yokesh-ks/ingenious-forge/issues/64) | §6.2 | yes | #82, #83 | closed |
 
 ---
 
@@ -29,16 +29,17 @@ Exit: A user completes a real coding task end to end — prompt, approvals, revi
 
 | Epic | PRD | Refined | Stories | State |
 | --- | --- | --- | --- | --- |
-| [#65 Projects and session list](https://github.com/yokesh-ks/ingenious-forge/issues/65) | §6.2 | yes | #84, #85, #86 | open |
-| [#66 Sessions survive restarts and can be resumed](https://github.com/yokesh-ks/ingenious-forge/issues/66) | §6.1 | yes | #87, #88 | open |
-| [#67 Agent loads project instructions (AGENTS.md)](https://github.com/yokesh-ks/ingenious-forge/issues/67) | §6.1 | yes | #89, #90 | open |
-| [#68 User picks a model and reasoning effort per session](https://github.com/yokesh-ks/ingenious-forge/issues/68) | §6.1 | yes | #91, #92 | open |
-| [#69 Agent runs shell commands and output streams live](https://github.com/yokesh-ks/ingenious-forge/issues/69) | §6.1 | yes | #93, #94 | open |
+| [#65 Projects and session list](https://github.com/yokesh-ks/ingenious-forge/issues/65) | §6.2 | yes | #84, #85, #86 | closed |
+| [#66 Sessions survive restarts and can be resumed](https://github.com/yokesh-ks/ingenious-forge/issues/66) | §6.1 | yes | #87, #88 | closed |
+| [#67 Agent loads project instructions (AGENTS.md)](https://github.com/yokesh-ks/ingenious-forge/issues/67) | §6.1 | yes | #89, #90 | closed |
+| [#68 User picks a model and reasoning effort per session](https://github.com/yokesh-ks/ingenious-forge/issues/68) | §6.1 | yes | #91, #92 | closed |
+| [#69 Agent runs shell commands and output streams live](https://github.com/yokesh-ks/ingenious-forge/issues/69) | §6.1 | yes | #93, #94 | closed |
 | [#70 Agent commands are confined to the project sandbox](https://github.com/yokesh-ks/ingenious-forge/issues/70) | §6.1 | yes | #95, #96, #97, #98 | open |
-| [#71 User controls agent autonomy with approval modes](https://github.com/yokesh-ks/ingenious-forge/issues/71) | §6.1, §6.2 | yes | #99, #100, #101 | open |
-| [#72 Workspace panel: file tree, viewer and terminal](https://github.com/yokesh-ks/ingenious-forge/issues/72) | §6.2 | yes | #102, #103 | open |
-| [#73 Git actions: branch, commit and push from the browser](https://github.com/yokesh-ks/ingenious-forge/issues/73) | §6.2 | yes | #104, #105, #106 | open |
-| [#74 Settings: providers, defaults and GitHub connection](https://github.com/yokesh-ks/ingenious-forge/issues/74) | §6.2 | yes | #107, #108, #109 | open |
+| [#71 User controls agent autonomy with approval modes](https://github.com/yokesh-ks/ingenious-forge/issues/71) | §6.1, §6.2 | yes | #99, #100, #101 | closed |
+| [#72 Workspace panel: file tree, viewer and terminal](https://github.com/yokesh-ks/ingenious-forge/issues/72) | §6.2 | yes | #102, #103 | closed |
+| [#73 Git actions: branch, commit and push from the browser](https://github.com/yokesh-ks/ingenious-forge/issues/73) | §6.2 | yes | #104, #105, #106 | closed |
+| [#74 Settings: providers, defaults and GitHub connection](https://github.com/yokesh-ks/ingenious-forge/issues/74) | §6.2 | yes | #107, #108, #109 | closed |
+| [#124 Support multiple model providers, including NVIDIA, with no default configured](https://github.com/yokesh-ks/ingenious-forge/issues/124) | §6.1, §6.2, §11 | yes | #129, #130, #131, #132, #133 | open |
 
 ---
 
@@ -67,6 +68,7 @@ Phase 1 dependencies:  #64 → #65 → #66, #67, #68, #72, #73, #74   (in parall
           #63 → #69 → #70 → #71
           #65 → #71
           #65 + #71 → #73
+          #74 → #124:  #129 → #130 → #131 → #132 → #133
 ```
 
 ## Stale
