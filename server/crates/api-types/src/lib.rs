@@ -538,6 +538,34 @@ pub enum SessionEvent {
         #[ts(type = "number | null")]
         generation_ms: Option<u64>,
     },
+    /// A piece of the model's reasoning in step `step`, as it streams.
+    ReasoningDelta {
+        session_id: String,
+        turn: u32,
+        step: u32,
+        chunk: String,
+    },
+    /// A step's settled assistant message: its content blocks (text,
+    /// reasoning, tool calls), the provider and model that wrote it, and
+    /// the tokens it used.
+    AssistantMessage {
+        session_id: String,
+        turn: u32,
+        step: u32,
+        content: Vec<serde_json::Value>,
+        provider: String,
+        model: String,
+        #[serde(default)]
+        usage: Option<Usage>,
+    },
+    /// A model request of step `step` that failed or was stopped before
+    /// its reply settled.
+    AssistantAttempt {
+        session_id: String,
+        turn: u32,
+        step: u32,
+        error: String,
+    },
     /// A turn ended, and why. Replaces `Done`, `Interrupted` and the
     /// turn-ending `Error` in logs written since ADR 0012.
     TurnEnded {
@@ -684,6 +712,9 @@ impl SessionEvent {
             | Self::StepStarted { session_id, .. }
             | Self::StepEnded { session_id, .. }
             | Self::TurnEnded { session_id, .. }
+            | Self::ReasoningDelta { session_id, .. }
+            | Self::AssistantMessage { session_id, .. }
+            | Self::AssistantAttempt { session_id, .. }
             | Self::Output { session_id, .. }
             | Self::ToolCall { session_id, .. }
             | Self::ToolOutput { session_id, .. }

@@ -248,7 +248,7 @@ first_token_ms: number | null,
 /**
  * First streamed delta to the settled reply.
  */
-generation_ms: number | null, } | { "type": "turn_ended", session_id: string, turn: number, reason: TurnEndReason, } | { "type": "output", session_id: string, chunk: string, } | { "type": "tool_call", session_id: string, call_id: string, name: string, args: JsonValue, } | { "type": "tool_output", session_id: string, call_id: string, stream: OutputStream, text: string, } | { "type": "tool_result", session_id: string, call_id: string, output: string, is_error: boolean, 
+generation_ms: number | null, } | { "type": "reasoning_delta", session_id: string, turn: number, step: number, chunk: string, } | { "type": "assistant_message", session_id: string, turn: number, step: number, content: Array<JsonValue>, provider: string, model: string, usage: Usage | null, } | { "type": "assistant_attempt", session_id: string, turn: number, step: number, error: string, } | { "type": "turn_ended", session_id: string, turn: number, reason: TurnEndReason, } | { "type": "output", session_id: string, chunk: string, } | { "type": "tool_call", session_id: string, call_id: string, name: string, args: JsonValue, } | { "type": "tool_output", session_id: string, call_id: string, stream: OutputStream, text: string, } | { "type": "tool_result", session_id: string, call_id: string, output: string, is_error: boolean, 
 /**
  * The exit code of a shell command; `None` for other tools and
  * for a command that did not exit normally.
@@ -272,7 +272,7 @@ first_token_ms: number | null,
 /**
  * First streamed delta to the settled reply.
  */
-generation_ms: number | null, } | { "type": "turn_ended", session_id: string, turn: number, reason: TurnEndReason, } | { "type": "output", session_id: string, chunk: string, } | { "type": "tool_call", session_id: string, call_id: string, name: string, args: JsonValue, } | { "type": "tool_output", session_id: string, call_id: string, stream: OutputStream, text: string, } | { "type": "tool_result", session_id: string, call_id: string, output: string, is_error: boolean, 
+generation_ms: number | null, } | { "type": "reasoning_delta", session_id: string, turn: number, step: number, chunk: string, } | { "type": "assistant_message", session_id: string, turn: number, step: number, content: Array<JsonValue>, provider: string, model: string, usage: Usage | null, } | { "type": "assistant_attempt", session_id: string, turn: number, step: number, error: string, } | { "type": "turn_ended", session_id: string, turn: number, reason: TurnEndReason, } | { "type": "output", session_id: string, chunk: string, } | { "type": "tool_call", session_id: string, call_id: string, name: string, args: JsonValue, } | { "type": "tool_output", session_id: string, call_id: string, stream: OutputStream, text: string, } | { "type": "tool_result", session_id: string, call_id: string, output: string, is_error: boolean, 
 /**
  * The exit code of a shell command; `None` for other tools and
  * for a command that did not exit normally.

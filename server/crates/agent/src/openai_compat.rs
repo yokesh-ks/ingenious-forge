@@ -4,7 +4,10 @@
 
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, RwLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, RwLock,
+    },
 };
 
 use api_types::ReasoningEffort::{self, High, Low, Max, Medium, Xhigh};
@@ -207,6 +210,9 @@ pub struct OpenAiCompatProvider {
     /// Each model with the longest reply to ask for, if known.
     models: Vec<(ModelInfo, Option<u32>)>,
     key: KeyHandle,
+    /// Set once the provider refuses `stream_options`, so later requests
+    /// leave it out and go without usage.
+    no_stream_options: Arc<AtomicBool>,
 }
 
 impl OpenAiCompatProvider {
@@ -230,6 +236,7 @@ impl OpenAiCompatProvider {
                 })
                 .collect(),
             key: Arc::new(RwLock::new(api_key)),
+            no_stream_options: Arc::default(),
         }
     }
 
@@ -260,6 +267,7 @@ impl OpenAiCompatProvider {
                 })
                 .collect(),
             key: Arc::new(RwLock::new(None)),
+            no_stream_options: Arc::default(),
         }
     }
 
@@ -304,6 +312,7 @@ impl ModelProvider for OpenAiCompatProvider {
             model: model.to_string(),
             max_tokens,
             call_extras: Arc::default(),
+            no_stream_options: self.no_stream_options.clone(),
         })
     }
 
@@ -363,6 +372,8 @@ struct OpenAiCompatClient {
     /// Provider-specific data sent with a tool call, by call id. Some providers
     /// reject the next request unless it comes back with the call.
     call_extras: CallExtras,
+    /// Shared with the provider; see `OpenAiCompatProvider`.
+    no_stream_options: Arc<AtomicBool>,
 }
 
 type CallExtras = Arc<Mutex<HashMap<String, Value>>>;
@@ -458,6 +469,10 @@ fn request_body(
         "stream": true,
         "messages": chat_messages(request, extras),
     });
+    // Asks for a final chunk with the reply's token usage (ADR 0012).
+    if !client.no_stream_options.load(Ordering::Relaxed) {
+        body["stream_options"] = json!({ "include_usage": true });
+    }
     if !request.tools.is_empty() {
         let tools: Vec<Value> = request
             .tools
@@ -500,6 +515,22 @@ struct StreamAssembler {
     text: String,
     reasoning: String,
     calls: Vec<PartialCall>,
+    usage: Option<api_types::Usage>,
+}
+
+/// A chat completions `usage` object, normalized: `prompt_tokens` counts
+/// cached tokens too, so they are moved out of `input` (ADR 0012).
+fn chat_usage(reported: &Value) -> Option<api_types::Usage> {
+    let prompt = reported["prompt_tokens"].as_u64()?;
+    let cached = reported["prompt_tokens_details"]["cached_tokens"]
+        .as_u64()
+        .unwrap_or(0);
+    Some(api_types::Usage {
+        input: prompt.saturating_sub(cached),
+        output: reported["completion_tokens"].as_u64().unwrap_or(0),
+        cache_read: cached,
+        cache_write: 0,
+    })
 }
 
 impl StreamAssembler {
@@ -515,24 +546,44 @@ impl StreamAssembler {
                     .unwrap_or_else(|| "the provider reported an error".to_string()),
             ));
         }
+        if let Some(usage) = chat_usage(&chunk["usage"]) {
+            self.usage = Some(usage);
+        }
         let choice = &chunk["choices"][0];
         if choice["finish_reason"] == "content_filter" {
             return Err(ModelError::Refusal);
         }
         let delta = &choice["delta"];
-        if let Some(piece) = delta["reasoning_content"].as_str() {
+        let mut events = Vec::new();
+        // Providers name the reasoning field differently.
+        let reasoning = delta["reasoning_content"]
+            .as_str()
+            .or_else(|| delta["reasoning"].as_str())
+            .filter(|piece| !piece.is_empty());
+        if let Some(piece) = reasoning {
             self.reasoning.push_str(piece);
+            events.push(ModelEvent::ReasoningDelta(piece.to_string()));
         }
-        for fragment in delta["tool_calls"].as_array().into_iter().flatten() {
+        let fragments = delta["tool_calls"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        for fragment in fragments {
             self.add_call_fragment(fragment);
         }
-        match delta["content"].as_str() {
-            Some(piece) if !piece.is_empty() => {
-                self.text.push_str(piece);
-                Ok(vec![ModelEvent::TextDelta(piece.to_string())])
-            }
-            _ => Ok(Vec::new()),
+        if !fragments.is_empty() {
+            events.push(ModelEvent::ToolCallDelta);
         }
+        if let Some(piece) = delta["content"].as_str().filter(|piece| !piece.is_empty()) {
+            self.text.push_str(piece);
+            events.push(ModelEvent::TextDelta(piece.to_string()));
+        }
+        Ok(events)
+    }
+
+    /// The usage the final chunk reported, if any.
+    fn usage(&self) -> Option<api_types::Usage> {
+        self.usage
     }
 
     /// Fragments name their call by `index`. Where a provider leaves it out, a
@@ -622,35 +673,46 @@ impl OpenAiCompatClient {
         let key = current_key(&self.key).ok_or_else(|| ModelError::MissingApiKey {
             provider: self.provider.clone(),
         })?;
-        let (path, body) = if self.responses {
-            let body = responses::request_body(&self.model, self.max_tokens, &request);
-            ("responses", body)
-        } else {
-            let extras = self.call_extras.lock().unwrap();
-            ("chat/completions", request_body(self, &extras, &request))
-        };
-        let mut response = self
-            .http
-            .post(format!("{}/{path}", self.base_url))
-            .bearer_auth(key)
-            .header("accept", "text/event-stream")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| ModelError::Request(e.to_string()))?;
+        let mut response = loop {
+            let (path, body) = if self.responses {
+                let body = responses::request_body(&self.model, self.max_tokens, &request);
+                ("responses", body)
+            } else {
+                let extras = self.call_extras.lock().unwrap();
+                ("chat/completions", request_body(self, &extras, &request))
+            };
+            let response = self
+                .http
+                .post(format!("{}/{path}", self.base_url))
+                .bearer_auth(&key)
+                .header("accept", "text/event-stream")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| ModelError::Request(e.to_string()))?;
 
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            let message = serde_json::from_str::<Value>(&body)
+            let status = response.status();
+            if status.is_success() {
+                break response;
+            }
+            let text = response.text().await.unwrap_or_default();
+            let message = serde_json::from_str::<Value>(&text)
                 .ok()
                 .and_then(|v| error_message(&v))
-                .unwrap_or(body);
+                .unwrap_or(text);
+            // A provider that refuses the usage option is asked once more
+            // without it, and never again.
+            let sent_option = body.get("stream_options").is_some();
+            if sent_option && status.as_u16() == 400 && message.contains("stream_options") {
+                tracing::info!(provider = %self.provider, "provider refuses stream_options; usage unavailable");
+                self.no_stream_options.store(true, Ordering::Relaxed);
+                continue;
+            }
             return Err(ModelError::Api {
                 status: status.as_u16(),
                 message,
             });
-        }
+        };
 
         let mut parser = SseParser::default();
         let mut chat = StreamAssembler::default();
@@ -675,8 +737,13 @@ impl OpenAiCompatClient {
             }
         }
         if self.responses {
-            let _ = tx.send(Ok(other.finish())).await;
+            for event in other.finish() {
+                let _ = tx.send(Ok(event)).await;
+            }
             return Ok(());
+        }
+        if let Some(usage) = chat.usage() {
+            let _ = tx.send(Ok(ModelEvent::Usage(usage))).await;
         }
         let (message, extras) = chat.finish();
         self.call_extras.lock().unwrap().extend(extras);
@@ -714,6 +781,7 @@ mod tests {
             model: "m1".into(),
             max_tokens,
             call_extras: Arc::default(),
+            no_stream_options: Arc::default(),
         }
     }
 
@@ -798,6 +866,58 @@ mod tests {
                 text: "Hello".into()
             }])
         );
+    }
+
+    #[test]
+    fn usage_comes_from_the_final_chunk_without_cached_tokens_in_input() {
+        let mut assembler = StreamAssembler::default();
+        assembler
+            .handle(&json!({ "choices": [{ "delta": { "content": "x" } }] }).to_string())
+            .unwrap();
+        let usage_chunk = json!({ "choices": [], "usage": {
+            "prompt_tokens": 14103, "completion_tokens": 236,
+            "prompt_tokens_details": { "cached_tokens": 8672 }
+        } });
+        assert!(assembler
+            .handle(&usage_chunk.to_string())
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            assembler.usage(),
+            Some(api_types::Usage {
+                input: 5431,
+                output: 236,
+                cache_read: 8672,
+                cache_write: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn reasoning_streams_under_either_field_name() {
+        let mut assembler = StreamAssembler::default();
+        let a = assembler
+            .handle(&json!({ "choices": [{ "delta": { "reasoning_content": "a" } }] }).to_string())
+            .unwrap();
+        let b = assembler
+            .handle(&json!({ "choices": [{ "delta": { "reasoning": "b" } }] }).to_string())
+            .unwrap();
+        assert_eq!(a, [ModelEvent::ReasoningDelta("a".into())]);
+        assert_eq!(b, [ModelEvent::ReasoningDelta("b".into())]);
+        assert!(assembler.usage().is_none());
+    }
+
+    #[test]
+    fn requests_ask_for_usage_until_the_provider_refuses_it() {
+        let c = client("max_tokens", None);
+        assert_eq!(
+            request_body(&c, &HashMap::new(), &request(None))["stream_options"],
+            json!({ "include_usage": true })
+        );
+        c.no_stream_options.store(true, Ordering::Relaxed);
+        assert!(request_body(&c, &HashMap::new(), &request(None))
+            .get("stream_options")
+            .is_none());
     }
 
     #[test]

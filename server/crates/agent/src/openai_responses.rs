@@ -89,6 +89,22 @@ struct PartialCall {
 pub(crate) struct ResponsesAssembler {
     text: String,
     calls: Vec<(u64, PartialCall)>,
+    usage: Option<api_types::Usage>,
+}
+
+/// A Responses `usage` object, normalized: `input_tokens` counts cached
+/// tokens too, so they are moved out of `input` (ADR 0012).
+fn responses_usage(reported: &Value) -> Option<api_types::Usage> {
+    let input = reported["input_tokens"].as_u64()?;
+    let cached = reported["input_tokens_details"]["cached_tokens"]
+        .as_u64()
+        .unwrap_or(0);
+    Some(api_types::Usage {
+        input: input.saturating_sub(cached),
+        output: reported["output_tokens"].as_u64().unwrap_or(0),
+        cache_read: cached,
+        cache_write: 0,
+    })
 }
 
 impl ResponsesAssembler {
@@ -118,16 +134,27 @@ impl ResponsesAssembler {
                     return Ok(vec![ModelEvent::TextDelta(piece.to_string())]);
                 }
             }
+            Some("response.reasoning_summary_text.delta" | "response.reasoning_text.delta") => {
+                let piece = event["delta"].as_str().unwrap_or_default();
+                if !piece.is_empty() {
+                    return Ok(vec![ModelEvent::ReasoningDelta(piece.to_string())]);
+                }
+            }
             Some("response.output_item.added") if event["item"]["type"] == "function_call" => {
                 let item = &event["item"];
                 let call = self.call_at(index);
                 call.call_id = item["call_id"].as_str().unwrap_or_default().to_string();
                 call.name = item["name"].as_str().unwrap_or_default().to_string();
                 call.arguments = item["arguments"].as_str().unwrap_or_default().to_string();
+                return Ok(vec![ModelEvent::ToolCallDelta]);
             }
             Some("response.function_call_arguments.delta") => {
                 let piece = event["delta"].as_str().unwrap_or_default();
                 self.call_at(index).arguments.push_str(piece);
+                return Ok(vec![ModelEvent::ToolCallDelta]);
+            }
+            Some("response.completed") => {
+                self.usage = responses_usage(&event["response"]["usage"]);
             }
             Some("response.function_call_arguments.done") => {
                 if let Some(arguments) = event["arguments"].as_str() {
@@ -152,7 +179,9 @@ impl ResponsesAssembler {
         Ok(Vec::new())
     }
 
-    pub(crate) fn finish(self) -> ModelEvent {
+    /// The usage (if reported) and then the whole message.
+    pub(crate) fn finish(self) -> Vec<ModelEvent> {
+        let usage = self.usage;
         let mut content = Vec::new();
         if !self.text.is_empty() {
             content.push(ContentBlock::Text { text: self.text });
@@ -171,7 +200,11 @@ impl ResponsesAssembler {
                 input: serde_json::from_str(&call.arguments).unwrap_or_else(|_| json!({})),
             });
         }
-        ModelEvent::Message(content)
+        usage
+            .map(ModelEvent::Usage)
+            .into_iter()
+            .chain([ModelEvent::Message(content)])
+            .collect()
     }
 }
 
@@ -273,11 +306,16 @@ mod tests {
             [
                 ModelEvent::TextDelta("Hel".into()),
                 ModelEvent::TextDelta("lo".into()),
+                // Each call's start and argument pieces mark activity.
+                ModelEvent::ToolCallDelta,
+                ModelEvent::ToolCallDelta,
+                ModelEvent::ToolCallDelta,
+                ModelEvent::ToolCallDelta,
             ]
         );
         assert_eq!(
             assembler.finish(),
-            ModelEvent::Message(vec![
+            [ModelEvent::Message(vec![
                 ContentBlock::Text {
                     text: "Hello".into()
                 },
@@ -291,8 +329,43 @@ mod tests {
                     name: "list_dir".into(),
                     input: json!({}),
                 },
-            ])
+            ])]
         );
+    }
+
+    #[test]
+    fn reasoning_streams_and_usage_comes_before_the_message() {
+        let mut assembler = ResponsesAssembler::default();
+        let mut deltas = Vec::new();
+        for event in [
+            json!({ "type": "response.reasoning_summary_text.delta", "delta": "Think" }),
+            json!({ "type": "response.output_text.delta", "delta": "Hi" }),
+            json!({ "type": "response.completed", "response": { "usage": {
+                "input_tokens": 1000,
+                "input_tokens_details": { "cached_tokens": 800 },
+                "output_tokens": 20
+            } } }),
+        ] {
+            deltas.extend(assembler.handle(&event.to_string()).unwrap());
+        }
+        assert_eq!(
+            deltas,
+            [
+                ModelEvent::ReasoningDelta("Think".into()),
+                ModelEvent::TextDelta("Hi".into()),
+            ]
+        );
+        let finished = assembler.finish();
+        assert_eq!(
+            finished[0],
+            ModelEvent::Usage(api_types::Usage {
+                input: 200,
+                output: 20,
+                cache_read: 800,
+                cache_write: 0,
+            })
+        );
+        assert!(matches!(finished[1], ModelEvent::Message(_)));
     }
 
     #[test]

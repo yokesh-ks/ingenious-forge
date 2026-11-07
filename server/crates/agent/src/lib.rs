@@ -83,6 +83,43 @@ struct SessionState {
     policy: Option<sandbox::Policy>,
     /// The number of the session's latest turn; turns count from 1.
     turns: u32,
+    /// The provider and model ids the session talks to, for the log.
+    model_ref: Option<(String, String)>,
+}
+
+/// What one step measured, for `StepEnded` (ADR 0012).
+struct StepTiming {
+    started: std::time::Instant,
+    first_token: Option<std::time::Instant>,
+    settled: Option<std::time::Instant>,
+    usage: Option<api_types::Usage>,
+}
+
+impl StepTiming {
+    fn new() -> Self {
+        Self {
+            started: std::time::Instant::now(),
+            first_token: None,
+            settled: None,
+            usage: None,
+        }
+    }
+
+    fn first_token_ms(&self) -> Option<u64> {
+        self.first_token
+            .map(|at| at.duration_since(self.started).as_millis() as u64)
+    }
+
+    fn generation_ms(&self) -> Option<u64> {
+        Some(self.settled?.duration_since(self.first_token?).as_millis() as u64)
+    }
+}
+
+/// Where a model request sits in its session.
+struct StepAt<'a> {
+    session_id: &'a str,
+    turn: u32,
+    step: u32,
 }
 
 /// Why a turn failed: a stable `code` and a message for the user.
@@ -213,11 +250,15 @@ impl Agent {
     /// model, working in the folder `tools` is rooted at. Opening a session
     /// that is already open changes nothing.
     pub fn open_session(&self, session_id: &str, tools: ToolBox) {
-        let model = self
-            .providers
-            .default_choice()
-            .and_then(|choice| self.providers.resolve(&choice).ok());
-        self.open(session_id, tools, model, None);
+        let choice = self.providers.default_choice();
+        let model = choice
+            .as_ref()
+            .and_then(|choice| self.providers.resolve(choice).ok());
+        let model_ref = model
+            .is_some()
+            .then(|| choice.map(|c| (c.provider, c.model)))
+            .flatten();
+        self.open(session_id, tools, model, None, model_ref);
     }
 
     /// Like [`Agent::open_session`], talking to the model in `choice`.
@@ -229,7 +270,8 @@ impl Agent {
     ) -> Result<(), AgentError> {
         let model = self.providers.resolve(choice)?;
         let effort = self.providers.effort_for(choice);
-        self.open(session_id, tools, Some(model), effort);
+        let model_ref = (choice.provider.clone(), choice.model.clone());
+        self.open(session_id, tools, Some(model), effort, Some(model_ref));
         Ok(())
     }
 
@@ -239,6 +281,7 @@ impl Agent {
         tools: ToolBox,
         model: Option<Arc<dyn ModelClient>>,
         effort: Option<api_types::ReasoningEffort>,
+        model_ref: Option<(String, String)>,
     ) {
         if self.is_open(session_id) {
             return;
@@ -253,6 +296,7 @@ impl Agent {
         session.system = system;
         session.model = model;
         session.effort = effort;
+        session.model_ref = model_ref;
         let unfinished = self.restore(session_id, session);
         drop(sessions);
         if let Some(turn) = unfinished {
@@ -372,6 +416,7 @@ impl Agent {
                 Some(session) => {
                     session.model = Some(model);
                     session.effort = effort;
+                    session.model_ref = Some((choice.provider.clone(), choice.model.clone()));
                     true
                 }
                 None => false,
@@ -456,6 +501,9 @@ impl Agent {
             match item? {
                 ModelEvent::TextDelta(chunk) => text.push_str(&chunk),
                 ModelEvent::Message(content) => message = Some(content),
+                ModelEvent::ReasoningDelta(_)
+                | ModelEvent::ToolCallDelta
+                | ModelEvent::Usage(_) => {}
             }
         }
         if let Some(content) = message {
@@ -695,8 +743,14 @@ impl Agent {
                 turn,
                 step,
             });
+            let mut timing = StepTiming::new();
+            let at = StepAt {
+                session_id,
+                turn,
+                step,
+            };
             let outcome = self
-                .run_step(session_id, conversation, &mut cancelled, tools)
+                .run_step(&at, conversation, &mut cancelled, tools, &mut timing)
                 .await;
             // Every started step ends, whether it continues the turn,
             // finishes it, is interrupted or fails.
@@ -704,9 +758,9 @@ impl Agent {
                 session_id: session_id.to_string(),
                 turn,
                 step,
-                usage: None,
-                first_token_ms: None,
-                generation_ms: None,
+                usage: timing.usage,
+                first_token_ms: timing.first_token_ms(),
+                generation_ms: timing.generation_ms(),
             });
             if let Some(ending) = outcome? {
                 return Ok(ending);
@@ -722,13 +776,15 @@ impl Agent {
     /// turn ends, or `None` when another step follows.
     async fn run_step(
         &self,
-        session_id: &str,
+        at: &StepAt<'_>,
         conversation: &mut Vec<ChatMessage>,
         cancelled: &mut watch::Receiver<bool>,
         tools: &ToolBox,
+        timing: &mut StepTiming,
     ) -> Result<Option<Ending>, TurnFailure> {
+        let session_id = at.session_id;
         let reply = self
-            .model_step(session_id, conversation, cancelled, tools)
+            .model_step(at, conversation, cancelled, tools, timing)
             .await
             .map_err(TurnFailure::provider)?;
         let calls: Vec<_> = reply
@@ -784,25 +840,42 @@ impl Agent {
             .unwrap_or_default()
     }
 
-    /// Streams one model reply, publishing text as it arrives, and returns
-    /// the assistant's content blocks.
+    /// Streams one model reply, publishing text and reasoning as they
+    /// arrive, and returns the assistant's content blocks. Records the
+    /// reply's timing and usage in `timing`, and logs the settled message
+    /// or the failed attempt.
     async fn model_step(
         &self,
-        session_id: &str,
+        at: &StepAt<'_>,
         conversation: &[ChatMessage],
         cancelled: &mut watch::Receiver<bool>,
         tools: &ToolBox,
+        timing: &mut StepTiming,
     ) -> Result<Reply, String> {
-        let (system, model, effort) = {
+        let session_id = at.session_id;
+        let (system, model, effort, model_ref) = {
             let sessions = self.sessions.lock().unwrap();
             let session = sessions.get(session_id);
             (
                 session.and_then(|s| s.system.clone()),
                 session.and_then(|s| s.model.clone()),
                 session.and_then(|s| s.effort),
+                session.and_then(|s| s.model_ref.clone()),
             )
         };
-        let model = model.ok_or_else(|| ModelError::NoProvider.to_string())?;
+        let attempt_failed = |error: &str| {
+            self.events.publish(SessionEvent::AssistantAttempt {
+                session_id: session_id.to_string(),
+                turn: at.turn,
+                step: at.step,
+                error: error.to_string(),
+            });
+        };
+        let Some(model) = model else {
+            let error = ModelError::NoProvider.to_string();
+            attempt_failed(&error);
+            return Err(error);
+        };
         let mut rx = model.stream(ModelRequest {
             messages: conversation.to_vec(),
             tools: tools.specs(),
@@ -816,6 +889,8 @@ impl Agent {
             let item = tokio::select! {
                 item = rx.recv() => item,
                 _ = cancelled.wait_for(|stop| *stop) => {
+                    timing.settled = Some(std::time::Instant::now());
+                    attempt_failed("interrupted");
                     // Keep what was shown so far; drop the rest of the reply.
                     let content = if text.is_empty() {
                         Vec::new()
@@ -826,7 +901,25 @@ impl Agent {
                 }
             };
             let Some(item) = item else { break };
-            match item.map_err(|err| err.to_string())? {
+            let event = match item {
+                Ok(event) => event,
+                Err(err) => {
+                    let error = err.to_string();
+                    attempt_failed(&error);
+                    return Err(error);
+                }
+            };
+            if matches!(
+                event,
+                ModelEvent::TextDelta(_)
+                    | ModelEvent::ReasoningDelta(_)
+                    | ModelEvent::ToolCallDelta
+            ) {
+                timing
+                    .first_token
+                    .get_or_insert_with(std::time::Instant::now);
+            }
+            match event {
                 ModelEvent::TextDelta(chunk) => {
                     text.push_str(&chunk);
                     self.events.publish(SessionEvent::Output {
@@ -834,15 +927,39 @@ impl Agent {
                         chunk,
                     });
                 }
+                ModelEvent::ReasoningDelta(chunk) => {
+                    self.events.publish(SessionEvent::ReasoningDelta {
+                        session_id: session_id.to_string(),
+                        turn: at.turn,
+                        step: at.step,
+                        chunk,
+                    });
+                }
+                ModelEvent::ToolCallDelta => {}
+                ModelEvent::Usage(usage) => timing.usage = Some(usage),
                 ModelEvent::Message(content) => message = Some(content),
             }
         }
+        timing.settled = Some(std::time::Instant::now());
         let content = message.unwrap_or_else(|| {
             if text.is_empty() {
                 Vec::new()
             } else {
                 vec![ContentBlock::Text { text }]
             }
+        });
+        let (provider, model_id) = model_ref.unwrap_or_default();
+        self.events.publish(SessionEvent::AssistantMessage {
+            session_id: session_id.to_string(),
+            turn: at.turn,
+            step: at.step,
+            content: content
+                .iter()
+                .filter_map(|block| serde_json::to_value(block).ok())
+                .collect(),
+            provider,
+            model: model_id,
+            usage: timing.usage,
         });
         Ok(Reply {
             content,
