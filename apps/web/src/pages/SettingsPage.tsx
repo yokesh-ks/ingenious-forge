@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import AppearanceSection from "@/features/settings/components/AppearanceSection";
+import ArchivedSessionsPage from "@/features/settings/components/ArchivedSessionsPage";
 import GitHubSection from "@/features/settings/components/GitHubSection";
 import ProviderKeys from "@/features/settings/components/ProviderKeys";
 import SessionDefaultsForm from "@/features/settings/components/SessionDefaultsForm";
@@ -7,6 +8,7 @@ import { SETTINGS_SECTIONS, type SettingsSectionId } from "@/features/settings/s
 
 const PAGES: Record<SettingsSectionId, ComponentType> = {
   appearance: AppearanceSection,
+  archived: ArchivedSessionsPage,
   providers: ProviderKeys,
   defaults: SessionDefaultsForm,
   github: GitHubSection,

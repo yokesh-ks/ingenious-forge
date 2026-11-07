@@ -122,6 +122,7 @@ describe("App", () => {
       ["Providers", "/settings/providers"],
       ["Session defaults", "/settings/defaults"],
       ["GitHub", "/settings/github"],
+      ["Archived Sessions", "/settings/archived"],
     ]);
     expect(within(nav).getByRole("link", { name: "Appearance" })).toHaveAttribute(
       "aria-current",

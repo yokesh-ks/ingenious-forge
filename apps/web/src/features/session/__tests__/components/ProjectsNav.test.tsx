@@ -299,20 +299,6 @@ describe("ProjectsNav", () => {
       expect(window.location.pathname).toBe("/projects/p1/sessions/s1");
     });
 
-    it("lists archived sessions apart and restores them", async () => {
-      const fetch = routes([session(), session({ id: "s2", title: "Old", archived: true })], {
-        "PATCH /api/sessions/s2": session({ id: "s2", title: "Old" }),
-      });
-      renderNav();
-      await screen.findByRole("link", { name: /fix it/i });
-      expect(screen.queryByRole("link", { name: /old/i })).not.toBeInTheDocument();
-      await userEvent.click(screen.getByRole("button", { name: /archived \(1\)/i }));
-      await userEvent.click(await screen.findByRole("button", { name: "Restore Old" }));
-      await waitFor(() =>
-        expect(bodies(fetch, "PATCH")).toEqual([JSON.stringify({ archived: false })]),
-      );
-    });
-
     it("runs the shortcuts on the open session only", async () => {
       const fetch = routes([session(), session({ id: "s2", title: "Other" })], {
         "POST /api/sessions/s1/fork": session({ id: "s3" }),
