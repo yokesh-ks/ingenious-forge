@@ -117,7 +117,7 @@ Each repository can hold an `AGENTS.md` file (and nested ones in subfolders) des
 Users pick the model provider, the model and the reasoning effort per session, and can change them from the composer between turns; the next message uses the new choice. The MVP ships Anthropic, DeepSeek, Google, NVIDIA, OpenAI, OpenRouter and Vercel AI Gateway, and the user can add a custom provider by its base URL and API protocol (OpenAI Chat Completions, OpenAI Responses or Anthropic Messages). Providers plug in through adapters, so new providers can be added without changing the agent.
 
 #### Sessions and resume — P0
-Every session is recorded as an append-only log of messages, tool calls and results. Sessions survive server restarts and can be resumed, forked, or replayed for debugging.
+Every session is recorded as an append-only log of messages, tool calls and results. Sessions survive server restarts and can be resumed, forked, or replayed for debugging. Each entry records when it happened, and each model request records where it starts and ends, when its first token arrived and the token usage the provider reported, so a session can be measured after the fact.
 
 #### Context management — P1
 When a long session approaches the model's context limit, older parts are summarized automatically so the agent can keep working without losing the thread.
@@ -185,6 +185,12 @@ All data exchanged between server and browser is defined once in the backend and
 
 #### Onboarding — P1
 A first-run guide: check prerequisites, add a model provider, open a project, run a first task.
+
+#### Trajectory view — P1
+The session page has three tabs: Chat (the live session view, shown by default), Trajectory and Statistics. Trajectory lists everything that happened in the session as a ledger grouped by turn and step: user messages, model replies, tool calls and their results. Each row shows its kind, a preview, its duration and its token usage. Turns and tool calls can each be folded, and a search box filters the rows. A timeline above the ledger draws each row as a bar from its start to its end, with a model reply split into the wait for its first token and its generation. Dragging across the timeline narrows the ledger to the rows active in that range, and the timeline can be zoomed and panned. Selecting a row opens an inspector with its full input, output, timing and token usage. Long sessions open at their latest rows and load older ones on demand. While the agent runs, the ledger follows new rows until the user scrolls up.
+
+#### Session statistics — P1
+The Statistics tab shows one row per turn, which expands into one row per step. Each row shows what started the turn, the tools the step called, context size, output tokens, cache hit rate, time to first token, model time, tool time, output speed and total time, with a bar that splits the total into waiting, generation, tool time and the rest. A totals row covers the whole session even when only part of its history is loaded. Switches show the change in context size since the previous step and choose whether a turn's context is its last step's or the sum of its steps. A figure whose inputs were not recorded shows a dash with the reason instead of an estimate.
 
 #### Pull requests — P1
 Open a pull request from the session with a generated title and summary, and see its status.
@@ -308,6 +314,7 @@ graph TB
 | **Project** | A git repository opened in Forge |
 | **Session** | One conversation with the agent in a project, with its full history of messages, tool calls and changes |
 | **Turn** | One round of the agent working in response to a message |
+| **Step** | One model request within a turn, plus the tool calls it makes |
 | **Approval mode** | How much the agent may do without asking the user |
 | **Agent preset** | A named set of model, effort, approval mode and instructions |
 | **Task** *(Board)* | A unit of work on the board |
