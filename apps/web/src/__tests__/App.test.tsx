@@ -49,7 +49,29 @@ describe("App", () => {
     expect(await screen.findByText(/page not found/i)).toBeInTheDocument();
   });
 
-  it("links to Settings from the sidebar and shows it at /settings", async () => {
+  it.each([
+    ["/artifacts", "Artifacts"],
+    ["/scheduled", "Scheduled"],
+    ["/plugins", "Plugins"],
+    ["/sites", "Sites"],
+    ["/code-review", "Code Review"],
+  ])("shows a coming soon page without the project sidebar at %s", async (path, title) => {
+    window.history.replaceState(null, "", path);
+    fakeFetch({ "GET /api/projects": [] });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: title })).toBeInTheDocument();
+    expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Work" })).not.toBeInTheDocument();
+  });
+
+  it("shows the project sidebar in the Work section", async () => {
+    fakeFetch({ "GET /api/projects": [] });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Work" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Work" })).toHaveAttribute("href", "/");
+  });
+
+  it("links to Settings from the rail and shows it at /settings", async () => {
     fakeFetch({ "GET /api/projects": [], "GET /api/settings/providers": [] });
     render(<App />);
     const link = await screen.findByRole("link", { name: /settings/i });

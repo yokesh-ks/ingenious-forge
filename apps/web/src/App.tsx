@@ -1,8 +1,11 @@
 import AppBreadcrumb from "@/components/layout/AppBreadcrumb";
+import AppRail from "@/components/layout/AppRail";
 import AppSidebar from "@/components/layout/AppSidebar";
-import { Separator } from "@/components/ui/separator";
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import AppTopBar from "@/components/layout/AppTopBar";
+import { sectionForPath } from "@/components/layout/app-sections";
+import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { Link, matchPath, usePath } from "@/lib/router";
+import ComingSoonPage from "@/pages/ComingSoonPage";
 import EmptyMainView from "@/pages/EmptyMainView";
 import ProjectPage from "@/pages/ProjectPage";
 import SettingsPage from "@/pages/SettingsPage";
@@ -10,6 +13,8 @@ import SettingsPage from "@/pages/SettingsPage";
 function Page({ path }: { path: string }) {
   if (matchPath("/", path)) return <EmptyMainView />;
   if (matchPath("/settings", path)) return <SettingsPage />;
+  const section = sectionForPath(path);
+  if (section?.comingSoon) return <ComingSoonPage title={section.label} />;
   const session = matchPath("/projects/:id/sessions/:sessionId", path);
   if (session) {
     return <ProjectPage key={session.id} projectId={session.id} sessionId={session.sessionId} />;
@@ -23,19 +28,41 @@ function Page({ path }: { path: string }) {
   );
 }
 
+/** The page header's sidebar toggle, shown once the sidebar's own toggle is out of view. */
+function ReopenSidebarTrigger() {
+  const { isMobile, state } = useSidebar();
+  if (!isMobile && state === "expanded") return null;
+  return <SidebarTrigger aria-label="Open sidebar" />;
+}
+
 export default function App() {
   const path = usePath();
+  const onWork = sectionForPath(path)?.id === "work";
+
   return (
-    <SidebarProvider>
-      <AppSidebar />
-      <SidebarInset>
-        <header className="flex items-center gap-2 border-b px-4 py-3">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="h-4" />
-          <AppBreadcrumb path={path} />
-        </header>
-        <Page path={path} />
-      </SidebarInset>
-    </SidebarProvider>
+    <div className="flex h-svh flex-col bg-sidebar">
+      <AppTopBar />
+      <div className="flex min-h-0 flex-1">
+        <AppRail path={path} />
+        <div className="mr-2 mb-2 flex min-w-0 flex-1 overflow-hidden rounded-md border bg-background">
+          {/* `contain-layout` makes this box, not the viewport, anchor the fixed sidebars. */}
+          <SidebarProvider
+            className="h-full min-h-0 contain-layout"
+            style={{ "--sidebar-width": "15.625rem" } as React.CSSProperties}
+          >
+            {onWork && <AppSidebar />}
+            <SidebarInset className="min-h-0 min-w-0">
+              <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+                {onWork && <ReopenSidebarTrigger />}
+                <AppBreadcrumb path={path} />
+              </header>
+              <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto contain-layout">
+                <Page path={path} />
+              </div>
+            </SidebarInset>
+          </SidebarProvider>
+        </div>
+      </div>
+    </div>
   );
 }
