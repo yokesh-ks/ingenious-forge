@@ -178,7 +178,7 @@ A panel listing every file changed in the session, with unified or side-by-side 
 From the UI: see the current branch and status, create a branch, commit (with a generated commit message the user can edit), and push.
 
 #### Settings — P0
-Appearance (light, dark or following the system), model providers and API keys, default model and effort, default approval mode and sandbox rules, and the GitHub connection, each on its own page. For each provider the user can change the base URL and choose which models to offer, including from the list the provider reports. No provider is configured by default: a session cannot start until the user configures at least one, and the agent makes no model call before then. A key set through the provider's environment variable counts as configured.
+Appearance (light, dark or following the system), model providers and API keys, default model and effort, default approval mode and sandbox rules, and the GitHub connection, each on its own page. For each provider the user can change the base URL and choose which models to offer, including from the list the provider reports. Each connected provider shows whether its key is good: green after a successful save or a passing key test, red after a failed test. Showing this makes no request to the provider. No provider is configured by default: a session cannot start until the user configures at least one, and the agent makes no model call before then. A key set through the provider's environment variable counts as configured.
 
 #### Typed API — P0
 All data exchanged between server and browser is defined once in the backend and generated as TypeScript types for the frontend. CI fails if they drift apart.

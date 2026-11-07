@@ -108,7 +108,12 @@ models: Array<ProviderModel> | null,
 /**
  * The models offered when the user sets none.
  */
-default_models: Array<ProviderModel>, };
+default_models: Array<ProviderModel>, 
+/**
+ * Whether the key is good, as of the last save or key test. `None` when
+ * there is no key, or a key from the environment has not been tested.
+ */
+key_valid: boolean | null, };
 
 export type ApiProtocol = "openai_chat" | "openai_responses" | "anthropic_messages";
 

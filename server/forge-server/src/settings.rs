@@ -46,6 +46,8 @@ pub struct ProviderKey {
     pub adapter: Option<Arc<dyn CustomizableProvider>>,
     /// What the user changed about it.
     pub customization: ProviderCustomization,
+    /// The outcome of the last save or key test, if any.
+    pub key_valid: Option<bool>,
 }
 
 /// A provider the user added, as it is saved. Its key is stored separately,
@@ -61,6 +63,7 @@ struct CustomProvider {
 
 const CUSTOM_PROVIDERS: &str = "custom-providers";
 const CUSTOMIZATIONS: &str = "provider-customizations";
+const KEY_RESULTS: &str = "provider-key-results";
 
 /// Settings state: where secrets are kept and each provider's key.
 #[derive(Clone, Default)]
@@ -108,6 +111,7 @@ impl Settings {
                 custom: true,
                 adapter: Some(adapter),
                 customization: ProviderCustomization::default(),
+                key_valid: None,
             },
         );
         handle
@@ -118,6 +122,18 @@ impl Settings {
     pub async fn load_customizations(&self, pool: &sqlx::SqlitePool, providers: &Providers) {
         for (id, customization) in saved_customizations(pool).await {
             self.apply_customization(&id, customization, providers);
+        }
+    }
+
+    /// Restores the last known state of each provider's key. Run after
+    /// [`Settings::load_custom`].
+    pub async fn load_key_results(&self, pool: &sqlx::SqlitePool) {
+        let saved = saved_key_results(pool).await;
+        let mut all = self.providers.write().unwrap();
+        for (id, valid) in saved {
+            if let Some(provider) = all.get_mut(&id) {
+                provider.key_valid = Some(valid);
+            }
         }
     }
 
@@ -183,6 +199,12 @@ impl Settings {
                 .map(|a| a.default_base_url())
                 .unwrap_or_default(),
             models: provider.customization.models.clone(),
+            key_valid: match source {
+                // A key saved without a failed test since counts as good.
+                Some(KeySource::Settings) => provider.key_valid.or(Some(true)),
+                Some(KeySource::Environment) => provider.key_valid,
+                None => None,
+            },
             default_models: provider
                 .adapter
                 .as_ref()
@@ -311,42 +333,83 @@ async fn set_key(
     if let Ok(mut handle) = provider.handle.write() {
         *handle = Some(key.to_string());
     }
+    record_key_result(&state, &id, Some(true)).await?;
+    let provider = self::provider(&state, &id)?;
     Ok(Json(state.settings.status(&id, &provider).await))
+}
+
+async fn saved_key_results(pool: &sqlx::SqlitePool) -> BTreeMap<String, bool> {
+    match db::get_setting(pool, KEY_RESULTS).await {
+        Ok(Some(json)) => serde_json::from_str(&json).unwrap_or_else(|err| {
+            tracing::warn!(%err, "ignoring saved key results");
+            BTreeMap::new()
+        }),
+        Ok(None) => BTreeMap::new(),
+        Err(err) => {
+            tracing::warn!(%err, "cannot read key results");
+            BTreeMap::new()
+        }
+    }
+}
+
+/// Keeps what is known about a provider's key, so showing it needs no request
+/// to the provider. `None` forgets it.
+async fn record_key_result(
+    state: &AppState,
+    id: &str,
+    valid: Option<bool>,
+) -> Result<(), ApiFailure> {
+    let mut all = saved_key_results(&state.db).await;
+    match valid {
+        Some(valid) => all.insert(id.to_string(), valid),
+        None => all.remove(id),
+    };
+    let json = serde_json::to_string(&all).map_err(|e| ApiFailure::internal(e.to_string()))?;
+    db::set_setting(&state.db, KEY_RESULTS, &json)
+        .await
+        .map_err(|e| ApiFailure::internal(e.to_string()))?;
+    if let Some(provider) = state.settings.providers.write().unwrap().get_mut(id) {
+        provider.key_valid = valid;
+    }
+    Ok(())
 }
 
 /// How long a provider gets to answer a key test.
 const KEY_TEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Asks the provider whether it accepts its current key. A rejection is a
-/// normal result here, not an API failure. A provider's error can quote what
+/// Asks the provider whether it accepts its current key, and keeps the outcome.
+/// A rejection is a normal result here, not an API failure. A provider's error can quote what
 /// it was sent, so the key is removed from the message before it is returned.
 async fn test_key(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<ProviderKeyTest>, ApiFailure> {
     let provider = provider(&state, &id)?;
-    let failed = |message: String| {
-        Json(ProviderKeyTest {
-            ok: false,
-            message: Some(message),
-        })
+    let failed = |message: String| ProviderKeyTest {
+        ok: false,
+        message: Some(message),
     };
     let Some(key) = current_key(&provider.handle) else {
-        return Ok(failed(format!("{} has no API key to test", provider.name)));
+        return Ok(Json(failed(format!(
+            "{} has no API key to test",
+            provider.name
+        ))));
     };
     let outcome = tokio::time::timeout(KEY_TEST_TIMEOUT, state.agent.providers().test_key(&id));
-    Ok(match outcome.await {
-        Ok(Ok(())) => Json(ProviderKeyTest {
+    let result = match outcome.await {
+        Ok(Ok(())) => ProviderKeyTest {
             ok: true,
             message: None,
-        }),
+        },
         Ok(Err(err)) => failed(err.to_string().replace(&key, &hint(&key))),
         Err(_) => failed(format!(
             "{} did not answer within {} seconds",
             provider.name,
             KEY_TEST_TIMEOUT.as_secs()
         )),
-    })
+    };
+    record_key_result(&state, &id, Some(result.ok)).await?;
+    Ok(Json(result))
 }
 
 /// Forgets a saved key; the provider falls back to its environment key.
@@ -362,6 +425,8 @@ async fn remove_key(
     if let Ok(mut handle) = provider.handle.write() {
         *handle = provider.env.clone();
     }
+    record_key_result(&state, &id, None).await?;
+    let provider = self::provider(&state, &id)?;
     Ok(Json(state.settings.status(&id, &provider).await))
 }
 
@@ -419,7 +484,7 @@ async fn set_customization(
     Path(id): Path<String>,
     Json(body): Json<ProviderCustomization>,
 ) -> Result<Json<ProviderKeyStatus>, ApiFailure> {
-    provider(&state, &id)?;
+    let known = provider(&state, &id)?;
     let base_url = match body.base_url.as_deref().map(str::trim) {
         None | Some("") => None,
         Some(url) => {
@@ -436,6 +501,9 @@ async fn set_customization(
     state
         .settings
         .apply_customization(&id, customization, state.agent.providers());
+    if current_key(&known.handle).is_some() {
+        record_key_result(&state, &id, Some(true)).await?;
+    }
     let provider = provider(&state, &id)?;
     Ok(Json(state.settings.status(&id, &provider).await))
 }
@@ -647,6 +715,7 @@ async fn remove_custom_provider(
     if changes.remove(&id).is_some() {
         save_customizations(&state, &changes).await?;
     }
+    record_key_result(&state, &id, None).await?;
     state.settings.providers.write().unwrap().remove(&id);
     state.agent.providers().remove(&id);
     Ok(Json(()))
@@ -872,6 +941,7 @@ mod tests {
         let providers = Providers::new();
         settings.load_custom(&pool, &providers).await;
         settings.load_customizations(&pool, &providers).await;
+        settings.load_key_results(&pool).await;
         settings.load().await;
         let events = EventService::new();
         let state = Arc::new(AppState {
@@ -937,6 +1007,7 @@ mod tests {
                     { "id": "model-a", "name": "model-a" },
                     { "id": "model-b", "name": "Model B" },
                 ],
+                "key_valid": true,
             })
         );
         let catalog = state.agent.providers().catalog();
@@ -1233,6 +1304,87 @@ mod tests {
         );
     }
 
+    /// What the settings API says about a provider's key.
+    async fn key_valid(api: &str, id: &str) -> Value {
+        let (_, list) = call(reqwest::Method::GET, &format!("{api}/providers"), None).await;
+        let list: Value = serde_json::from_str(&list).unwrap();
+        list.as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["provider"] == id)
+            .unwrap()["key_valid"]
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn a_key_result_survives_a_restart_and_a_save_turns_it_good() {
+        let (url, seen) = fake_api(401, r#"{"error":{"message":"bad key"}}"#).await;
+        let dir = temp();
+        let (api, _state) = start_custom(&dir).await;
+        let mut body = custom_body();
+        body["protocol"] = json!("anthropic_messages");
+        body["base_url"] = json!(format!("{url}/v1"));
+        call(
+            reqwest::Method::POST,
+            &format!("{api}/custom-providers"),
+            Some(body),
+        )
+        .await;
+        assert_eq!(key_valid(&api, "my-gateway").await, json!(true));
+        assert!(seen.lock().unwrap().is_empty(), "saving makes no request");
+
+        let test = format!("{api}/providers/my-gateway/key/test");
+        let (_, tested) = call(reqwest::Method::POST, &test, None).await;
+        assert!(tested.contains("\"ok\":false"), "{tested}");
+        assert_eq!(key_valid(&api, "my-gateway").await, json!(false));
+
+        let (api, _restarted) = start_custom(&dir).await;
+        assert_eq!(key_valid(&api, "my-gateway").await, json!(false));
+        assert_eq!(seen.lock().unwrap().len(), 1, "listing makes no request");
+
+        let (status, saved) = call(
+            reqwest::Method::PUT,
+            &format!("{api}/providers/my-gateway/customization"),
+            Some(json!({ "base_url": null, "models": null })),
+        )
+        .await;
+        assert_eq!(status, 200, "{saved}");
+        assert_eq!(key_valid(&api, "my-gateway").await, json!(true));
+
+        call(
+            reqwest::Method::POST,
+            &format!("{api}/providers/my-gateway/key/test"),
+            None,
+        )
+        .await;
+        assert_eq!(key_valid(&api, "my-gateway").await, json!(false));
+        let (status, saved) = call(
+            reqwest::Method::PUT,
+            &format!("{api}/providers/my-gateway/key"),
+            Some(json!({ "key": "sk-new" })),
+        )
+        .await;
+        assert_eq!(status, 200, "{saved}");
+        assert_eq!(key_valid(&api, "my-gateway").await, json!(true));
+    }
+
+    #[tokio::test]
+    async fn an_environment_key_is_unknown_until_tested_and_no_key_has_no_result() {
+        let dir = temp();
+        let (api, state) = start_custom(&dir).await;
+        let provider = |env: Option<&str>| ProviderKey {
+            env: env.map(String::from),
+            ..Default::default()
+        };
+        {
+            let mut all = state.settings.providers.write().unwrap();
+            all.insert("from-env".into(), provider(Some("sk-env")));
+            all.insert("no-key".into(), provider(None));
+        }
+        assert_eq!(key_valid(&api, "from-env").await, Value::Null);
+        assert_eq!(key_valid(&api, "no-key").await, Value::Null);
+    }
+
     #[tokio::test]
     async fn models_can_be_fetched_before_a_custom_provider_exists() {
         let (url, seen) = fake_models(200, r#"{"data":[{"id":"a"}]}"#).await;
@@ -1307,7 +1459,7 @@ mod tests {
         let body: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(
             body,
-            json!({ "provider": "anthropic", "name": "Anthropic", "description": "Claude", "hint": "…9876", "source": "settings", "env_var": "ANTHROPIC_API_KEY", "custom": false, "base_url": null, "default_base_url": "", "models": null, "default_models": [] })
+            json!({ "provider": "anthropic", "name": "Anthropic", "description": "Claude", "hint": "…9876", "source": "settings", "env_var": "ANTHROPIC_API_KEY", "custom": false, "base_url": null, "default_base_url": "", "models": null, "default_models": [], "key_valid": true })
         );
         assert_eq!(
             handle.read().unwrap().as_deref(),

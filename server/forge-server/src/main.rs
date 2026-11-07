@@ -90,6 +90,7 @@ async fn main() -> anyhow::Result<()> {
             custom: false,
             adapter: Some(Arc::new(anthropic.clone())),
             customization: Default::default(),
+            key_valid: None,
         },
     );
     let mut providers = Providers::new();
@@ -108,6 +109,7 @@ async fn main() -> anyhow::Result<()> {
                 custom: false,
                 adapter: Some(Arc::new(provider.clone())),
                 customization: Default::default(),
+                key_valid: None,
             },
         );
         providers.register(Arc::new(provider));
@@ -119,6 +121,7 @@ async fn main() -> anyhow::Result<()> {
     };
     settings.load_custom(&pool, &providers).await;
     settings.load_customizations(&pool, &providers).await;
+    settings.load_key_results(&pool).await;
     settings.load().await;
     let state = Arc::new(AppState {
         db: pool,
