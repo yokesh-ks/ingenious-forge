@@ -80,6 +80,8 @@ pub struct ModelRequest {
     pub system: Option<String>,
     /// How hard the model should think; the provider's default when `None`.
     pub effort: Option<api_types::ReasoningEffort>,
+    /// A cap on the reply's length; the provider adapter's own when `None`.
+    pub max_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

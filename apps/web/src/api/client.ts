@@ -12,6 +12,7 @@ import type {
   OpenProjectRequest,
   Project,
   ProviderKeyStatus,
+  ProviderKeyTest,
   PushResult,
   SandboxInfo,
   Session,
@@ -90,6 +91,10 @@ export const api = {
   removeProviderKey: (provider: string) =>
     request<ProviderKeyStatus>(`/api/settings/providers/${encodeURIComponent(provider)}/key`, {
       method: "DELETE",
+    }),
+  testProviderKey: (provider: string) =>
+    request<ProviderKeyTest>(`/api/settings/providers/${encodeURIComponent(provider)}/key/test`, {
+      method: "POST",
     }),
   sessionDefaults: () => request<SessionDefaults>("/api/settings/defaults"),
   setSessionDefaults: (defaults: SessionDefaults) =>

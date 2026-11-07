@@ -49,6 +49,7 @@ fn request() -> ModelRequest {
         tools: vec![],
         system: None,
         effort: None,
+        max_tokens: None,
     }
 }
 

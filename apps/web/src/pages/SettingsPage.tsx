@@ -5,6 +5,7 @@ import type {
   GitHubConnection,
   ModelCatalog,
   ProviderKeyStatus,
+  ProviderKeyTest,
   SessionDefaults,
   SessionModel,
 } from "@/api/types";
@@ -85,10 +86,26 @@ function ProviderKeyRow({
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tested, setTested] = useState<ProviderKeyTest | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  async function testKey() {
+    setTesting(true);
+    setError(null);
+    setTested(null);
+    try {
+      setTested(await api.testProviderKey(status.provider));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setTesting(false);
+    }
+  }
 
   async function run(action: () => Promise<ProviderKeyStatus>) {
     setBusy(true);
     setError(null);
+    setTested(null);
     try {
       setStatus(await action());
       setKey("");
@@ -115,17 +132,23 @@ function ProviderKeyRow({
       <div className="flex items-center gap-2">
         <span className="font-medium">{status.name}</span>
         <span className="text-sm text-muted-foreground">{describeKey(status)}</span>
-        {status.source === "settings" && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="ml-auto"
-            disabled={busy}
-            onClick={() => run(() => api.removeProviderKey(status.provider))}
-          >
-            Remove key
-          </Button>
-        )}
+        <div className="ml-auto flex items-center gap-1">
+          {status.source && (
+            <Button size="sm" variant="ghost" disabled={busy || testing} onClick={() => testKey()}>
+              {testing ? "Testing…" : "Test key"}
+            </Button>
+          )}
+          {status.source === "settings" && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => run(() => api.removeProviderKey(status.provider))}
+            >
+              Remove key
+            </Button>
+          )}
+        </div>
       </div>
       <form className="flex gap-2" onSubmit={save}>
         <Input
@@ -140,6 +163,16 @@ function ProviderKeyRow({
           Save
         </Button>
       </form>
+      {tested?.ok && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {status.name} accepted this key.
+        </p>
+      )}
+      {tested && !tested.ok && (
+        <p role="alert" className="text-sm text-destructive">
+          {tested.message ?? `${status.name} did not accept this key.`}
+        </p>
+      )}
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}

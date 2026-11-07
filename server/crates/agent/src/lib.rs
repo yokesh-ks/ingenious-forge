@@ -382,6 +382,7 @@ impl Agent {
             tools: Vec::new(),
             system: None,
             effort,
+            max_tokens: None,
         });
         let mut text = String::new();
         let mut message = None;
@@ -701,6 +702,7 @@ impl Agent {
             tools: tools.specs(),
             system,
             effort,
+            max_tokens: None,
         });
         let mut text = String::new();
         let mut message = None;

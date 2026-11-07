@@ -270,6 +270,15 @@ pub struct ProviderKeyStatus {
     pub source: Option<KeySource>,
 }
 
+/// Body of `POST /api/settings/providers/{id}/key/test`: whether the provider
+/// accepted its key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ProviderKeyTest {
+    pub ok: bool,
+    /// Why the test failed, in the provider's words where it gave a reason.
+    pub message: Option<String>,
+}
+
 /// Body of `PUT /api/settings/providers/{id}/key`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct SetProviderKeyRequest {
@@ -532,6 +541,7 @@ pub fn typescript_bindings() -> String {
         FileContent::decl(&cfg),
         KeySource::decl(&cfg),
         ProviderKeyStatus::decl(&cfg),
+        ProviderKeyTest::decl(&cfg),
         SetProviderKeyRequest::decl(&cfg),
         GitHubConnection::decl(&cfg),
         ConnectGitHubRequest::decl(&cfg),
