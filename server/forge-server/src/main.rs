@@ -73,10 +73,9 @@ async fn main() -> anyhow::Result<()> {
     // Each provider adapter is registered here. None is the default: the
     // first one with a key serves sessions that do not choose (PRD §6.2
     // Settings). A key saved in Settings wins over the environment (ADR 0008).
-    let env_key = std::env::var("ANTHROPIC_API_KEY")
-        .ok()
-        .filter(|k| !k.trim().is_empty());
-    let anthropic = AnthropicProvider::new(env_key.clone());
+    let env_key = |name: &str| std::env::var(name).ok().filter(|k| !k.trim().is_empty());
+    let anthropic_key = env_key("ANTHROPIC_API_KEY");
+    let anthropic = AnthropicProvider::new(anthropic_key.clone());
     let secrets = services::secrets::SecretStore::open(pool.clone(), &data_dir.join("secret.key"))
         .map_err(anyhow::Error::msg)?;
     let mut keys = std::collections::BTreeMap::new();
@@ -85,17 +84,32 @@ async fn main() -> anyhow::Result<()> {
         settings::ProviderKey {
             name: "Anthropic".into(),
             handle: anthropic.key_handle(),
-            env: env_key,
+            env: anthropic_key,
+            env_var: "ANTHROPIC_API_KEY".into(),
         },
     );
+    let mut providers = Providers::new();
+    providers.register(Arc::new(anthropic));
+    for spec in agent::openai_compat::PROVIDERS {
+        let key = env_key(spec.env_var);
+        let provider = agent::openai_compat::OpenAiCompatProvider::new(spec, key.clone());
+        keys.insert(
+            spec.id.to_string(),
+            settings::ProviderKey {
+                name: spec.name.into(),
+                handle: provider.key_handle(),
+                env: key,
+                env_var: spec.env_var.into(),
+            },
+        );
+        providers.register(Arc::new(provider));
+    }
     let settings = settings::Settings {
         secrets: Some(secrets),
         providers: keys,
         github_api: None,
     };
     settings.load().await;
-    let mut providers = Providers::new();
-    providers.register(Arc::new(anthropic));
     let state = Arc::new(AppState {
         db: pool,
         // Shell commands run in the OS sandbox, or not at all (ADR 0006).

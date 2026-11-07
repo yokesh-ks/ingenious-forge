@@ -57,6 +57,31 @@ describe("NewSessionForm", () => {
     expect(onStart).toHaveBeenCalledWith({ provider: "stub", model: "echo", effort: "high" });
   });
 
+  it("offers only the efforts the chosen model accepts", async () => {
+    const { provider, effort } = setup();
+    await userEvent.selectOptions(provider(), "stub");
+    expect(screen.getByRole("option", { name: "Low" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Max" })).not.toBeInTheDocument();
+    expect(effort()).toHaveValue("high");
+  });
+
+  it("moves to an effort the new model accepts", async () => {
+    const { provider, model, effort, start, onStart } = setup();
+    await userEvent.selectOptions(provider(), "stub");
+    await userEvent.selectOptions(model(), "picky");
+    expect(effort()).toHaveValue("low");
+    await userEvent.click(start());
+    expect(onStart).toHaveBeenCalledWith({ provider: "stub", model: "picky", effort: "low" });
+  });
+
+  it("hides the effort picker for a model with no effort setting", async () => {
+    const { provider, model, start } = setup();
+    await userEvent.selectOptions(provider(), "stub");
+    await userEvent.selectOptions(model(), "plain");
+    expect(screen.queryByLabelText(/reasoning effort/i)).not.toBeInTheDocument();
+    expect(start()).toBeEnabled();
+  });
+
   it("can be cancelled", async () => {
     const { onCancel } = setup();
     await userEvent.click(screen.getByRole("button", { name: /cancel/i }));
@@ -80,7 +105,7 @@ describe("NewSessionForm", () => {
   });
 
   it("sends the user to Settings when no provider is configured", () => {
-    const empty: ModelCatalog = { providers: [], efforts: catalog.efforts, default: null };
+    const empty: ModelCatalog = { providers: [], default: null };
     setup({ catalog: empty });
     expect(screen.getByText(/no model provider/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /open settings/i })).toHaveAttribute(

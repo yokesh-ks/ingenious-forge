@@ -105,6 +105,8 @@ pub struct SessionModel {
 pub struct ModelOption {
     pub id: String,
     pub name: String,
+    /// The efforts this model accepts; empty when it has no effort setting.
+    pub efforts: Vec<ReasoningEffort>,
 }
 
 /// A model provider and the models it offers, the default first.
@@ -119,7 +121,6 @@ pub struct ProviderOption {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ModelCatalog {
     pub providers: Vec<ProviderOption>,
-    pub efforts: Vec<ReasoningEffort>,
     /// The choice used when a session is created without one; `None` when
     /// no provider is configured.
     pub default: Option<SessionModel>,
@@ -268,6 +269,8 @@ pub struct ProviderKeyStatus {
     /// The key's last four characters, when one is set.
     pub hint: Option<String>,
     pub source: Option<KeySource>,
+    /// The environment variable that can hold this provider's key.
+    pub env_var: String,
 }
 
 /// Body of `POST /api/settings/providers/{id}/key/test`: whether the provider

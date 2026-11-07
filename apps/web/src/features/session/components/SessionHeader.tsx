@@ -42,7 +42,7 @@ export default function SessionHeader({
             <Badge variant="outline" title={names.provider}>
               {names.model}
             </Badge>
-            <Badge variant="outline">{names.effort} effort</Badge>
+            {names.effort && <Badge variant="outline">{names.effort} effort</Badge>}
           </>
         )}
         <div className="ml-auto">
