@@ -157,7 +157,7 @@ A single server process runs the agent and exposes it over HTTP and WebSocket to
 A global icon rail on the far left of every page holds the app's sections: Work, Artifacts, Scheduled, Plugins, Sites, Code Review and Settings. A slim top bar above it holds the Forge name and the theme toggle. Work opens the projects area and is the only section with the project sidebar; Settings opens the settings page. Artifacts, Scheduled, Plugins, Sites and Code Review each open a "coming soon" placeholder page for now, and listing them here does not commit to any feature behind them.
 
 #### Projects and session list — P0
-A home page lists recent projects and lets the user open a folder from disk. Inside a project, a sidebar lists its sessions (title, status, last activity) so the user can switch between them, resume old ones, or start a new one.
+The Work section's sidebar lists recent projects and lets the user open a folder from disk, with the main area empty until one is chosen. Each project expands in that sidebar to list its sessions (title, status, last activity) so the user can switch between them, resume old ones, or start a new one.
 
 #### Live session view — P0
 The agent's work streams into the browser as it happens: messages (rendered markdown and code), each tool call with its input and output, command output as it prints, and diffs as files change. Long sessions stay fast, and a dropped connection reconnects without losing or duplicating output.
