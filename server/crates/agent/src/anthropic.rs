@@ -7,8 +7,12 @@ use tokio::sync::mpsc;
 use std::sync::Arc;
 
 use crate::model::{ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest};
-use crate::providers::{current_key, KeyHandle, ModelInfo, ModelProvider};
+use crate::providers::{
+    current_key, fit_models, CustomizableProvider, KeyHandle, ModelInfo, ModelListRequest,
+    ModelProvider,
+};
 use crate::sse::{SseEvent, SseParser};
+use api_types::ProviderModel;
 
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 pub const DEFAULT_MODEL: &str = "claude-opus-5-5";
@@ -22,6 +26,11 @@ pub struct AnthropicClient {
     base_url: String,
     key: KeyHandle,
     model: String,
+    /// The name errors use.
+    provider: String,
+    /// False for another service speaking this format, which may reject what
+    /// only Anthropic's own API accepts.
+    first_party: bool,
 }
 
 impl AnthropicClient {
@@ -37,6 +46,8 @@ impl AnthropicClient {
             base_url: DEFAULT_BASE_URL.into(),
             key,
             model: DEFAULT_MODEL.into(),
+            provider: "Anthropic".into(),
+            first_party: true,
         }
     }
 
@@ -62,15 +73,37 @@ const MODELS: &[(&str, &str)] = &[
 /// The Anthropic provider adapter: builds an [`AnthropicClient`] per model.
 #[derive(Debug, Clone)]
 pub struct AnthropicProvider {
+    id: String,
+    name: String,
+    first_party: bool,
     base_url: String,
     key: KeyHandle,
+    /// The user's model list; the built-in one when `None`.
+    models: Option<Vec<ModelInfo>>,
 }
 
 impl AnthropicProvider {
     pub fn new(api_key: Option<String>) -> Self {
         Self {
+            id: "anthropic".into(),
+            name: "Anthropic".into(),
+            first_party: true,
             base_url: DEFAULT_BASE_URL.into(),
             key: Arc::new(std::sync::RwLock::new(api_key)),
+            models: None,
+        }
+    }
+
+    /// Another service that speaks the Messages API, added by the user. Forge
+    /// knows nothing about its models, so they offer no effort setting.
+    pub fn custom(id: &str, name: &str, base_url: &str, models: &[ProviderModel]) -> Self {
+        Self {
+            id: id.to_string(),
+            name: name.to_string(),
+            first_party: false,
+            base_url: without_version(base_url),
+            key: Arc::new(std::sync::RwLock::new(None)),
+            models: Some(fit_models(&[], models)),
         }
     }
 
@@ -88,14 +121,17 @@ impl AnthropicProvider {
 
 impl ModelProvider for AnthropicProvider {
     fn id(&self) -> &str {
-        "anthropic"
+        &self.id
     }
 
     fn name(&self) -> &str {
-        "Anthropic"
+        &self.name
     }
 
     fn models(&self) -> Vec<ModelInfo> {
+        if let Some(models) = &self.models {
+            return models.clone();
+        }
         MODELS
             .iter()
             .map(|(id, name)| ModelInfo {
@@ -108,15 +144,56 @@ impl ModelProvider for AnthropicProvider {
     }
 
     fn client(&self, model: &str) -> Arc<dyn ModelClient> {
-        Arc::new(
-            AnthropicClient::with_key_handle(self.key.clone())
-                .with_base_url(self.base_url.clone())
-                .with_model(model),
-        )
+        let mut client = AnthropicClient::with_key_handle(self.key.clone())
+            .with_base_url(self.base_url.clone())
+            .with_model(model);
+        client.provider = self.name.clone();
+        client.first_party = self.first_party;
+        Arc::new(client)
     }
 
     fn is_configured(&self) -> bool {
         current_key(&self.key).is_some()
+    }
+}
+
+/// The base URL without a trailing `/v1`, which this adapter adds itself. People
+/// often paste it, because other APIs include it.
+fn without_version(base_url: &str) -> String {
+    base_url
+        .trim_end_matches('/')
+        .trim_end_matches("/v1")
+        .to_string()
+}
+
+impl CustomizableProvider for AnthropicProvider {
+    fn default_base_url(&self) -> String {
+        self.base_url.clone()
+    }
+
+    fn customized(
+        &self,
+        base_url: Option<&str>,
+        models: Option<&[ProviderModel]>,
+    ) -> Arc<dyn ModelProvider> {
+        let mut provider = self.clone();
+        if let Some(base_url) = base_url {
+            provider.base_url = without_version(base_url);
+        }
+        if let Some(picks) = models {
+            provider.models = Some(fit_models(&self.models(), picks));
+        }
+        Arc::new(provider)
+    }
+
+    fn models_request(&self, base_url: &str, key: &str) -> ModelListRequest {
+        ModelListRequest {
+            url: format!("{}/v1/models?limit=1000", without_version(base_url)),
+            headers: vec![
+                ("x-api-key", key.to_string()),
+                ("anthropic-version", API_VERSION.to_string()),
+            ],
+        }
     }
 }
 
@@ -271,15 +348,21 @@ impl AnthropicClient {
         tx: &mpsc::Sender<Result<ModelEvent, ModelError>>,
     ) -> Result<(), ModelError> {
         let api_key = current_key(&self.key).ok_or_else(|| ModelError::MissingApiKey {
-            provider: "Anthropic".into(),
+            provider: self.provider.clone(),
         })?;
-        let mut response = self
+        let mut body = request_body(&self.model, &request);
+        let mut call = self
             .http
             .post(format!("{}/v1/messages", self.base_url))
             .header("x-api-key", api_key)
-            .header("anthropic-version", API_VERSION)
-            .header("anthropic-beta", FALLBACK_BETA)
-            .json(&request_body(&self.model, &request))
+            .header("anthropic-version", API_VERSION);
+        if self.first_party {
+            call = call.header("anthropic-beta", FALLBACK_BETA);
+        } else if let Some(fields) = body.as_object_mut() {
+            fields.remove("fallbacks");
+        }
+        let mut response = call
+            .json(&body)
             .send()
             .await
             .map_err(|e| ModelError::Request(e.to_string()))?;

@@ -83,9 +83,13 @@ async fn main() -> anyhow::Result<()> {
         "anthropic".to_string(),
         settings::ProviderKey {
             name: "Anthropic".into(),
+            description: "Direct access to Claude models".into(),
             handle: anthropic.key_handle(),
             env: anthropic_key,
             env_var: "ANTHROPIC_API_KEY".into(),
+            custom: false,
+            adapter: Some(Arc::new(anthropic.clone())),
+            customization: Default::default(),
         },
     );
     let mut providers = Providers::new();
@@ -97,18 +101,24 @@ async fn main() -> anyhow::Result<()> {
             spec.id.to_string(),
             settings::ProviderKey {
                 name: spec.name.into(),
+                description: spec.description.into(),
                 handle: provider.key_handle(),
                 env: key,
                 env_var: spec.env_var.into(),
+                custom: false,
+                adapter: Some(Arc::new(provider.clone())),
+                customization: Default::default(),
             },
         );
         providers.register(Arc::new(provider));
     }
     let settings = settings::Settings {
         secrets: Some(secrets),
-        providers: keys,
+        providers: Arc::new(std::sync::RwLock::new(keys)),
         github_api: None,
     };
+    settings.load_custom(&pool, &providers).await;
+    settings.load_customizations(&pool, &providers).await;
     settings.load().await;
     let state = Arc::new(AppState {
         db: pool,

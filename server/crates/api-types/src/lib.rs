@@ -266,11 +266,79 @@ pub enum KeySource {
 pub struct ProviderKeyStatus {
     pub provider: String,
     pub name: String,
+    /// One line on what the provider offers.
+    pub description: String,
     /// The key's last four characters, when one is set.
     pub hint: Option<String>,
     pub source: Option<KeySource>,
-    /// The environment variable that can hold this provider's key.
+    /// The environment variable that can hold this provider's key; empty for
+    /// a custom provider.
     pub env_var: String,
+    /// True for a provider the user added.
+    pub custom: bool,
+    /// The base URL the user set, if any.
+    pub base_url: Option<String>,
+    /// The base URL used when the user sets none.
+    pub default_base_url: String,
+    /// The model list the user set, if any.
+    pub models: Option<Vec<ProviderModel>>,
+    /// The models offered when the user sets none.
+    pub default_models: Vec<ProviderModel>,
+}
+
+/// A model a provider serves, by id and display name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ProviderModel {
+    pub id: String,
+    pub name: String,
+}
+
+/// Body of `PUT /api/settings/providers/{id}/customization`: what the user
+/// changed about a provider. `None` means use the provider's own.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ProviderCustomization {
+    pub base_url: Option<String>,
+    pub models: Option<Vec<ProviderModel>>,
+}
+
+/// Body of `POST /api/settings/providers/{id}/models/fetch`: what the form
+/// currently shows, which may not be saved yet. Never stored.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FetchModelsRequest {
+    pub base_url: Option<String>,
+    pub key: Option<String>,
+}
+
+/// The wire format a custom provider speaks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiProtocol {
+    #[default]
+    OpenaiChat,
+    OpenaiResponses,
+    AnthropicMessages,
+}
+
+/// Body of `POST /api/settings/custom-providers/models`: what the form for a
+/// new custom provider shows. Never stored.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FetchCustomModelsRequest {
+    pub base_url: String,
+    pub protocol: ApiProtocol,
+    pub key: String,
+}
+
+/// Body of `POST /api/settings/custom-providers`: an API the user adds by its
+/// base URL and protocol.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct AddCustomProviderRequest {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub protocol: ApiProtocol,
+    pub key: String,
+    /// The models to offer, the default first.
+    pub models: Vec<ProviderModel>,
 }
 
 /// Body of `POST /api/settings/providers/{id}/key/test`: whether the provider
@@ -544,7 +612,13 @@ pub fn typescript_bindings() -> String {
         FileContent::decl(&cfg),
         KeySource::decl(&cfg),
         ProviderKeyStatus::decl(&cfg),
+        ApiProtocol::decl(&cfg),
+        FetchCustomModelsRequest::decl(&cfg),
+        AddCustomProviderRequest::decl(&cfg),
         ProviderKeyTest::decl(&cfg),
+        ProviderModel::decl(&cfg),
+        ProviderCustomization::decl(&cfg),
+        FetchModelsRequest::decl(&cfg),
         SetProviderKeyRequest::decl(&cfg),
         GitHubConnection::decl(&cfg),
         ConnectGitHubRequest::decl(&cfg),

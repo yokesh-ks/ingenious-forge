@@ -322,3 +322,157 @@ async fn a_denied_edit_leaves_the_file_and_tells_the_model() {
     assert_eq!(result["role"], "tool");
     assert_eq!(result["tool_call_id"], "call-1");
 }
+
+fn picks() -> Vec<api_types::ProviderModel> {
+    vec![api_types::ProviderModel {
+        id: "gw-1".into(),
+        name: "Gateway 1".into(),
+    }]
+}
+
+/// Serves one fixed reply at `path` and records the headers and body.
+async fn serve_at(path: &'static str, body: &'static str) -> (String, Seen) {
+    let seen = Seen::default();
+    let s = seen.clone();
+    let app = Router::new().route(
+        path,
+        post(move |headers: HeaderMap, raw: String| {
+            let s = s.clone();
+            async move {
+                *s.headers.lock().unwrap() = Some(headers);
+                *s.body.lock().unwrap() = serde_json::from_str(&raw).ok();
+                Response::builder()
+                    .header("content-type", "text/event-stream")
+                    .body(Body::from(body))
+                    .unwrap()
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (format!("http://{addr}"), seen)
+}
+
+async fn run(provider: &dyn ModelProvider) -> Vec<Result<ModelEvent, ModelError>> {
+    let mut rx = provider.client("gw-1").stream(ModelRequest {
+        effort: None,
+        ..request()
+    });
+    let mut events = Vec::new();
+    while let Some(event) = rx.recv().await {
+        events.push(event);
+    }
+    events
+}
+
+fn hello() -> Vec<Result<ModelEvent, ModelError>> {
+    vec![
+        Ok(ModelEvent::TextDelta("Hello".into())),
+        Ok(ModelEvent::Message(vec![ContentBlock::Text {
+            text: "Hello".into(),
+        }])),
+    ]
+}
+
+#[tokio::test]
+async fn a_custom_provider_can_use_the_responses_api() {
+    let stream = "event: response.output_text.delta\n\
+data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n\
+event: response.completed\ndata: {\"type\":\"response.completed\"}\n\n";
+    let (url, seen) = serve_at("/v1/responses", stream).await;
+    let provider =
+        OpenAiCompatProvider::custom("gw", "Gateway", &format!("{url}/v1"), true, &picks());
+    *provider.key_handle().write().unwrap() = Some("gw-key".into());
+
+    assert_eq!(run(&provider).await, hello());
+
+    let headers = seen.headers.lock().unwrap().clone().unwrap();
+    assert_eq!(headers["authorization"], "Bearer gw-key");
+    let body = seen.body.lock().unwrap().clone().unwrap();
+    assert_eq!(body["model"], "gw-1");
+    assert_eq!(body["input"][0]["content"], "Say hi");
+}
+
+#[tokio::test]
+async fn a_custom_provider_can_use_the_messages_api() {
+    let stream = "event: content_block_start\n\
+data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n\
+event: content_block_delta\n\
+data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n\
+event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+    let (url, seen) = serve_at("/v1/messages", stream).await;
+    // A pasted /v1 is not doubled.
+    let provider = agent::anthropic::AnthropicProvider::custom(
+        "gw",
+        "Gateway",
+        &format!("{url}/v1/"),
+        &picks(),
+    );
+    assert!(!provider.is_configured());
+    *provider.key_handle().write().unwrap() = Some("gw-key".into());
+
+    assert_eq!(run(&provider).await, hello());
+
+    let headers = seen.headers.lock().unwrap().clone().unwrap();
+    assert_eq!(headers["x-api-key"], "gw-key");
+    assert!(
+        headers.get("anthropic-beta").is_none(),
+        "Anthropic's own only"
+    );
+    let body = seen.body.lock().unwrap().clone().unwrap();
+    assert!(body.get("fallbacks").is_none(), "Anthropic's own only");
+    assert_eq!(provider.id(), "gw");
+    assert_eq!(provider.models()[0].name, "Gateway 1");
+    assert!(provider.models()[0].efforts.is_empty());
+}
+
+#[tokio::test]
+async fn a_custom_anthropic_provider_names_itself_when_it_has_no_key() {
+    let provider =
+        agent::anthropic::AnthropicProvider::custom("gw", "Gateway", "http://unused", &picks());
+    let events = run(&provider).await;
+    assert_eq!(
+        events,
+        vec![Err(ModelError::MissingApiKey {
+            provider: "Gateway".into()
+        })]
+    );
+}
+
+#[tokio::test]
+async fn a_fetched_model_id_drops_the_models_prefix() {
+    let app = Router::new().route(
+        "/v1/models",
+        axum::routing::get(|| async {
+            axum::Json(serde_json::json!({"data": [
+                {"id": "models/gemini-x", "display_name": "Gemini X"},
+                {"id": "models/gemini-y"},
+                {"id": "vendor/models/z"},
+            ]}))
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let models = agent::providers::fetch_models(agent::providers::ModelListRequest {
+        url: format!("http://{addr}/v1/models"),
+        headers: vec![],
+    })
+    .await
+    .unwrap();
+
+    let listed: Vec<_> = models
+        .iter()
+        .map(|m| (m.id.as_str(), m.name.as_str()))
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            ("gemini-x", "Gemini X"),
+            ("gemini-y", "gemini-y"),
+            ("vendor/models/z", "vendor/models/z"),
+        ]
+    );
+}

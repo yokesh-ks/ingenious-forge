@@ -7,6 +7,7 @@ pub mod commands;
 pub mod instructions;
 pub mod model;
 pub mod openai_compat;
+mod openai_responses;
 pub mod providers;
 pub mod sandbox;
 pub mod shell;

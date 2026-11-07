@@ -77,19 +77,60 @@ export type KeySource = "settings" | "environment";
 
 export type ProviderKeyStatus = { provider: string, name: string, 
 /**
+ * One line on what the provider offers.
+ */
+description: string, 
+/**
  * The key's last four characters, when one is set.
  */
 hint: string | null, source: KeySource | null, 
 /**
- * The environment variable that can hold this provider's key.
+ * The environment variable that can hold this provider's key; empty for
+ * a custom provider.
  */
-env_var: string, };
+env_var: string, 
+/**
+ * True for a provider the user added.
+ */
+custom: boolean, 
+/**
+ * The base URL the user set, if any.
+ */
+base_url: string | null, 
+/**
+ * The base URL used when the user sets none.
+ */
+default_base_url: string, 
+/**
+ * The model list the user set, if any.
+ */
+models: Array<ProviderModel> | null, 
+/**
+ * The models offered when the user sets none.
+ */
+default_models: Array<ProviderModel>, };
+
+export type ApiProtocol = "openai_chat" | "openai_responses" | "anthropic_messages";
+
+export type FetchCustomModelsRequest = { base_url: string, protocol: ApiProtocol, key: string, };
+
+export type AddCustomProviderRequest = { id: string, name: string, base_url: string, protocol: ApiProtocol, key: string, 
+/**
+ * The models to offer, the default first.
+ */
+models: Array<ProviderModel>, };
 
 export type ProviderKeyTest = { ok: boolean, 
 /**
  * Why the test failed, in the provider's words where it gave a reason.
  */
 message: string | null, };
+
+export type ProviderModel = { id: string, name: string, };
+
+export type ProviderCustomization = { base_url: string | null, models: Array<ProviderModel> | null, };
+
+export type FetchModelsRequest = { base_url: string | null, key: string | null, };
 
 export type SetProviderKeyRequest = { key: string, };
 
