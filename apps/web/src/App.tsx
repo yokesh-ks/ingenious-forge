@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import AppBreadcrumb from "@/components/layout/AppBreadcrumb";
 import AppRail from "@/components/layout/AppRail";
 import AppSidebar from "@/components/layout/AppSidebar";
@@ -35,16 +36,35 @@ function ReopenSidebarTrigger() {
   return <SidebarTrigger aria-label="Open sidebar" />;
 }
 
+/**
+ * Keeps Cmd/Ctrl+B for whoever is being typed in (the composer, the terminal):
+ * the sidebar's own shortcut listens on `window`, so stopping here shields it.
+ */
+function useTextFieldsKeepSidebarShortcut() {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "b" || !(event.metaKey || event.ctrlKey)) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest("input, textarea, [contenteditable]")) {
+        event.stopPropagation();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+}
+
 export default function App() {
   const path = usePath();
   const onWork = sectionForPath(path)?.id === "work";
+  useTextFieldsKeepSidebarShortcut();
 
   return (
     <div className="flex h-svh flex-col bg-sidebar">
       <AppTopBar />
       <div className="flex min-h-0 flex-1">
         <AppRail path={path} />
-        <div className="mr-2 mb-2 flex min-w-0 flex-1 overflow-hidden rounded-md border bg-background">
+        <div className="mr-2 mb-2 flex min-w-0 flex-1 overflow-clip rounded-md border bg-background">
           {/* `contain-layout` makes this box, not the viewport, anchor the fixed sidebars. */}
           <SidebarProvider
             className="h-full min-h-0 contain-layout"
@@ -56,7 +76,7 @@ export default function App() {
                 {onWork && <ReopenSidebarTrigger />}
                 <AppBreadcrumb path={path} />
               </header>
-              <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto contain-layout">
+              <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
                 <Page path={path} />
               </div>
             </SidebarInset>

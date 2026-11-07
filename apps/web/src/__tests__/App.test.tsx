@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeFetch } from "@/test/fake-fetch";
 import { FakeSocket } from "@/test/fake-socket";
@@ -69,6 +69,28 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Work" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Work" })).toHaveAttribute("href", "/");
+  });
+
+  it("toggles the sidebar with Cmd+B, except while typing in a text field", async () => {
+    fakeFetch({ "GET /api/projects": [] });
+    const { container } = render(
+      <>
+        <textarea aria-label="Composer" />
+        <App />
+      </>,
+    );
+    await screen.findByRole("heading", { name: "Work" });
+    const collapsed = () =>
+      container.querySelector('[data-slot="sidebar"][data-state="collapsed"]');
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Composer" }), {
+      key: "b",
+      metaKey: true,
+    });
+    expect(collapsed()).toBeNull();
+
+    fireEvent.keyDown(document.body, { key: "b", metaKey: true });
+    await waitFor(() => expect(collapsed()).not.toBeNull());
   });
 
   it("links to Settings from the rail and shows it at /settings", async () => {

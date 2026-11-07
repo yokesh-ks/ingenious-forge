@@ -18,37 +18,53 @@ const REFRESH_ON = new Set([
   "approval_mode_changed",
 ]);
 
-/** A project's sessions, kept current as turns start and end. */
+/** Tells every mounted copy of a project's list (page, sidebar, breadcrumb) to refetch. */
+const SESSIONS_CHANGED = "forge:sessions-changed";
+
+/** A project's sessions, kept current as turns start and end; `null` while there is no project. */
 export function useProjectSessions(
-  projectId: string,
+  projectId: string | null,
   { createSocket = defaultCreateSocket }: Options = {},
 ) {
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
-    api.listSessions(projectId).then(
-      (list) => {
-        setSessions(list);
-        setError(null);
-      },
-      (err: Error) => setError(err.message),
-    );
+    window.dispatchEvent(new CustomEvent(SESSIONS_CHANGED, { detail: projectId }));
   }, [projectId]);
 
   useEffect(() => {
-    reload();
+    setSessions(null);
+    if (projectId === null) return;
+    const load = () =>
+      api.listSessions(projectId).then(
+        (list) => {
+          setSessions(list);
+          setError(null);
+        },
+        (err: Error) => setError(err.message),
+      );
+    load();
+
+    const onChanged = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === projectId) load();
+    };
+    window.addEventListener(SESSIONS_CHANGED, onChanged);
+
     const socket = createSocket(sessionSocketUrl(window.location));
     socket.onmessage = (message: MessageEvent<string>) => {
       try {
         const event = JSON.parse(message.data) as { type?: unknown };
-        if (typeof event.type === "string" && REFRESH_ON.has(event.type)) reload();
+        if (typeof event.type === "string" && REFRESH_ON.has(event.type)) load();
       } catch {
         // Not an event; nothing to refresh.
       }
     };
-    return () => socket.close();
-  }, [reload, createSocket]);
+    return () => {
+      window.removeEventListener(SESSIONS_CHANGED, onChanged);
+      socket.close();
+    };
+  }, [projectId, createSocket]);
 
   return { sessions, error, reload };
 }

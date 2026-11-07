@@ -117,13 +117,16 @@ export default function ProjectPage({ projectId, sessionId }: ProjectPageProps) 
     if (creating.current) return;
     creating.current = true;
     api.createSession(projectId).then(
-      (created) => open(created.id),
+      (created) => {
+        reload();
+        open(created.id);
+      },
       (err: Error) => {
         creating.current = false;
         setError(err.message);
       },
     );
-  }, [projectId, sessionId, sessions]);
+  }, [projectId, sessionId, sessions, reload]);
 
   async function newSession(model: SessionModel) {
     setCreatingNew(true);
