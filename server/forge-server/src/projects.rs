@@ -204,13 +204,22 @@ async fn update_session(
     Ok(Json(session))
 }
 
-/// Deletes a session permanently.
+/// Deletes a session permanently, with its event log. Returns the deleted
+/// session.
 async fn delete_session(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
-) -> ApiResult<()> {
+) -> ApiResult<Session> {
+    ensure_idle(&state, &id, "deleting")?;
+    let session = projects::get_session(&state.db, &id).await?;
     projects::delete_session(&state.db, &id).await?;
-    Ok(Json(()))
+    state.agent.close_session(&id);
+    if let Some(log) = state.events.log() {
+        if let Err(error) = log.remove(&id) {
+            tracing::warn!(%error, session = %id, "cannot delete session log");
+        }
+    }
+    Ok(Json(session))
 }
 
 /// Starts a new session from a copy of this one's conversation and events.
