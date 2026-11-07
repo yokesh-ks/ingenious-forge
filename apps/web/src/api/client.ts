@@ -90,6 +90,9 @@ export const api = {
   /** Renames, pins or archives a session. */
   updateSession: (id: string, update: UpdateSessionRequest) =>
     post<Session>(`/api/sessions/${encodeURIComponent(id)}`, update, "PATCH"),
+  /** Deletes a session permanently. */
+  deleteSession: (id: string) =>
+    request<void>(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
   /** Starts a new session from a copy of this one. */
   forkSession: (id: string) =>
     request<Session>(`/api/sessions/${encodeURIComponent(id)}/fork`, { method: "POST" }),

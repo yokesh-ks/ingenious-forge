@@ -35,7 +35,7 @@ pub fn router() -> Router<Arc<AppState>> {
                 .delete(delete_project),
         )
         .route("/projects/{id}/open-in", post(open_project_in))
-        .route("/sessions/{id}", axum::routing::patch(update_session))
+        .route("/sessions/{id}", axum::routing::patch(update_session).delete(delete_session))
         .route("/sessions/{id}/fork", post(fork_session))
         .route("/projects/{id}/files", get(project_files))
         .route("/projects/{id}/file", get(project_file))
@@ -199,6 +199,15 @@ async fn update_session(
     .await?;
     session.running = state.agent.is_running(&id);
     Ok(Json(session))
+}
+
+/// Deletes a session permanently.
+async fn delete_session(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<()> {
+    projects::delete_session(&state.db, &id).await?;
+    Ok(Json(()))
 }
 
 /// Starts a new session from a copy of this one's conversation and events.
