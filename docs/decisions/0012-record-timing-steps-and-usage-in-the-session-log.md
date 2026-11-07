@@ -43,6 +43,17 @@ when its reply settles or fails. `usage` is
 `input` excludes cached tokens, or `None` when the provider reported
 nothing.
 
+Also log what each request was made with and what each step produced:
+`RequestHeader` (provider, model, max tokens, tool schemas; logged when
+any changes), `RequestContext` (context window), `SystemPrompt` (when it
+changes), `ModelChanged`, `ReasoningDelta`, `AssistantMessage` (content,
+provider, model, usage), `AssistantAttempt` (failed or retried attempts),
+`SessionTitle`, and `TurnEnded { turn, reason }` with reason `Completed`,
+`Interrupted` or `Error { code, message }`. `TurnStarted`, `ToolCall` and
+`StepStarted` carry turn and step numbers; `ToolResult` gains per-tool
+`meta`, `started_at` and `ended_at`; `UserMessage` gains its `source`
+(human, steering or injected context).
+
 ## Details
 
 - **Where it is stamped.** `ts` is taken in `SessionLog::append_event`
@@ -62,6 +73,12 @@ nothing.
 
   An OpenAI-compatible provider that rejects `stream_options` is retried
   once without it, and its steps record `usage: None`.
+- **Secrets.** Request headers record provider, model and tool schemas
+  only; API keys and HTTP headers are never logged.
+- **Turn end.** New logs end every turn with `TurnEnded`. A log that ends
+  inside a turn when the session reopens gets
+  `TurnEnded { Error { code: "SERVER_RESTARTED" } }`, replacing the
+  `error` event of 0005. `Done`, `Error` and `Interrupted` stay readable.
 - **Old logs.** `ts` and the step fields use `#[serde(default)]`. A
   0005-era log opens with `ts` and steps missing. The views show those
   figures as not recorded rather than guessing.
