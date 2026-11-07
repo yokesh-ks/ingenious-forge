@@ -33,7 +33,7 @@ describe("AppRail", () => {
     expect(current.map((link) => link.textContent)).toEqual([label]);
   });
 
-  it("marks no section on a path none of them owns", () => {
-    expect(railLinks("/nowhere").some((link) => link.hasAttribute("aria-current"))).toBe(false);
+  it.each(["/nowhere", "/projects"])("marks no section at %s, which has no page", (path) => {
+    expect(railLinks(path).some((link) => link.hasAttribute("aria-current"))).toBe(false);
   });
 });

@@ -43,7 +43,7 @@ export const APP_SECTIONS: AppSection[] = [
 
 /** The section `path` belongs to; `null` for a path no section owns. */
 export function sectionForPath(path: string): AppSection | null {
-  if (path === "/" || path === "/projects" || path.startsWith("/projects/")) {
+  if (path === "/" || path.startsWith("/projects/")) {
     return APP_SECTIONS[0];
   }
   return APP_SECTIONS.find((section) => section.id !== "work" && section.to === path) ?? null;
