@@ -69,7 +69,7 @@ function describeKey(status: ProviderKeyStatus): string {
     case "settings":
       return `Key saved (${status.hint ?? "…"})`;
     case "environment":
-      return `Using a key from the environment (${status.hint ?? "…"})`;
+      return `Using ${status.env_var} from the environment (${status.hint ?? "…"})`;
     default:
       return "No API key yet";
   }

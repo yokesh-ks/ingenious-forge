@@ -13,6 +13,7 @@ const none: ProviderKeyStatus = {
   name: "Anthropic",
   hint: null,
   source: null,
+  env_var: "ANTHROPIC_API_KEY",
 };
 const saved: ProviderKeyStatus = { ...none, hint: "…9876", source: "settings" };
 
@@ -49,8 +50,35 @@ describe("SettingsPage — model providers", () => {
     });
     render(<SettingsPage />);
     expect(await screen.findByRole("group", { name: "Anthropic" })).toHaveTextContent(
-      /from the environment \(…0000\)/i,
+      /ANTHROPIC_API_KEY from the environment \(…0000\)/i,
     );
+  });
+
+  it("lists each provider with its own key state and asks only for a key", async () => {
+    const nvidia: ProviderKeyStatus = {
+      provider: "nvidia",
+      name: "NVIDIA",
+      hint: null,
+      source: null,
+      env_var: "NVIDIA_API_KEY",
+    };
+    const fetch = fakeFetch({
+      "GET /api/settings/providers": [saved, nvidia],
+      "PUT /api/settings/providers/nvidia/key": { ...nvidia, hint: "…1111", source: "settings" },
+    });
+    render(<SettingsPage />);
+    const anthropicRow = await screen.findByRole("group", { name: "Anthropic" });
+    const row = screen.getByRole("group", { name: "NVIDIA" });
+    expect(row.querySelectorAll("input")).toHaveLength(1);
+    expect(screen.queryByLabelText(/base url/i)).not.toBeInTheDocument();
+
+    await userEvent.type(within(row).getByLabelText(/nvidia api key/i), "nv-1111");
+    await userEvent.click(within(row).getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(row).toHaveTextContent("Key saved (…1111)"));
+    expect(anthropicRow).toHaveTextContent("Key saved (…9876)");
+    const writes = fetch.mock.calls.filter(([, init]) => init?.method === "PUT");
+    expect(writes.map(([url]) => String(url))).toEqual(["/api/settings/providers/nvidia/key"]);
   });
 
   it("removes a saved key", async () => {

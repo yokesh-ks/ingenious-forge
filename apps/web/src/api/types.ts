@@ -13,11 +13,15 @@ export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export type SessionModel = { provider: string, model: string, effort: ReasoningEffort, };
 
-export type ModelOption = { id: string, name: string, };
+export type ModelOption = { id: string, name: string, 
+/**
+ * The efforts this model accepts; empty when it has no effort setting.
+ */
+efforts: Array<ReasoningEffort>, };
 
 export type ProviderOption = { id: string, name: string, models: Array<ModelOption>, };
 
-export type ModelCatalog = { providers: Array<ProviderOption>, efforts: Array<ReasoningEffort>, 
+export type ModelCatalog = { providers: Array<ProviderOption>, 
 /**
  * The choice used when a session is created without one; `None` when
  * no provider is configured.
@@ -75,7 +79,11 @@ export type ProviderKeyStatus = { provider: string, name: string,
 /**
  * The key's last four characters, when one is set.
  */
-hint: string | null, source: KeySource | null, };
+hint: string | null, source: KeySource | null, 
+/**
+ * The environment variable that can hold this provider's key.
+ */
+env_var: string, };
 
 export type ProviderKeyTest = { ok: boolean, 
 /**

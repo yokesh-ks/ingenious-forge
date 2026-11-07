@@ -258,7 +258,7 @@ async fn catalog(state: &AppState) -> ModelCatalog {
             .check_usable(&(&model).into())
             .is_ok()
         {
-            catalog.default = Some(model);
+            catalog.default = Some(state.agent.providers().fit_session_model(model));
         }
     }
     catalog
@@ -409,6 +409,7 @@ async fn list_dirs(Query(query): Query<DirQuery>) -> ApiResult<DirListing> {
 
 #[cfg(test)]
 mod tests {
+    use api_types::ReasoningEffort;
     use std::{
         fs,
         sync::atomic::{AtomicUsize, Ordering},
@@ -576,6 +577,11 @@ mod tests {
                 .map(|id| agent::providers::ModelInfo {
                     id: id.into(),
                     name: id.to_uppercase(),
+                    efforts: if id == "fast" {
+                        vec![ReasoningEffort::Low, ReasoningEffort::Medium]
+                    } else {
+                        ReasoningEffort::ALL.to_vec()
+                    },
                 })
                 .collect()
         }
@@ -628,12 +634,29 @@ mod tests {
             catalog,
             json!({
                 "providers": [{ "id": "stub", "name": "Stub", "models": [
-                    { "id": "fast", "name": "FAST" },
-                    { "id": "smart", "name": "SMART" }
+                    { "id": "fast", "name": "FAST", "efforts": ["low", "medium"] },
+                    { "id": "smart", "name": "SMART",
+                      "efforts": ["low", "medium", "high", "xhigh", "max"] }
                 ]}],
-                "efforts": ["low", "medium", "high", "xhigh", "max"],
-                "default": { "provider": "stub", "model": "fast", "effort": "high" }
+                "default": { "provider": "stub", "model": "fast", "effort": "low" }
             })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_saved_default_moves_to_an_effort_its_model_offers() {
+        let (api, _) = start_with_models().await;
+        let defaults = json!({
+            "model": { "provider": "stub", "model": "fast", "effort": "max" },
+            "approval_mode": "ask"
+        });
+        put_json(&format!("{api}/settings/defaults"), defaults).await;
+
+        let (_, catalog) = get_json(&format!("{api}/models")).await;
+
+        assert_eq!(
+            catalog["default"],
+            json!({ "provider": "stub", "model": "fast", "effort": "low" })
         );
     }
 
@@ -762,7 +785,7 @@ mod tests {
 
         assert_eq!(
             session["model"],
-            json!({ "provider": "stub", "model": "fast", "effort": "high" })
+            json!({ "provider": "stub", "model": "fast", "effort": "low" })
         );
     }
 

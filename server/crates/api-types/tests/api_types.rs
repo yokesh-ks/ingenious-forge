@@ -336,14 +336,14 @@ fn session_model_and_catalog_serialize_as_the_frontend_expects() {
             models: vec![ModelOption {
                 id: "claude-opus-5-5".into(),
                 name: "Claude Opus 5.5".into(),
+                efforts: ReasoningEffort::ALL.to_vec(),
             }],
         }],
-        efforts: ReasoningEffort::ALL.to_vec(),
         default: Some(model),
     };
     let value = serde_json::to_value(&catalog).unwrap();
     assert_eq!(
-        value["efforts"],
+        value["providers"][0]["models"][0]["efforts"],
         json!(["low", "medium", "high", "xhigh", "max"])
     );
     assert_eq!(

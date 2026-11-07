@@ -28,6 +28,23 @@ pub fn current_key(handle: &KeyHandle) -> Option<String> {
 pub struct ModelInfo {
     pub id: String,
     pub name: String,
+    /// The efforts this model accepts; empty when it has no effort setting.
+    pub efforts: Vec<ReasoningEffort>,
+}
+
+impl ModelInfo {
+    /// The effort to use for this model when `wanted` may not be one it
+    /// offers: `wanted` if offered, else the usual default, else its first.
+    pub fn fit_effort(&self, wanted: ReasoningEffort) -> ReasoningEffort {
+        let usual = ReasoningEffort::default();
+        if self.efforts.contains(&wanted) || self.efforts.is_empty() {
+            wanted
+        } else if self.efforts.contains(&usual) {
+            usual
+        } else {
+            self.efforts[0]
+        }
+    }
 }
 
 /// Which provider and model a session talks to, and how hard it thinks.
@@ -123,6 +140,31 @@ impl Providers {
         }
     }
 
+    fn model_info(&self, provider: &str, model: &str) -> Option<ModelInfo> {
+        self.get(provider)?
+            .models()
+            .into_iter()
+            .find(|m| m.id == model)
+    }
+
+    /// The effort to send for `choice`: none when its model does not offer
+    /// it, as a session saved before the model's options changed can ask for.
+    pub fn effort_for(&self, choice: &ModelChoice) -> Option<ReasoningEffort> {
+        let effort = choice.effort?;
+        match self.model_info(&choice.provider, &choice.model) {
+            Some(model) if !model.efforts.contains(&effort) => None,
+            _ => Some(effort),
+        }
+    }
+
+    /// `model` with its effort moved to one its model offers.
+    pub fn fit_session_model(&self, model: SessionModel) -> SessionModel {
+        let effort = self
+            .model_info(&model.provider, &model.model)
+            .map_or(model.effort, |info| info.fit_effort(model.effort));
+        SessionModel { effort, ..model }
+    }
+
     /// Checks a provider's key with the smallest real request its first model
     /// accepts, since only a call that needs the key can show it works. Goes
     /// through the adapter, so every provider gets this without extra code.
@@ -163,15 +205,17 @@ impl Providers {
                         .map(|m| ModelOption {
                             id: m.id,
                             name: m.name,
+                            efforts: m.efforts,
                         })
                         .collect(),
                 })
                 .collect(),
-            efforts: ReasoningEffort::ALL.to_vec(),
-            default: self.default_choice().map(|c| SessionModel {
-                provider: c.provider,
-                model: c.model,
-                effort: ReasoningEffort::default(),
+            default: self.default_choice().map(|c| {
+                self.fit_session_model(SessionModel {
+                    provider: c.provider,
+                    model: c.model,
+                    effort: ReasoningEffort::default(),
+                })
             }),
         }
     }
@@ -204,6 +248,7 @@ impl ModelProvider for FixedProvider {
         vec![ModelInfo {
             id: "default".into(),
             name: "Default".into(),
+            efforts: ReasoningEffort::ALL.to_vec(),
         }]
     }
     fn client(&self, _: &str) -> Arc<dyn ModelClient> {

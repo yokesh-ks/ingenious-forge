@@ -101,6 +101,8 @@ impl ModelProvider for AnthropicProvider {
             .map(|(id, name)| ModelInfo {
                 id: (*id).into(),
                 name: (*name).into(),
+                // Every Claude model offered takes all five levels.
+                efforts: api_types::ReasoningEffort::ALL.to_vec(),
             })
             .collect()
     }

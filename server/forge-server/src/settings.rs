@@ -25,6 +25,8 @@ pub struct ProviderKey {
     pub handle: KeyHandle,
     /// The key from the environment, used when none is saved.
     pub env: Option<String>,
+    /// The name of that environment variable, shown in Settings.
+    pub env_var: String,
 }
 
 /// Settings state: where secrets are kept and each provider's key.
@@ -73,6 +75,7 @@ impl Settings {
             name: provider.name.clone(),
             hint: key.as_deref().map(hint),
             source,
+            env_var: provider.env_var.clone(),
         }
     }
 }
@@ -269,6 +272,7 @@ mod tests {
                 name: "Anthropic".into(),
                 handle: handle.clone(),
                 env: env.map(String::from),
+                env_var: "ANTHROPIC_API_KEY".into(),
             },
         );
         let settings = Settings {
@@ -340,6 +344,7 @@ mod tests {
                 name: "Anthropic".into(),
                 handle: anthropic.key_handle(),
                 env: None,
+                env_var: "ANTHROPIC_API_KEY".into(),
             },
         );
         let mut providers = agent::providers::Providers::new();
@@ -441,7 +446,7 @@ mod tests {
         let body: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(
             body,
-            json!({ "provider": "anthropic", "name": "Anthropic", "hint": "…9876", "source": "settings" })
+            json!({ "provider": "anthropic", "name": "Anthropic", "hint": "…9876", "source": "settings", "env_var": "ANTHROPIC_API_KEY" })
         );
         assert_eq!(
             handle.read().unwrap().as_deref(),

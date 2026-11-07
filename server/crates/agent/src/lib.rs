@@ -6,6 +6,7 @@ pub mod changes;
 pub mod commands;
 pub mod instructions;
 pub mod model;
+pub mod openai_compat;
 pub mod providers;
 pub mod sandbox;
 pub mod shell;
@@ -204,7 +205,8 @@ impl Agent {
         choice: &ModelChoice,
     ) -> Result<(), AgentError> {
         let model = self.providers.resolve(choice)?;
-        self.open(session_id, tools, Some(model), choice.effort);
+        let effort = self.providers.effort_for(choice);
+        self.open(session_id, tools, Some(model), effort);
         Ok(())
     }
 

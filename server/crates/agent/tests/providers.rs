@@ -55,6 +55,7 @@ impl ModelProvider for EchoProvider {
             .map(|m| ModelInfo {
                 id: m.to_string(),
                 name: m.to_uppercase(),
+                efforts: api_types::ReasoningEffort::ALL.to_vec(),
             })
             .collect()
     }
@@ -185,6 +186,29 @@ fn the_first_configured_provider_is_the_default_whatever_its_position() {
         .map(|p| p.id)
         .collect();
     assert_eq!(listed, ["a"]);
+}
+
+#[test]
+fn an_effort_the_model_does_not_offer_is_not_sent() {
+    use agent::openai_compat::{OpenAiCompatProvider, PROVIDERS};
+    use api_types::ReasoningEffort::{High, Max, Medium};
+    let mut providers = Providers::new();
+    providers.register(Arc::new(OpenAiCompatProvider::new(&PROVIDERS[0], None)));
+    let ultra = "nvidia/nemotron-3-ultra-550b-a55b";
+    let with = |model: &str, effort| ModelChoice {
+        provider: "nvidia".into(),
+        model: model.into(),
+        effort: Some(effort),
+    };
+
+    assert_eq!(providers.effort_for(&with(ultra, Medium)), Some(Medium));
+    assert_eq!(providers.effort_for(&with(ultra, Max)), None);
+    assert_eq!(
+        providers.effort_for(&with("nvidia/nemotron-3.5-lightning-30b-a3b", High)),
+        None
+    );
+    // A model it cannot look up keeps what the session saved.
+    assert_eq!(providers.effort_for(&with("gone", High)), Some(High));
 }
 
 // ---- in a session ----
