@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 use std::sync::Arc;
 
 use crate::model::{ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest};
-use crate::providers::{ModelInfo, ModelProvider};
+use crate::providers::{current_key, KeyHandle, ModelInfo, ModelProvider};
 use crate::sse::{SseEvent, SseParser};
 
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
@@ -20,16 +20,22 @@ const MAX_TOKENS: u32 = 64_000;
 pub struct AnthropicClient {
     http: reqwest::Client,
     base_url: String,
-    api_key: Option<String>,
+    key: KeyHandle,
     model: String,
 }
 
 impl AnthropicClient {
     pub fn new(api_key: Option<String>) -> Self {
+        Self::with_key_handle(Arc::new(std::sync::RwLock::new(api_key)))
+    }
+
+    /// A client that reads its key from `key` for every request, so an open
+    /// session follows a key changed or removed in Settings.
+    pub fn with_key_handle(key: KeyHandle) -> Self {
         Self {
             http: reqwest::Client::new(),
             base_url: DEFAULT_BASE_URL.into(),
-            api_key: api_key.filter(|k| !k.trim().is_empty()),
+            key,
             model: DEFAULT_MODEL.into(),
         }
     }
@@ -53,10 +59,6 @@ const MODELS: &[(&str, &str)] = &[
     ("claude-haiku-5-5", "Claude Haiku 5.5"),
 ];
 
-/// The API key a provider uses, shared so Settings can change it while
-/// the server runs; each new client reads the current value.
-pub type KeyHandle = Arc<std::sync::RwLock<Option<String>>>;
-
 /// The Anthropic provider adapter: builds an [`AnthropicClient`] per model.
 #[derive(Debug, Clone)]
 pub struct AnthropicProvider {
@@ -77,8 +79,8 @@ impl AnthropicProvider {
         self
     }
 
-    /// The key this provider uses; writing to it changes the key for
-    /// sessions opened afterwards.
+    /// The key this provider uses; writing to it changes the key for every
+    /// session, including open ones.
     pub fn key_handle(&self) -> KeyHandle {
         self.key.clone()
     }
@@ -104,12 +106,15 @@ impl ModelProvider for AnthropicProvider {
     }
 
     fn client(&self, model: &str) -> Arc<dyn ModelClient> {
-        let key = self.key.read().map(|k| k.clone()).unwrap_or_default();
         Arc::new(
-            AnthropicClient::new(key)
+            AnthropicClient::with_key_handle(self.key.clone())
                 .with_base_url(self.base_url.clone())
                 .with_model(model),
         )
+    }
+
+    fn is_configured(&self) -> bool {
+        current_key(&self.key).is_some()
     }
 }
 
@@ -263,7 +268,9 @@ impl AnthropicClient {
         request: ModelRequest,
         tx: &mpsc::Sender<Result<ModelEvent, ModelError>>,
     ) -> Result<(), ModelError> {
-        let api_key = self.api_key.as_deref().ok_or(ModelError::MissingApiKey)?;
+        let api_key = current_key(&self.key).ok_or_else(|| ModelError::MissingApiKey {
+            provider: "Anthropic".into(),
+        })?;
         let mut response = self
             .http
             .post(format!("{}/v1/messages", self.base_url))
@@ -599,6 +606,8 @@ mod tests {
 
     #[test]
     fn blank_api_key_counts_as_missing() {
-        assert!(AnthropicClient::new(Some("  ".into())).api_key.is_none());
+        assert!(current_key(&AnthropicClient::new(Some("  ".into())).key).is_none());
+        assert!(!AnthropicProvider::new(Some("  ".into())).is_configured());
+        assert!(AnthropicProvider::new(Some("k".into())).is_configured());
     }
 }

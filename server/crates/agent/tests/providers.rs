@@ -144,6 +144,49 @@ fn the_anthropic_provider_offers_the_default_claude_model_first() {
     assert!(models.iter().all(|m| m.id.starts_with("claude-")));
 }
 
+#[test]
+fn a_provider_without_a_key_is_neither_listed_nor_the_default() {
+    let keyless = AnthropicProvider::new(None);
+    let key = keyless.key_handle();
+    let mut providers = Providers::new();
+    providers.register(Arc::new(keyless));
+    let pick = choice("anthropic", DEFAULT_MODEL);
+
+    assert_eq!(providers.default_choice(), None);
+    let catalog = providers.catalog();
+    assert!(catalog.providers.is_empty());
+    assert_eq!(catalog.default, None);
+    assert_eq!(
+        providers.check_usable(&pick),
+        Err(ModelError::MissingApiKey {
+            provider: "Anthropic".into()
+        })
+    );
+
+    *key.write().unwrap() = Some("sk-1".into());
+
+    assert_eq!(providers.default_choice(), Some(pick.clone()));
+    assert_eq!(providers.catalog().providers.len(), 1);
+    assert_eq!(providers.check_usable(&pick), Ok(()));
+}
+
+#[test]
+fn the_first_configured_provider_is_the_default_whatever_its_position() {
+    let (a, _) = echo("a", vec!["a1"]);
+    let mut providers = Providers::new();
+    providers.register(Arc::new(AnthropicProvider::new(None)));
+    providers.register(a);
+
+    assert_eq!(providers.default_choice(), Some(choice("a", "a1")));
+    let listed: Vec<_> = providers
+        .catalog()
+        .providers
+        .into_iter()
+        .map(|p| p.id)
+        .collect();
+    assert_eq!(listed, ["a"]);
+}
+
 // ---- in a session ----
 
 async fn reply_text(

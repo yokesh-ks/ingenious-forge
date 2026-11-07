@@ -116,7 +116,12 @@ async fn missing_api_key_fails_without_a_request() {
     let (url, seen) = serve(StatusCode::OK, STREAM).await;
     let client = AnthropicClient::new(None).with_base_url(url);
 
-    assert_eq!(collect(&client).await, vec![Err(ModelError::MissingApiKey)]);
+    assert_eq!(
+        collect(&client).await,
+        vec![Err(ModelError::MissingApiKey {
+            provider: "Anthropic".into()
+        })]
+    );
     assert!(seen.headers.lock().unwrap().is_none());
 }
 
@@ -165,11 +170,37 @@ async fn a_key_changed_through_the_handle_is_used_by_new_clients() {
     let provider = AnthropicProvider::new(None).with_base_url(url);
 
     let mut rx = provider.client("claude-opus-5-5").stream(request());
-    assert_eq!(rx.recv().await, Some(Err(ModelError::MissingApiKey)));
+    assert_eq!(
+        rx.recv().await,
+        Some(Err(ModelError::MissingApiKey {
+            provider: "Anthropic".into()
+        }))
+    );
 
     *provider.key_handle().write().unwrap() = Some("from-settings".into());
     let mut rx = provider.client("claude-opus-5-5").stream(request());
     while rx.recv().await.is_some() {}
     let headers = seen.headers.lock().unwrap().clone().unwrap();
     assert_eq!(headers["x-api-key"], "from-settings");
+}
+
+#[tokio::test]
+async fn an_open_client_follows_a_key_removed_in_settings() {
+    use agent::{anthropic::AnthropicProvider, providers::ModelProvider};
+    let (url, seen) = serve(StatusCode::OK, STREAM).await;
+    let provider = AnthropicProvider::new(Some("old-key".into())).with_base_url(url);
+    let client = provider.client("claude-opus-5-5");
+
+    *provider.key_handle().write().unwrap() = None;
+
+    let mut rx = client.stream(request());
+    let message = rx.recv().await.unwrap().unwrap_err().to_string();
+    assert!(
+        message.contains("Anthropic") && message.contains("Settings"),
+        "{message}"
+    );
+    assert!(
+        seen.headers.lock().unwrap().is_none(),
+        "no request was made"
+    );
 }

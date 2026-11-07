@@ -3,7 +3,7 @@
 
 use std::{collections::BTreeMap, sync::Arc};
 
-use agent::anthropic::KeyHandle;
+use agent::providers::KeyHandle;
 use api_types::{KeySource, ProviderKeyStatus, SessionDefaults, SetProviderKeyRequest};
 use axum::{
     extract::{Path, State},
@@ -113,7 +113,7 @@ async fn set_defaults(
         state
             .agent
             .providers()
-            .resolve(&model.into())
+            .check_usable(&model.into())
             .map_err(|err| ApiFailure::new(StatusCode::BAD_REQUEST, err.to_string()))?;
     }
     let json = serde_json::to_string(&body).map_err(|e| ApiFailure::internal(e.to_string()))?;
@@ -148,7 +148,8 @@ fn store(state: &AppState) -> Result<&SecretStore, ApiFailure> {
         .ok_or_else(|| ApiFailure::internal("secret storage is not available"))
 }
 
-/// Saves a provider's API key, encrypted; sessions opened afterwards use it.
+/// Saves a provider's API key, encrypted; every session uses it from its next
+/// request.
 async fn set_key(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,

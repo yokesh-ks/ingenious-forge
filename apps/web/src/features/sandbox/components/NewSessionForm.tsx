@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import type { ModelCatalog, SessionModel } from "@/api/types";
 import { Button } from "@/components/ui/button";
+import { Link } from "@/lib/router";
 import ModelFields from "./ModelFields";
 
 interface NewSessionFormProps {
@@ -12,6 +13,28 @@ interface NewSessionFormProps {
   onCancel: () => void;
   /** True while the session is being created. */
   starting?: boolean;
+}
+
+/** Shown instead of a session when no provider is configured: the agent cannot
+ * respond until the user adds a key. */
+export function NoProviderPrompt({ onCancel }: { onCancel?: () => void }) {
+  return (
+    <section aria-label="New session" className="flex flex-col gap-3 p-4">
+      <p className="text-sm text-muted-foreground">
+        No model provider is configured. Add an API key in Settings to start a session.
+      </p>
+      <div className="flex gap-2">
+        <Button asChild size="sm">
+          <Link to="/settings">Open Settings</Link>
+        </Button>
+        {onCancel && (
+          <Button variant="outline" size="sm" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
+      </div>
+    </section>
+  );
 }
 
 /** Picks the provider, model and reasoning effort for a new session. */
@@ -39,16 +62,7 @@ export default function NewSessionForm({
     );
   }
   if (!catalog.default || catalog.providers.length === 0) {
-    return (
-      <section aria-label="New session" className="flex flex-col gap-3 p-4">
-        <p className="text-sm text-muted-foreground">
-          No model provider is configured. Add a provider key to start a session.
-        </p>
-        <Button variant="outline" size="sm" className="self-start" onClick={onCancel}>
-          Cancel
-        </Button>
-      </section>
-    );
+    return <NoProviderPrompt onCancel={onCancel} />;
   }
   return (
     <ModelPicker

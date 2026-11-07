@@ -111,6 +111,20 @@ describe("ProjectPage", () => {
     expect(screen.getByPlaceholderText(/ask forge/i)).toHaveFocus();
   });
 
+  it("asks for a provider instead of starting a first session when none is configured", async () => {
+    const fetch = fakeFetch({
+      "GET /api/projects/p1": project,
+      "GET /api/models": { ...catalog, providers: [], default: null },
+      "GET /api/projects/p1/sessions": [],
+    });
+    render(<ProjectPage projectId="p1" sessionId={null} />);
+
+    const link = await screen.findByRole("link", { name: /open settings/i });
+    expect(link).toHaveAttribute("href", "/settings");
+    expect(screen.getByText(/no model provider/i)).toBeInTheDocument();
+    expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+  });
+
   it("shows why a new session could not be created", async () => {
     fakeFetch({
       "GET /api/projects/p1": project,

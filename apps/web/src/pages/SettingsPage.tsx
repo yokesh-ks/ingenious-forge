@@ -3,6 +3,7 @@ import { api } from "@/api/client";
 import type {
   ApprovalMode,
   GitHubConnection,
+  ModelCatalog,
   ProviderKeyStatus,
   SessionDefaults,
   SessionModel,
@@ -15,17 +16,18 @@ import { APPROVAL_MODES } from "@/lib/approval-modes";
 
 /** Settings (PRD §6.2 Settings). */
 export default function SettingsPage() {
+  const models = useModelCatalog();
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6">
       <h2 className="text-xl font-semibold">Settings</h2>
-      <ProviderKeys />
-      <SessionDefaultsForm />
+      <ProviderKeys onChanged={models.reload} />
+      <SessionDefaultsForm catalog={models.catalog} catalogError={models.error} />
       <GitHubSection />
     </main>
   );
 }
 
-function ProviderKeys() {
+function ProviderKeys({ onChanged }: { onChanged: () => void }) {
   const [providers, setProviders] = useState<ProviderKeyStatus[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,7 +57,7 @@ function ProviderKeys() {
       )}
       {!providers && !error && <p className="text-sm text-muted-foreground">Loading…</p>}
       {providers?.map((provider) => (
-        <ProviderKeyRow key={provider.provider} initial={provider} />
+        <ProviderKeyRow key={provider.provider} initial={provider} onChanged={onChanged} />
       ))}
     </section>
   );
@@ -72,7 +74,13 @@ function describeKey(status: ProviderKeyStatus): string {
   }
 }
 
-function ProviderKeyRow({ initial }: { initial: ProviderKeyStatus }) {
+function ProviderKeyRow({
+  initial,
+  onChanged,
+}: {
+  initial: ProviderKeyStatus;
+  onChanged: () => void;
+}) {
   const [status, setStatus] = useState(initial);
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
@@ -84,6 +92,7 @@ function ProviderKeyRow({ initial }: { initial: ProviderKeyStatus }) {
     try {
       setStatus(await action());
       setKey("");
+      onChanged();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -141,8 +150,13 @@ function ProviderKeyRow({ initial }: { initial: ProviderKeyStatus }) {
 }
 
 /** The model, effort and approval mode new sessions start with. */
-function SessionDefaultsForm() {
-  const { catalog, error: catalogError } = useModelCatalog();
+function SessionDefaultsForm({
+  catalog,
+  catalogError,
+}: {
+  catalog: ModelCatalog | null;
+  catalogError: string | null;
+}) {
   const [defaults, setDefaults] = useState<SessionDefaults | null>(null);
   const [model, setModel] = useState<SessionModel | null>(null);
   const [mode, setMode] = useState<ApprovalMode>("ask");
@@ -165,9 +179,13 @@ function SessionDefaultsForm() {
     };
   }, []);
 
-  // The saved model, or the catalog's default when none is saved.
+  // The saved model, or the catalog's default when none is saved or its
+  // provider no longer has a key. Keys can change while this page is open.
   useEffect(() => {
-    if (defaults && catalog && model === null) setModel(defaults.model ?? catalog.default);
+    if (!defaults || !catalog) return;
+    const listed = (m: SessionModel | null) =>
+      m !== null && catalog.providers.some((p) => p.id === m.provider);
+    if (!listed(model)) setModel(listed(defaults.model) ? defaults.model : catalog.default);
   }, [defaults, catalog, model]);
 
   async function save(event: FormEvent) {

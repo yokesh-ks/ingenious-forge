@@ -96,6 +96,33 @@ describe("SettingsPage — model providers", () => {
   });
 });
 
+describe("SettingsPage — keys change what can be picked", () => {
+  it("offers a provider's models as soon as its key is saved", async () => {
+    let configured = false;
+    fakeFetch({
+      "GET /api/settings/providers": [none],
+      "PUT /api/settings/providers/anthropic/key": () => {
+        configured = true;
+        return { body: saved };
+      },
+      "GET /api/models": () => ({
+        body: configured ? catalog : { ...catalog, providers: [], default: null },
+      }),
+      "GET /api/settings/defaults": { model: null, approval_mode: "ask" },
+      "GET /api/settings/github": { connected: false, login: null },
+    });
+    render(<SettingsPage />);
+    const row = await screen.findByRole("group", { name: "Anthropic" });
+    await screen.findByRole("button", { name: /save defaults/i });
+    expect(screen.queryByLabelText(/^model$/i)).not.toBeInTheDocument();
+
+    await userEvent.type(within(row).getByLabelText(/anthropic api key/i), "sk-1");
+    await userEvent.click(within(row).getByRole("button", { name: /^save$/i }));
+
+    expect(await screen.findByLabelText(/^model$/i)).toHaveValue("claude-opus-5-5");
+  });
+});
+
 describe("SettingsPage — new session defaults", () => {
   const routes = (defaults: unknown, extra: Record<string, unknown> = {}) => ({
     "GET /api/settings/providers": [none],
