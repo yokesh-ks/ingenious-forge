@@ -114,7 +114,7 @@ Approval prompts appear inline in the chat and can be answered "once" or "always
 Each repository can hold an `AGENTS.md` file (and nested ones in subfolders) describing conventions, commands and do's and don'ts. The agent loads them automatically. `/init` generates a first version by inspecting the repository.
 
 #### Models and reasoning effort — P0
-Users pick the model provider, the model and the reasoning effort per session. The MVP ships Anthropic and NVIDIA. Providers plug in through adapters, so new providers can be added without changing the agent.
+Users pick the model provider, the model and the reasoning effort per session. The MVP ships Anthropic, DeepSeek, Google, NVIDIA, OpenAI, OpenRouter and Vercel AI Gateway, and the user can add a custom provider by its base URL and API protocol (OpenAI Chat Completions, OpenAI Responses or Anthropic Messages). Providers plug in through adapters, so new providers can be added without changing the agent.
 
 #### Sessions and resume — P0
 Every session is recorded as an append-only log of messages, tool calls and results. Sessions survive server restarts and can be resumed, forked, or replayed for debugging.
@@ -154,7 +154,7 @@ How Forge is delivered and used: a local server that owns the agent and projects
 A single server process runs the agent and exposes it over HTTP and WebSocket to the web UI. It binds to `localhost` by default. Because state lives in the server, closing the browser tab does not stop a running agent; reopening the page reconnects to it, and several tabs can view the same session.
 
 #### App navigation — P0
-A global icon rail on the far left of every page holds the app's sections: Work, Artifacts, Scheduled, Plugins, Sites, Code Review and Settings. A slim top bar above it holds the Forge name and the theme toggle. Work opens the projects area and is the only section with the project sidebar; Settings opens the settings page. Artifacts, Scheduled, Plugins, Sites and Code Review each open a "coming soon" placeholder page for now, and listing them here does not commit to any feature behind them.
+A global icon rail on the far left of every page holds the app's sections: Work, Artifacts, Scheduled, Plugins, Sites, Code Review and Settings. A slim top bar above it holds the Forge name and the theme toggle. Work opens the projects area and is the only section with the project sidebar; Settings has its own sidebar of settings pages. Artifacts, Scheduled, Plugins, Sites and Code Review each open a "coming soon" placeholder page for now, and listing them here does not commit to any feature behind them.
 
 #### Projects and session list — P0
 The Work section's sidebar lists recent projects and lets the user open a folder from disk, with the main area empty until one is chosen. Each project expands in that sidebar to list its sessions (title, status, last activity) so the user can switch between them, resume old ones, or start a new one.
@@ -178,7 +178,7 @@ A panel listing every file changed in the session, with unified or side-by-side 
 From the UI: see the current branch and status, create a branch, commit (with a generated commit message the user can edit), and push.
 
 #### Settings — P0
-Model providers and API keys, default model and effort, default approval mode and sandbox rules, and the GitHub connection. No provider is configured by default: a session cannot start until the user configures at least one, and the agent makes no model call before then. A key set through the provider's environment variable counts as configured.
+Appearance (light, dark or following the system), model providers and API keys, default model and effort, default approval mode and sandbox rules, and the GitHub connection, each on its own page. For each provider the user can change the base URL and choose which models to offer, including from the list the provider reports. No provider is configured by default: a session cannot start until the user configures at least one, and the agent makes no model call before then. A key set through the provider's environment variable counts as configured.
 
 #### Typed API — P0
 All data exchanged between server and browser is defined once in the backend and generated as TypeScript types for the frontend. CI fails if they drift apart.
