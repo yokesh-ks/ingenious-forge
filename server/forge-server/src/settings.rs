@@ -1,14 +1,16 @@
 //! Settings (PRD §6.2 Settings): model provider API keys, stored
 //! encrypted (ADR 0008) and never sent back to the browser.
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
-use agent::providers::KeyHandle;
-use api_types::{KeySource, ProviderKeyStatus, SessionDefaults, SetProviderKeyRequest};
+use agent::providers::{current_key, KeyHandle};
+use api_types::{
+    KeySource, ProviderKeyStatus, ProviderKeyTest, SessionDefaults, SetProviderKeyRequest,
+};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::{get, put},
+    routing::{get, post, put},
     Json, Router,
 };
 use services::secrets::{hint, SecretStore};
@@ -82,6 +84,7 @@ pub fn router() -> Router<Arc<AppState>> {
             "/settings/providers/{id}/key",
             put(set_key).delete(remove_key),
         )
+        .route("/settings/providers/{id}/key/test", post(test_key))
         .route("/settings/defaults", get(get_defaults).put(set_defaults))
 }
 
@@ -170,6 +173,41 @@ async fn set_key(
     Ok(Json(state.settings.status(&id, provider).await))
 }
 
+/// How long a provider gets to answer a key test.
+const KEY_TEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Asks the provider whether it accepts its current key. A rejection is a
+/// normal result here, not an API failure. A provider's error can quote what
+/// it was sent, so the key is removed from the message before it is returned.
+async fn test_key(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ProviderKeyTest>, ApiFailure> {
+    let provider = provider(&state, &id)?;
+    let failed = |message: String| {
+        Json(ProviderKeyTest {
+            ok: false,
+            message: Some(message),
+        })
+    };
+    let Some(key) = current_key(&provider.handle) else {
+        return Ok(failed(format!("{} has no API key to test", provider.name)));
+    };
+    let outcome = tokio::time::timeout(KEY_TEST_TIMEOUT, state.agent.providers().test_key(&id));
+    Ok(match outcome.await {
+        Ok(Ok(())) => Json(ProviderKeyTest {
+            ok: true,
+            message: None,
+        }),
+        Ok(Err(err)) => failed(err.to_string().replace(&key, &hint(&key))),
+        Err(_) => failed(format!(
+            "{} did not answer within {} seconds",
+            provider.name,
+            KEY_TEST_TIMEOUT.as_secs()
+        )),
+    })
+}
+
 /// Forgets a saved key; the provider falls back to its environment key.
 async fn remove_key(
     State(state): State<Arc<AppState>>,
@@ -188,7 +226,7 @@ async fn remove_key(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::RwLock;
+    use std::sync::{Mutex, RwLock};
 
     use agent::Agent;
     use serde_json::{json, Value};
@@ -265,6 +303,124 @@ mod tests {
         }
         let res = req.send().await.unwrap();
         (res.status().as_u16(), res.text().await.unwrap())
+    }
+
+    /// A stand-in for the Messages API that answers every request the same
+    /// way and records the request bodies.
+    async fn fake_api(status: u16, body: &'static str) -> (String, Arc<Mutex<Vec<Value>>>) {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let recorded = seen.clone();
+        let app = Router::new().route(
+            "/v1/messages",
+            post(move |raw: String| {
+                let recorded = recorded.clone();
+                async move {
+                    recorded
+                        .lock()
+                        .unwrap()
+                        .push(serde_json::from_str::<Value>(&raw).unwrap());
+                    (StatusCode::from_u16(status).unwrap(), body)
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (format!("http://{addr}"), seen)
+    }
+
+    /// The settings API with an Anthropic provider pointed at `base_url`.
+    async fn start_with_anthropic(base_url: &str, key: Option<&str>) -> String {
+        let anthropic =
+            agent::anthropic::AnthropicProvider::new(key.map(String::from)).with_base_url(base_url);
+        let mut keys = BTreeMap::new();
+        keys.insert(
+            "anthropic".to_string(),
+            ProviderKey {
+                name: "Anthropic".into(),
+                handle: anthropic.key_handle(),
+                env: None,
+            },
+        );
+        let mut providers = agent::providers::Providers::new();
+        providers.register(Arc::new(anthropic));
+        let events = EventService::new();
+        let state = Arc::new(AppState {
+            db: db::connect(":memory:").await.unwrap(),
+            agent: Agent::with_providers(providers, events.clone()),
+            events,
+            terminals: Default::default(),
+            settings: Settings {
+                providers: keys,
+                ..Default::default()
+            },
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new().nest("/api", router()).with_state(state);
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        format!("http://{addr}/api/settings/providers")
+    }
+
+    #[tokio::test]
+    async fn a_working_key_passes_with_a_one_token_request() {
+        let stream = "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+        let (url, seen) = fake_api(200, stream).await;
+        let api = start_with_anthropic(&url, Some("sk-good")).await;
+
+        let (status, body) = call(
+            reqwest::Method::POST,
+            &format!("{api}/anthropic/key/test"),
+            None,
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        let body: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(body, json!({ "ok": true, "message": null }));
+        assert_eq!(seen.lock().unwrap()[0]["max_tokens"], 1);
+    }
+
+    #[tokio::test]
+    async fn a_rejected_key_reports_the_providers_words_without_the_key() {
+        let rejection = r#"{"error":{"message":"invalid x-api-key: sk-secret-1234"}}"#;
+        let (url, _) = fake_api(401, rejection).await;
+        let api = start_with_anthropic(&url, Some("sk-secret-1234")).await;
+
+        let (status, body) = call(
+            reqwest::Method::POST,
+            &format!("{api}/anthropic/key/test"),
+            None,
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        assert!(!body.contains("sk-secret"), "{body}");
+        let body: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(body["ok"], false);
+        let message = body["message"].as_str().unwrap();
+        assert!(message.contains("401") && message.contains("invalid x-api-key"));
+        assert!(message.contains("…1234"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn testing_without_a_key_makes_no_request() {
+        let (url, seen) = fake_api(200, "").await;
+        let api = start_with_anthropic(&url, None).await;
+
+        let (_, body) = call(
+            reqwest::Method::POST,
+            &format!("{api}/anthropic/key/test"),
+            None,
+        )
+        .await;
+
+        let body: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(body["ok"], false);
+        assert!(body["message"].as_str().unwrap().contains("no API key"));
+        assert!(seen.lock().unwrap().is_empty());
+        let (status, _) = call(reqwest::Method::POST, &format!("{api}/nope/key/test"), None).await;
+        assert_eq!(status, 404);
     }
 
     #[tokio::test]

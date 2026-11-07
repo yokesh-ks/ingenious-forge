@@ -77,6 +77,12 @@ export type ProviderKeyStatus = { provider: string, name: string,
  */
 hint: string | null, source: KeySource | null, };
 
+export type ProviderKeyTest = { ok: boolean, 
+/**
+ * Why the test failed, in the provider's words where it gave a reason.
+ */
+message: string | null, };
+
 export type SetProviderKeyRequest = { key: string, };
 
 export type GitHubConnection = { connected: boolean, 

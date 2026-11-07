@@ -96,6 +96,50 @@ describe("SettingsPage — model providers", () => {
   });
 });
 
+describe("SettingsPage — testing a key", () => {
+  it("offers no test until there is a key", async () => {
+    fakeFetch({ "GET /api/settings/providers": [none] });
+    render(<SettingsPage />);
+    const row = await screen.findByRole("group", { name: "Anthropic" });
+    expect(within(row).queryByRole("button", { name: /test key/i })).not.toBeInTheDocument();
+  });
+
+  it("says when the provider accepts the key", async () => {
+    fakeFetch({
+      "GET /api/settings/providers": [saved],
+      "POST /api/settings/providers/anthropic/key/test": { ok: true, message: null },
+    });
+    render(<SettingsPage />);
+    const row = await screen.findByRole("group", { name: "Anthropic" });
+    await userEvent.click(within(row).getByRole("button", { name: /test key/i }));
+    expect(await within(row).findByRole("status")).toHaveTextContent(/accepted this key/i);
+  });
+
+  it("shows the provider's reason when it rejects the key", async () => {
+    fakeFetch({
+      "GET /api/settings/providers": [saved],
+      "POST /api/settings/providers/anthropic/key/test": {
+        ok: false,
+        message: "model API returned 401: invalid x-api-key",
+      },
+    });
+    render(<SettingsPage />);
+    const row = await screen.findByRole("group", { name: "Anthropic" });
+    await userEvent.click(within(row).getByRole("button", { name: /test key/i }));
+    expect(await within(row).findByRole("alert")).toHaveTextContent("invalid x-api-key");
+  });
+
+  it("can test a key that comes from the environment", async () => {
+    fakeFetch({
+      "GET /api/settings/providers": [{ ...saved, source: "environment" }],
+    });
+    render(<SettingsPage />);
+    const row = await screen.findByRole("group", { name: "Anthropic" });
+    expect(within(row).getByRole("button", { name: /test key/i })).toBeEnabled();
+    expect(within(row).queryByRole("button", { name: /remove key/i })).not.toBeInTheDocument();
+  });
+});
+
 describe("SettingsPage — keys change what can be picked", () => {
   it("offers a provider's models as soon as its key is saved", async () => {
     let configured = false;

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use api_types::{ModelCatalog, ModelOption, ProviderOption, ReasoningEffort, SessionModel};
 use serde::{Deserialize, Serialize};
 
-use crate::model::{ModelClient, ModelError};
+use crate::model::{ChatMessage, ModelClient, ModelError, ModelRequest};
 
 /// The API key a provider uses, shared so Settings can change it while the
 /// server runs; clients read the current value for every request.
@@ -121,6 +121,31 @@ impl Providers {
             }),
             _ => Ok(()),
         }
+    }
+
+    /// Checks a provider's key with the smallest real request its first model
+    /// accepts, since only a call that needs the key can show it works. Goes
+    /// through the adapter, so every provider gets this without extra code.
+    pub async fn test_key(&self, id: &str) -> Result<(), ModelError> {
+        let provider = self
+            .get(id)
+            .ok_or_else(|| ModelError::UnknownProvider(id.to_string()))?;
+        let model = provider
+            .models()
+            .into_iter()
+            .next()
+            .ok_or(ModelError::NoProvider)?;
+        let mut replies = provider.client(&model.id).stream(ModelRequest {
+            messages: vec![ChatMessage::user_text("Hi")],
+            tools: Vec::new(),
+            system: None,
+            effort: None,
+            max_tokens: Some(1),
+        });
+        while let Some(reply) = replies.recv().await {
+            reply?;
+        }
+        Ok(())
     }
 
     /// What a new session can pick from: configured providers only. The

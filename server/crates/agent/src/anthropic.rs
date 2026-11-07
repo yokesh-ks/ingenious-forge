@@ -121,7 +121,7 @@ impl ModelProvider for AnthropicProvider {
 pub(crate) fn request_body(model: &str, request: &ModelRequest) -> Value {
     let mut body = json!({
         "model": model,
-        "max_tokens": MAX_TOKENS,
+        "max_tokens": request.max_tokens.unwrap_or(MAX_TOKENS),
         "stream": true,
         "fallbacks": "default",
         "messages": request.messages,
@@ -535,6 +535,7 @@ mod tests {
             tools: ToolBox::new(".").specs(),
             system: None,
             effort: None,
+            max_tokens: None,
         };
         let body = request_body("claude-opus-5-5", &req);
         assert_eq!(body["model"], "claude-opus-5-5");
@@ -569,6 +570,7 @@ mod tests {
             tools: vec![],
             system: None,
             effort: None,
+            max_tokens: None,
         };
         let body = request_body("m", &req);
         assert!(body.get("tools").is_none());
@@ -583,6 +585,7 @@ mod tests {
             tools: vec![],
             system: Some("Always respond in French.".into()),
             effort: None,
+            max_tokens: None,
         };
         assert_eq!(
             request_body("m", &req)["system"],
@@ -597,6 +600,7 @@ mod tests {
             tools: vec![],
             system: None,
             effort: Some(api_types::ReasoningEffort::Xhigh),
+            max_tokens: None,
         };
         let body = request_body("m", &req);
         assert_eq!(body["output_config"], json!({"effort": "xhigh"}));
