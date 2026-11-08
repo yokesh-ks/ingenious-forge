@@ -283,6 +283,35 @@ describe("the file tree beside a file", () => {
   });
 });
 
+describe("when the agent works on an open file", () => {
+  it("reads it again as its change grows and when the turn ends", async () => {
+    const files: Files = { "a.txt": "first" };
+    const fetch = routes(files);
+    const control = createRef<WorkspacePanelControl>();
+    const view = (diff: string | null, busy: boolean) => (
+      <WorkspacePanel
+        projectId="p1"
+        changedFiles={diff === null ? [] : [{ path: "a.txt", diff, additions: 1, deletions: 0 }]}
+        onRevertAll={() => {}}
+        busy={busy}
+        control={control}
+      />
+    );
+    const { rerender } = render(view(null, true));
+    await open(control, "a.txt");
+    await within(panel()).findByText("first");
+
+    files["a.txt"] = "second";
+    rerender(view("+second", true));
+    await within(panel()).findByText("second");
+
+    files["a.txt"] = "third";
+    rerender(view("+second", false));
+    await within(panel()).findByText("third");
+    expect(reads(fetch, "a.txt")).toBe(3);
+  });
+});
+
 describe("keyboard and reveals", () => {
   it("shows the tree beside an open file on the files shortcut", async () => {
     const { control } = setup();
