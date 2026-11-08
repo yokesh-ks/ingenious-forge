@@ -50,6 +50,7 @@ function setup(
   render(
     <WorkspacePanel
       projectId="p1"
+      sessionId="s1"
       changedFiles={[]}
       onRevertAll={() => {}}
       busy={false}
@@ -78,6 +79,7 @@ async function open(
 }
 
 beforeEach(() => {
+  localStorage.clear();
   Element.prototype.setPointerCapture = vi.fn();
   Element.prototype.hasPointerCapture = vi.fn(() => false);
 });
@@ -291,6 +293,7 @@ describe("when the agent works on an open file", () => {
     const view = (diff: string | null, busy: boolean) => (
       <WorkspacePanel
         projectId="p1"
+        sessionId="s1"
         changedFiles={diff === null ? [] : [{ path: "a.txt", diff, additions: 1, deletions: 0 }]}
         onRevertAll={() => {}}
         busy={busy}

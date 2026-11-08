@@ -31,7 +31,13 @@ const file: FileChange = {
 function setup(files: FileChange[] = []) {
   const onRevertAll = vi.fn();
   render(
-    <WorkspacePanel projectId="p1" changedFiles={files} onRevertAll={onRevertAll} busy={false} />,
+    <WorkspacePanel
+      projectId="p1"
+      sessionId="s1"
+      changedFiles={files}
+      onRevertAll={onRevertAll}
+      busy={false}
+    />,
   );
   return { onRevertAll };
 }
@@ -45,6 +51,7 @@ const tabs = () =>
     .map((t) => t.textContent);
 
 beforeEach(() => {
+  localStorage.clear();
   terminalMounts.mockClear();
   terminalUnmounts.mockClear();
   Element.prototype.setPointerCapture = vi.fn();
@@ -126,7 +133,7 @@ describe("WorkspacePanel", () => {
     await userEvent.click(screen.getByRole("button", { name: "Close Terminal" }));
     expect(panel()).not.toBeVisible();
     const closed = fetch.mock.calls.find(([, init]) => init?.method === "DELETE");
-    expect(String(closed?.[0])).toMatch(/\/api\/projects\/p1\/terminal\?tab=terminal-\d+$/);
+    expect(String(closed?.[0])).toMatch(/\/api\/projects\/p1\/terminal\?tab=s1-terminal-\d+$/);
   });
 
   it("goes fullscreen and back", async () => {
