@@ -183,7 +183,7 @@ A panel next to the chat, opened and closed from the session header. It starts c
 - **Workspace files:** the project's folder and its file tree, listed one folder at a time; choosing a file opens its file tab.
 - **Changes:** the changed files and their diffs (see below).
 - **Terminal:** an interactive terminal in the project folder, choosing among the installed shells and remembering the choice. Its tab is named after the shell and can be renamed by double-clicking it.
-- **Session log:** the session's recorded events, as a raw list or grouped by message.
+- **Session log:** the session's recorded events, as a raw list grouped by turn and step or as the chat's own parts (messages, each turn's process, each step's reasoning and response, and its tool calls in a group). Each record shows its index, type, turn and step, time and data; types can be filtered, groups folded and older records loaded. Selecting a record shows its raw data and marks its place in the chat, and an element picked in the chat selects its record.
 
 #### Changed files and diff review — P0
 A panel listing every file changed in the session, with unified or side-by-side diffs. The user can revert a single file or all changes, or select lines and send a comment about them to the agent.
