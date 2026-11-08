@@ -10,6 +10,7 @@ const emptyState: SessionState = {
   error: null,
   streamingId: null,
   changedFiles: [],
+  turns: [],
 };
 
 function renderWorkspace(overrides: Partial<SessionState> = {}, connected = true) {

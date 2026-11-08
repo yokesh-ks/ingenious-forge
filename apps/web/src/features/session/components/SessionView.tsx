@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ApprovalDecision, QuestionAnswer } from "@/api/types";
 import { Bubble, BubbleContent } from "@/components/ai-elements/bubble";
 import { Message, MessageContent } from "@/components/ai-elements/message";
@@ -12,11 +12,25 @@ import {
 } from "@/components/ai-elements/message-scroller";
 import Markdown from "@/components/markdown/Markdown";
 import { Button } from "@/components/ui/button";
-import type { SessionItem } from "@/features/session/session-reducer";
-import ToolCallCard from "./ToolCallCard";
+import ProcessGroup from "@/features/chat/components/ProcessGroup";
+import TurnControl from "@/features/chat/components/TurnControl";
+import {
+  buildChat,
+  type ChatGroup,
+  type ChatNode,
+  type ChatTurn,
+} from "@/features/chat/model/build-chat";
+import type {
+  SessionItem,
+  SessionMessage,
+  SessionNotice,
+  TurnRecord,
+} from "@/features/session/session-reducer";
 
 interface SessionViewProps {
   messages: SessionItem[];
+  /** The session's turns; without them every item shows outside a turn. */
+  turns?: TurnRecord[];
   running: boolean;
   error: string | null;
   /** Answers a tool call's approval card. */
@@ -64,44 +78,92 @@ function ErrorAlert({ message }: { message: string }) {
   );
 }
 
-/**
- * One entry of the timeline. Memoised: the reducer keeps unchanged items'
- * identity, so while a reply streams only its own entry re-renders, which
- * keeps sessions with thousands of entries responsive.
- */
-const TimelineItem = memo(function TimelineItem({
-  item,
-  onAnswerApproval,
-  onAnswerQuestion,
-}: {
-  item: SessionItem;
+const NO_TURNS: TurnRecord[] = [];
+
+interface Handlers {
   onAnswerApproval?: (callId: string, decision: ApprovalDecision) => void;
   onAnswerQuestion?: (callId: string, answers: QuestionAnswer[]) => void;
-}) {
+}
+
+function UserMessage({ item }: { item: SessionMessage }) {
   return (
-    <MessageScrollerItem messageId={item.id} scrollAnchor={item.role === "user"}>
-      {item.role === "tool" ? (
-        <ToolCallCard tool={item} onAnswer={onAnswerApproval} onAnswerQuestion={onAnswerQuestion} />
-      ) : item.role === "notice" ? (
-        <p className="text-center text-xs text-muted-foreground">{item.text}</p>
-      ) : item.role === "assistant" ? (
-        <div data-testid="message-text">
-          <Markdown text={item.text} />
-        </div>
-      ) : (
-        <Message align="end">
-          <MessageContent>
-            <Bubble align="end" variant="muted">
-              <BubbleContent className="whitespace-pre-wrap" data-testid="message-text">
-                {item.text}
-              </BubbleContent>
-            </Bubble>
-          </MessageContent>
-        </Message>
-      )}
-    </MessageScrollerItem>
+    <Message align="end">
+      <MessageContent>
+        <Bubble align="end" variant="muted">
+          <BubbleContent className="whitespace-pre-wrap" data-testid="message-text">
+            {item.text}
+          </BubbleContent>
+        </Bubble>
+      </MessageContent>
+    </Message>
+  );
+}
+
+/** A reply: the assistant's text as Markdown, outside any bubble. */
+const Reply = memo(function Reply({ item }: { item: SessionMessage }) {
+  return (
+    <div data-testid="message-text">
+      <Markdown text={item.text} />
+    </div>
   );
 });
+
+function Notice({ item }: { item: SessionNotice }) {
+  return <p className="text-center text-xs text-muted-foreground">{item.text}</p>;
+}
+
+/** A group re-renders only when one of its items or its title changed, so
+ * a streaming reply leaves earlier groups alone. */
+const Group = memo(
+  function Group({ group, ...handlers }: { group: ChatGroup } & Handlers) {
+    return <ProcessGroup group={group} {...handlers} />;
+  },
+  (a, b) =>
+    a.onAnswerApproval === b.onAnswerApproval &&
+    a.onAnswerQuestion === b.onAnswerQuestion &&
+    a.group.title === b.group.title &&
+    a.group.running === b.group.running &&
+    a.group.waiting === b.group.waiting &&
+    a.group.activity === b.group.activity &&
+    a.group.items.length === b.group.items.length &&
+    a.group.items.every((item, i) => item === b.group.items[i]),
+);
+
+/** One turn: its control line, then its groups (unless folded), replies,
+ * steering messages and notices. */
+function Turn({
+  turn,
+  folded,
+  onToggle,
+  ...handlers
+}: { turn: ChatTurn; folded: boolean; onToggle: (turn: number) => void } & Handlers) {
+  return (
+    <div className="flex flex-col gap-6">
+      <TurnControl turn={turn} folded={folded} onToggle={() => onToggle(turn.turn)} />
+      {turn.nodes.map((node) => {
+        switch (node.kind) {
+          case "group":
+            return folded ? null : <Group key={node.id} group={node} {...handlers} />;
+          case "reply":
+            return <Reply key={node.item.id} item={node.item} />;
+          case "steer":
+            return <UserMessage key={node.item.id} item={node.item} />;
+          case "notice":
+            return <Notice key={node.item.id} item={node.item} />;
+          default:
+            return null;
+        }
+      })}
+    </div>
+  );
+}
+
+/** The scroller key and anchor of a top-level entry. */
+function nodeKey(node: ChatNode): string {
+  if (node.kind === "turn") return `turn-${node.turn}`;
+  if (node.kind === "group") return node.id;
+  return node.item.id;
+}
 
 export default function SessionView({
   messages,
@@ -112,7 +174,21 @@ export default function SessionView({
   hasOlder = false,
   loadingOlder = false,
   onLoadOlder,
+  turns = NO_TURNS,
 }: SessionViewProps) {
+  const nodes = useMemo(() => buildChat({ messages, turns }), [messages, turns]);
+  // Turns the user folded or unfolded; the rest follow their default.
+  const [folds, setFolds] = useState<Record<number, boolean>>({});
+  const toggleTurn = useCallback(
+    (turn: number) =>
+      setFolds((all) => {
+        const node = nodes.find((n) => n.kind === "turn" && n.turn === turn);
+        const current = all[turn] ?? (node?.kind === "turn" && node.collapsible);
+        return { ...all, [turn]: !current };
+      }),
+    [nodes],
+  );
+
   if (messages.length === 0) {
     return (
       <section
@@ -137,13 +213,34 @@ export default function SessionView({
         <MessageScrollerViewport>
           <MessageScrollerContent className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-6">
             {hasOlder && onLoadOlder && <OlderRow loading={loadingOlder} onLoad={onLoadOlder} />}
-            {messages.map((message) => (
-              <TimelineItem
-                key={message.id}
-                item={message}
-                onAnswerApproval={onAnswerApproval}
-                onAnswerQuestion={onAnswerQuestion}
-              />
+            {nodes.map((node) => (
+              <MessageScrollerItem
+                key={nodeKey(node)}
+                messageId={nodeKey(node)}
+                scrollAnchor={node.kind === "message"}
+              >
+                {node.kind === "turn" ? (
+                  <Turn
+                    turn={node}
+                    folded={folds[node.turn] ?? node.collapsible}
+                    onToggle={toggleTurn}
+                    onAnswerApproval={onAnswerApproval}
+                    onAnswerQuestion={onAnswerQuestion}
+                  />
+                ) : node.kind === "group" ? (
+                  <Group
+                    group={node}
+                    onAnswerApproval={onAnswerApproval}
+                    onAnswerQuestion={onAnswerQuestion}
+                  />
+                ) : node.kind === "reply" ? (
+                  <Reply item={node.item} />
+                ) : node.kind === "notice" ? (
+                  <Notice item={node.item} />
+                ) : (
+                  <UserMessage item={node.item} />
+                )}
+              </MessageScrollerItem>
             ))}
             {waitingForReply && (
               <p role="status" className="text-sm text-muted-foreground">

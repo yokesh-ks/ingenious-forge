@@ -15,6 +15,27 @@ export interface SessionMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
+  /** Set on a user message typed while a turn ran. */
+  steering?: true;
+}
+
+/** A block of the model's reasoning, as it streamed. */
+export interface ReasoningItem {
+  id: string;
+  role: "reasoning";
+  text: string;
+}
+
+/** One turn: where its items start in the timeline, when it ran and how
+ * it ended. */
+export interface TurnRecord {
+  turn: number;
+  /** Index in `messages` of the turn's first item. */
+  start: number;
+  /** Logged times in ms since the epoch; `null` when unknown. */
+  startedAt: number | null;
+  endedAt: number | null;
+  status: "running" | "completed" | "failed" | "stopped";
 }
 
 /** A tool call the agent made, with its result once it arrives. */
@@ -76,7 +97,7 @@ export interface SessionNotice {
 /** A file the agent changed this session and its diff from before. */
 export type FileChange = ApiFileChange;
 
-export type SessionItem = SessionMessage | ToolItem | SessionNotice;
+export type SessionItem = SessionMessage | ReasoningItem | ToolItem | SessionNotice;
 
 export interface SessionState {
   /** The session timeline: messages and tool calls in arrival order. */
@@ -87,6 +108,8 @@ export interface SessionState {
   streamingId: string | null;
   /** Files the agent changed, in the order it first edited them. */
   changedFiles: FileChange[];
+  /** The session's turns in order. */
+  turns: TurnRecord[];
 }
 
 export type SessionAction =
@@ -107,6 +130,7 @@ export const initialSessionState: SessionState = {
   error: null,
   streamingId: null,
   changedFiles: [],
+  turns: [],
 };
 
 export function sessionReducer(state: SessionState, action: SessionAction): SessionState {
@@ -142,6 +166,7 @@ function applyEvents(state: SessionState, events: SessionEvent[]): SessionState 
     ...state,
     messages: state.messages.slice(),
     changedFiles: state.changedFiles,
+    turns: state.turns.slice(),
   };
   let changed = false;
   for (const event of events) changed = applyEvent(draft, event) || changed;
@@ -156,26 +181,28 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
   switch (event.type) {
     case "user_message":
       // During a turn this steers it; the reply continues in a new message.
-      items.push({ id: nextId(draft), role: "user", text: event.text });
+      items.push(
+        event.source === "steering"
+          ? { id: nextId(draft), role: "user", text: event.text, steering: true }
+          : { id: nextId(draft), role: "user", text: event.text },
+      );
       draft.streamingId = null;
       return true;
     case "turn_started":
       draft.running = true;
       draft.streamingId = null;
+      draft.turns.push({
+        turn: event.turn,
+        start: items.length,
+        startedAt: loggedAt(event),
+        endedAt: null,
+        status: "running",
+      });
       return true;
-    case "output": {
-      // The message being streamed is always the newest item: anything
-      // added after it (a tool call, a user message) ends the stream.
-      const last = items[items.length - 1];
-      if (draft.streamingId && last?.id === draft.streamingId && last.role === "assistant") {
-        items[items.length - 1] = { ...last, text: last.text + event.chunk };
-        return true;
-      }
-      const id = nextId(draft);
-      items.push({ id, role: "assistant", text: event.chunk });
-      draft.streamingId = id;
-      return true;
-    }
+    case "output":
+      return stream(draft, "assistant", event.chunk);
+    case "reasoning_delta":
+      return stream(draft, "reasoning", event.chunk);
     case "tool_call":
       // Text after a tool call belongs to a new assistant message.
       draft.streamingId = null;
@@ -293,18 +320,58 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
     case "turn_ended":
       // Logs since ADR 0012 end turns this way; older ones use the three
       // events below.
-      if (event.reason.kind === "completed") return endTurn(draft);
-      if (event.reason.kind === "interrupted") return interruptTurn(draft);
+      if (event.reason.kind === "completed") {
+        closeTurn(draft, "completed", event);
+        return endTurn(draft);
+      }
+      if (event.reason.kind === "interrupted") {
+        closeTurn(draft, "stopped", event);
+        return interruptTurn(draft);
+      }
+      closeTurn(draft, "failed", event);
       return failTurn(draft, event.reason.message);
     case "done":
+      closeTurn(draft, "completed", event);
       return endTurn(draft);
     case "interrupted":
+      closeTurn(draft, "stopped", event);
       return interruptTurn(draft);
     case "error":
+      closeTurn(draft, "failed", event);
       return failTurn(draft, event.message);
     default:
       return false;
   }
+}
+
+/** The time the server logged `event` at, when it is known. */
+function loggedAt(event: SessionEvent): number | null {
+  const ts = (event as { ts?: number }).ts;
+  return typeof ts === "number" && ts > 0 ? ts : null;
+}
+
+/** Appends a streamed chunk to the newest item when it is streaming the
+ * same kind of text, else starts a new item. */
+function stream(draft: SessionState, role: "assistant" | "reasoning", chunk: string): boolean {
+  const items = draft.messages;
+  // The item being streamed is always the newest: anything added after
+  // it (a tool call, a user message) ends the stream.
+  const last = items[items.length - 1];
+  if (draft.streamingId && last?.id === draft.streamingId && last.role === role) {
+    items[items.length - 1] = { ...last, text: last.text + chunk };
+    return true;
+  }
+  const id = nextId(draft);
+  items.push({ id, role, text: chunk });
+  draft.streamingId = id;
+  return true;
+}
+
+/** Records how the running turn ended. */
+function closeTurn(draft: SessionState, status: TurnRecord["status"], event: SessionEvent) {
+  const last = draft.turns[draft.turns.length - 1];
+  if (last?.status !== "running") return;
+  draft.turns[draft.turns.length - 1] = { ...last, status, endedAt: loggedAt(event) };
 }
 
 function endTurn(draft: SessionState): boolean {
@@ -316,7 +383,7 @@ function endTurn(draft: SessionState): boolean {
   const items = draft.messages;
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
-    if (item.role === "user") break;
+    if (item.role === "user" && !item.steering) break;
     if (item.role === "tool" && item.question?.status === "pending") {
       items[i] = { ...item, question: { ...item.question, status: "cancelled" } };
     }
