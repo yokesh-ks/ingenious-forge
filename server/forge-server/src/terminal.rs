@@ -7,30 +7,75 @@ use api_types::{TerminalInput, TerminalNotice};
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Path, State,
+        Path, Query, State,
     },
+    http::StatusCode,
     response::Response,
 };
+use serde::Deserialize;
 use services::{projects, terminal::TermEvent};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::{projects::ApiFailure, state::AppState};
 
-/// Opens (or rejoins) the terminal of project `id`.
+/// Which terminal of a project a request means: a workspace panel tab's
+/// own, or the project's single one when it names no tab.
+#[derive(Deserialize)]
+pub struct TerminalTab {
+    tab: Option<String>,
+}
+
+const TAB_MAX: usize = 64;
+
+/// The registry key for a project's terminal; a tab name is limited to
+/// characters that cannot collide with the `project:tab` separator.
+fn terminal_key(project: &str, tab: Option<&str>) -> Result<String, ApiFailure> {
+    let Some(tab) = tab else {
+        return Ok(project.to_string());
+    };
+    let valid = !tab.is_empty()
+        && tab.len() <= TAB_MAX
+        && tab.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    if !valid {
+        return Err(ApiFailure::new(
+            StatusCode::BAD_REQUEST,
+            "the terminal tab name is not valid",
+        ));
+    }
+    Ok(format!("{project}:{tab}"))
+}
+
+/// Opens (or rejoins) a terminal of project `id`.
 pub async fn terminal_socket(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
+    Query(query): Query<TerminalTab>,
 ) -> Result<Response, ApiFailure> {
     let project = projects::get_project(&state.db, &id).await?;
+    let key = terminal_key(&project.id, query.tab.as_deref())?;
     let terminals = state.terminals.clone();
     let attached = tokio::task::spawn_blocking(move || {
-        terminals.attach(&project.id, std::path::Path::new(&project.path))
+        terminals.attach(&key, std::path::Path::new(&project.path))
     })
     .await
     .map_err(|e| ApiFailure::internal(e.to_string()))?
     .map_err(ApiFailure::internal)?;
     Ok(ws.on_upgrade(move |socket| serve(socket, attached)))
+}
+
+/// Forgets a terminal when its tab closes; its shell ends once no browser
+/// is attached.
+pub async fn close_terminal(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Query(query): Query<TerminalTab>,
+) -> Result<StatusCode, ApiFailure> {
+    let project = projects::get_project(&state.db, &id).await?;
+    state
+        .terminals
+        .close(&terminal_key(&project.id, query.tab.as_deref())?);
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn serve(mut socket: WebSocket, attached: services::terminal::Attached) {
@@ -85,6 +130,24 @@ async fn serve(mut socket: WebSocket, attached: services::terminal::Attached) {
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
+
+    #[test]
+    fn a_tab_gets_its_own_key_and_no_tab_keeps_the_projects() {
+        assert_eq!(super::terminal_key("p1", None).ok().as_deref(), Some("p1"));
+        assert_eq!(
+            super::terminal_key("p1", Some("terminal-2"))
+                .ok()
+                .as_deref(),
+            Some("p1:terminal-2")
+        );
+    }
+
+    #[test]
+    fn a_malformed_tab_name_is_refused() {
+        for tab in ["", "a:b", "../x", "a b", &"x".repeat(65)] {
+            assert!(super::terminal_key("p1", Some(tab)).is_err(), "{tab:?}");
+        }
+    }
 
     use agent::Agent;
     use axum::Router;

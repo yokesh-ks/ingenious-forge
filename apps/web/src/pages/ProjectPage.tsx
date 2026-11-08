@@ -11,7 +11,6 @@ import SandboxBadge from "@/features/sandbox/components/SandboxBadge";
 import { useModelCatalog } from "@/features/sandbox/hooks/use-model-catalog";
 import { useSandbox } from "@/features/sandbox/hooks/use-sandbox";
 import ProjectPicker from "@/features/session/components/ProjectPicker";
-import SessionRightSidebar from "@/features/session/components/SessionRightSidebar";
 import SessionTabs from "@/features/session/components/SessionTabs";
 import SessionWorkspace from "@/features/session/components/SessionWorkspace";
 import { useProjectSessions } from "@/features/session/hooks/use-project-sessions";
@@ -19,6 +18,7 @@ import { useSession } from "@/features/session/hooks/use-session";
 import type { TurnRecord } from "@/features/session/session-reducer";
 import StatisticsView from "@/features/stats/components/StatisticsView";
 import TrajectoryView from "@/features/trajectory/components/TrajectoryView";
+import WorkspacePanel from "@/features/workspace-panel/components/WorkspacePanel";
 import { navigate } from "@/lib/router";
 
 /** Changes whenever a step settles or a turn starts or ends, so the
@@ -135,7 +135,7 @@ function SessionPane({
           }
         />
       </div>
-      <SessionRightSidebar
+      <WorkspacePanel
         projectId={projectId}
         changedFiles={state.changedFiles}
         onRevertAll={revertAll}

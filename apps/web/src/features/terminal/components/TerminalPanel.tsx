@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button";
 import { useTerminal } from "@/features/terminal/hooks/use-terminal";
 
 /** An interactive shell in the project folder (ADR 0007). */
-export default function TerminalPanel({ projectId }: { projectId: string }) {
+export default function TerminalPanel({ projectId, tab }: { projectId: string; tab?: string }) {
   const container = useRef<HTMLDivElement>(null);
   const term = useRef<Terminal | null>(null);
-  const { status, send, resize, restart } = useTerminal(projectId, (bytes) =>
-    term.current?.write(bytes),
+  const { status, send, resize, restart } = useTerminal(
+    projectId,
+    (bytes) => term.current?.write(bytes),
+    { tab },
   );
   const input = useRef(send);
   input.current = send;

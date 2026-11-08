@@ -157,7 +157,7 @@ function RecordRow({
         outside && "opacity-[0.24]",
       )}
     >
-      <td className="relative w-[112px] pr-2 pl-1">
+      <td className="relative w-[112px] pr-2 pl-1 @max-[620px]:w-[50px] @max-[620px]:pr-[3px]">
         {inActiveTurn && (
           <span aria-hidden className="absolute -top-px -bottom-px left-0 w-0.5 bg-blue-500/30" />
         )}
@@ -169,7 +169,8 @@ function RecordRow({
               inActiveTurn && "bg-blue-500/20 text-blue-700 dark:text-blue-300",
             )}
           >
-            Turn {record.turn}
+            <span className="@max-[620px]:hidden">Turn {record.turn}</span>
+            <span className="hidden @max-[620px]:inline">#{record.turn}</span>
           </span>
         )}
         {record.kind === "assistant" && (
@@ -183,7 +184,7 @@ function RecordRow({
               onSelect(requestIdOf(record));
             }}
             onDoubleClick={(e) => e.stopPropagation()}
-            className="group absolute -top-2 left-3 z-[6] size-4"
+            className="group absolute -top-2 left-3 z-[6] size-4 @max-[620px]:left-1.5"
           >
             <span
               className={cn(
@@ -200,7 +201,7 @@ function RecordRow({
       <td className="max-w-0 pr-2">
         <Preview record={record} />
       </td>
-      <td className="w-[112px] pr-3 text-right text-[11px] whitespace-nowrap text-muted-foreground tabular-nums">
+      <td className="w-[112px] pr-3 text-right @max-[620px]:w-[84px] @max-[620px]:pr-2 text-[11px] whitespace-nowrap text-muted-foreground tabular-nums">
         {rowMeta(record)}
       </td>
     </tr>

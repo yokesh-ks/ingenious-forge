@@ -49,7 +49,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/sessions/{id}/commit-message", post(draft_commit_message))
         .route(
             "/projects/{id}/terminal",
-            get(crate::terminal::terminal_socket),
+            get(crate::terminal::terminal_socket).delete(crate::terminal::close_terminal),
         )
         .route(
             "/projects/{id}/sessions",
@@ -155,7 +155,7 @@ async fn delete_project(
             }
         }
     }
-    state.terminals.close(&id);
+    state.terminals.close_project(&id);
     Ok(Json(project))
 }
 

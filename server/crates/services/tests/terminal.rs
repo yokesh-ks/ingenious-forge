@@ -128,3 +128,18 @@ fn a_missing_folder_cannot_be_attached() {
         .attach("p1", std::path::Path::new("/no/such/folder"))
         .is_err());
 }
+
+#[test]
+fn closing_a_project_forgets_its_tabs_and_no_other_project() {
+    let terminals = Terminals::with_shell("/bin/sh");
+    let dir = folder();
+    let tab = terminals.attach("p1:terminal-2", &dir).unwrap();
+    let other = terminals.attach("p10:terminal-2", &dir).unwrap();
+
+    terminals.close_project("p1");
+
+    let fresh = terminals.attach("p1:terminal-2", &dir).unwrap();
+    assert!(!std::sync::Arc::ptr_eq(&tab.terminal, &fresh.terminal));
+    let same = terminals.attach("p10:terminal-2", &dir).unwrap();
+    assert!(std::sync::Arc::ptr_eq(&other.terminal, &same.terminal));
+}
