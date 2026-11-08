@@ -131,24 +131,6 @@ async fn serve(mut socket: WebSocket, attached: services::terminal::Attached) {
 mod tests {
     use std::time::Duration;
 
-    #[test]
-    fn a_tab_gets_its_own_key_and_no_tab_keeps_the_projects() {
-        assert_eq!(super::terminal_key("p1", None).ok().as_deref(), Some("p1"));
-        assert_eq!(
-            super::terminal_key("p1", Some("terminal-2"))
-                .ok()
-                .as_deref(),
-            Some("p1:terminal-2")
-        );
-    }
-
-    #[test]
-    fn a_malformed_tab_name_is_refused() {
-        for tab in ["", "a:b", "../x", "a b", &"x".repeat(65)] {
-            assert!(super::terminal_key("p1", Some(tab)).is_err(), "{tab:?}");
-        }
-    }
-
     use agent::Agent;
     use axum::Router;
     use futures_util::{SinkExt, StreamExt};
@@ -268,5 +250,23 @@ mod tests {
         assert!(connect_async(format!("{base}/nope/terminal"))
             .await
             .is_err());
+    }
+
+    #[test]
+    fn a_tab_gets_its_own_key_and_no_tab_keeps_the_projects() {
+        assert_eq!(super::terminal_key("p1", None).ok().as_deref(), Some("p1"));
+        assert_eq!(
+            super::terminal_key("p1", Some("terminal-2"))
+                .ok()
+                .as_deref(),
+            Some("p1:terminal-2")
+        );
+    }
+
+    #[test]
+    fn a_malformed_tab_name_is_refused() {
+        for tab in ["", "a:b", "../x", "a b", &"x".repeat(65)] {
+            assert!(super::terminal_key("p1", Some(tab)).is_err(), "{tab:?}");
+        }
     }
 }
