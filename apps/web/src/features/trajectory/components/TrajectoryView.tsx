@@ -111,12 +111,15 @@ function RecordRow({
   row,
   selected,
   activeTurn,
+  focus,
   onSelect,
   onFlip,
 }: {
   row: Extract<LedgerRow, { type: "record" }>;
   selected: string | null;
   activeTurn: number | null;
+  /** The records a timeline range covers; `null` without a range. */
+  focus: Set<string> | null;
   onSelect: (id: string) => void;
   onFlip: (key: string) => void;
 }) {
@@ -125,10 +128,12 @@ function RecordRow({
   const requestSelected = record.kind === "assistant" && selected === `request:${record.request}`;
   const inActiveTurn =
     activeTurn !== null && record.turn === activeTurn && record.preview !== "Initial System Prompt";
+  const outside = focus !== null && !focus.has(record.id);
   return (
     <tr
       data-id={record.id}
       data-active-turn={inActiveTurn || undefined}
+      data-timeline-focus={focus === null ? undefined : outside ? "outside" : "inside"}
       aria-label={rowLabel(record)}
       aria-selected={isSelected}
       tabIndex={0}
@@ -148,6 +153,7 @@ function RecordRow({
         "border-b border-border/40 hover:bg-muted/50",
         row.turnStart && "border-t border-t-border",
         isSelected && "bg-muted",
+        outside && "opacity-[0.24]",
       )}
     >
       <td className="relative w-[112px] pr-2 pl-1">
@@ -299,8 +305,8 @@ export default function TrajectoryView({
   );
   const [tab, setTab] = useState("Summary");
   const rows = useMemo(
-    () => ledgerRows(records, { turns, calls, query, flipped, focus }),
-    [records, turns, calls, query, flipped, focus],
+    () => ledgerRows(records, { turns, calls, query, flipped }),
+    [records, turns, calls, query, flipped],
   );
 
   const selection = useMemo((): Selection | null => {
@@ -329,6 +335,40 @@ export default function TrajectoryView({
     if (row && "scrollIntoView" in row) row.scrollIntoView({ block: "nearest" });
   }, [selected]);
 
+  // A range brings its rows into view once, however often new events
+  // rebuild the same set.
+  const nearest = useRef<string | null>(null);
+  const focusKey = useRef("");
+  useEffect(() => {
+    const key = focus ? [...focus].join("\n") : "";
+    if (key === focusKey.current) return;
+    focusKey.current = key;
+    const pane = scroller.current;
+    if (!focus || !pane) return;
+    const inside = [...pane.querySelectorAll<HTMLElement>('tr[data-timeline-focus="inside"]')];
+    if (inside.length === 0) return;
+    const clicked = nearest.current
+      ? pane.querySelector<HTMLElement>(`[data-id="${CSS.escape(nearest.current)}"]`)
+      : null;
+    nearest.current = null;
+    const height =
+      inside[inside.length - 1].getBoundingClientRect().bottom -
+      inside[0].getBoundingClientRect().top;
+    const tall = !clicked && height > pane.clientHeight;
+    const target = clicked ?? (tall ? inside[0] : inside[Math.floor((inside.length - 1) / 2)]);
+    if ("scrollIntoView" in target) {
+      following.current = false;
+      target.scrollIntoView({ behavior: "smooth", block: tall ? "start" : "center" });
+    }
+  }, [focus]);
+
+  // Selecting a row the range dims means the range is done with.
+  const select = (id: string) => {
+    const target = rowId(id);
+    if (focus && target && !focus.has(target)) setRange(null);
+    setSelected(id);
+  };
+
   const flip = (key: string) =>
     setFlipped((all) => {
       const next = new Set(all);
@@ -343,7 +383,14 @@ export default function TrajectoryView({
   const target = rowId(selected);
   const selectedIndex = rows.findIndex((r) => r.type === "record" && r.record.id === target);
   const tail = Math.max(0, rows.length - limit);
-  const from = selectedIndex === -1 ? tail : Math.min(tail, selectedIndex);
+  const firstFocused = focus
+    ? rows.findIndex((r) => r.type === "record" && focus.has(r.record.id))
+    : -1;
+  const from = Math.min(
+    tail,
+    selectedIndex === -1 ? tail : selectedIndex,
+    firstFocused === -1 ? tail : firstFocused,
+  );
   const shown = rows.slice(from);
 
   return (
@@ -412,6 +459,9 @@ export default function TrajectoryView({
         onLoadOlder={onLoadOlder}
         onRangeChange={setRange}
         onSelect={setSelected}
+        onFocusRecord={(id) => {
+          nearest.current = id;
+        }}
       />
       <div className="flex min-h-0 flex-1">
         <div
@@ -450,7 +500,8 @@ export default function TrajectoryView({
                       row={row}
                       selected={selected}
                       activeTurn={activeTurn}
-                      onSelect={setSelected}
+                      focus={focus}
+                      onSelect={select}
                       onFlip={flip}
                     />
                   ) : (
@@ -469,7 +520,7 @@ export default function TrajectoryView({
             onTab={setTab}
             width={width}
             onWidth={setWidth}
-            onSelect={setSelected}
+            onSelect={select}
             onClose={() => setSelected(null)}
           />
         )}

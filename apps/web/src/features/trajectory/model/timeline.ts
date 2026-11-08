@@ -129,6 +129,13 @@ export function focusIds(model: TimelineModel, range: TimeRange): Set<string> {
   );
 }
 
+/** The span at a time, or the closest one to it. */
+export function nearestSpan(model: TimelineModel, time: number): TimelineSpan {
+  const distance = (span: TimelineSpan) =>
+    time < span.start ? span.start - time : time > span.end ? time - span.end : 0;
+  return model.spans.reduce((best, span) => (distance(span) < distance(best) ? span : best));
+}
+
 const fullDuration = (model: TimelineModel) => Math.max(1, model.end - model.start);
 
 /** The visible part of the timeline: all of it, or the zoomed viewport. */

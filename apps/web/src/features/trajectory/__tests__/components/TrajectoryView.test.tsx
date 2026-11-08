@@ -229,19 +229,35 @@ describe("TrajectoryView", () => {
       window.localStorage.removeItem("forge.trajectory.duration");
     });
 
-    it("draws lanes, narrows the ledger on drag and clears with Escape", () => {
+    const focusOf = (name: RegExp) => row(name).getAttribute("data-timeline-focus");
+
+    it("draws lanes, dims rows outside a dragged range and clears with Escape", () => {
       view();
       expect(screen.getByRole("region", { name: "Trajectory timeline" })).toHaveTextContent(
         /Input\s*Model\s*Tools/,
       );
+      expect(focusOf(/^TOOL, bash/)).toBeNull();
       sized();
       // Nine equal slots of 100px; the two tool calls fill 400-600.
       drag(450, 550);
-      expect(
-        screen.getAllByRole("row").map((r) => r.getAttribute("aria-label")?.slice(0, 10)),
-      ).toEqual(["TOOL, bash", "TOOL, read"]);
+      expect(focusOf(/^TOOL, bash/)).toBe("inside");
+      expect(focusOf(/^TOOL, read/)).toBe("inside");
+      expect(focusOf(/^USER, Thanks/)).toBe("outside");
+      expect(row(/^USER, Thanks/)).toHaveClass("opacity-[0.24]");
+      expect(screen.getAllByRole("row")).toHaveLength(9);
       fireEvent.keyDown(track(), { key: "Escape" });
-      expect(row(/^USER, Thanks/)).toBeInTheDocument();
+      expect(focusOf(/^USER, Thanks/)).toBeNull();
+    });
+
+    it("scrolls to the focused rows when a range is selected", () => {
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+      view();
+      sized();
+      drag(450, 550);
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "center" });
+      // @ts-expect-error jsdom has no scrollIntoView to put back
+      delete Element.prototype.scrollIntoView;
     });
 
     it("clears the range on double-click and on a right-click without moving", () => {
@@ -249,11 +265,21 @@ describe("TrajectoryView", () => {
       sized();
       drag(450, 550);
       fireEvent.doubleClick(track());
-      expect(row(/^USER, Thanks/)).toBeInTheDocument();
+      expect(focusOf(/^USER, Thanks/)).toBeNull();
       drag(450, 550);
       fireEvent.pointerDown(track(), { button: 2, clientX: 300, pointerId: 2 });
       fireEvent.pointerUp(track(), { clientX: 300, pointerId: 2 });
-      expect(row(/^USER, Thanks/)).toBeInTheDocument();
+      expect(focusOf(/^USER, Thanks/)).toBeNull();
+    });
+
+    it("keeps the range when a row inside it is selected, and clears it otherwise", async () => {
+      view();
+      sized();
+      drag(450, 550);
+      await userEvent.click(row(/^TOOL, read/));
+      expect(focusOf(/^USER, Thanks/)).toBe("outside");
+      await userEvent.click(row(/^USER, Thanks/));
+      expect(focusOf(/^USER, Thanks/)).toBeNull();
     });
 
     it("selects a clicked block and outlines the selected record", () => {
