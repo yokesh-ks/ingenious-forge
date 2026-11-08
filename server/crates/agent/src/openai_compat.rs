@@ -231,6 +231,7 @@ impl OpenAiCompatProvider {
                         id: m.id.into(),
                         name: m.name.into(),
                         efforts: m.efforts.to_vec(),
+                        context_window: None,
                     };
                     (info, Some(m.max_tokens))
                 })
@@ -262,6 +263,7 @@ impl OpenAiCompatProvider {
                         id: m.id.clone(),
                         name: m.name.clone(),
                         efforts: Vec::new(),
+                        context_window: m.context_window,
                     };
                     (info, None)
                 })
@@ -1135,6 +1137,7 @@ mod tests {
             &[ProviderModel {
                 id: "a".into(),
                 name: "a".into(),
+                context_window: None,
             }],
         );
         assert_eq!(provider.id(), "custom-gw");

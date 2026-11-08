@@ -214,6 +214,7 @@ impl Settings {
                 .map(|m| ProviderModel {
                     id: m.id,
                     name: m.name,
+                    context_window: m.context_window,
                 })
                 .collect(),
         }
@@ -471,7 +472,11 @@ fn clean_models(models: Option<Vec<ProviderModel>>) -> Option<Vec<ProviderModel>
             } else {
                 name.to_string()
             };
-            Some(ProviderModel { id, name })
+            Some(ProviderModel {
+                id,
+                name,
+                context_window: model.context_window,
+            })
         })
         .collect();
     (!models.is_empty()).then_some(models)

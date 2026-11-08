@@ -329,6 +329,10 @@ pub struct ProviderKeyStatus {
 pub struct ProviderModel {
     pub id: String,
     pub name: String,
+    /// How many tokens the model's context holds, when its provider says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional, type = "number")]
+    pub context_window: Option<u64>,
 }
 
 /// Body of `PUT /api/settings/providers/{id}/customization`: what the user
@@ -473,6 +477,41 @@ pub struct FileChange {
     pub diff: String,
     pub additions: u32,
     pub deletions: u32,
+}
+
+/// A session's totals for the metrics under the composer and the
+/// Statistics view (`GET /api/sessions/{id}/stats`, ADR 0012), folded from
+/// its whole log.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SessionStats {
+    pub turns: u32,
+    /// Model requests that settled.
+    pub steps: u32,
+    /// Summed token usage over every step.
+    pub usage: Usage,
+    /// Summed time from each step's start to its settled reply.
+    #[ts(type = "number")]
+    pub model_ms: u64,
+    /// Summed time tool calls ran.
+    #[ts(type = "number")]
+    pub tool_ms: u64,
+    /// Summed time to the first token, over `ttft_steps` steps.
+    #[ts(type = "number")]
+    pub ttft_ms: u64,
+    pub ttft_steps: u32,
+    /// Summed generation time and output tokens over steps that report
+    /// both, for the output speed.
+    #[ts(type = "number")]
+    pub decode_ms: u64,
+    #[ts(type = "number")]
+    pub decode_tokens: u64,
+    /// The prompt size of the latest request: its input, cache reads and
+    /// cache writes.
+    #[ts(type = "number")]
+    pub last_context_tokens: u64,
+    /// The latest request's model context window, when known.
+    #[ts(type = "number | null")]
+    pub context_window: Option<u64>,
 }
 
 /// One question the agent asks with `ask_user_question`.
@@ -1008,6 +1047,7 @@ pub fn typescript_bindings() -> String {
         ModelRef::decl(&cfg),
         TitleSource::decl(&cfg),
         FileChange::decl(&cfg),
+        SessionStats::decl(&cfg),
         Question::decl(&cfg),
         QuestionOption::decl(&cfg),
         QuestionAnswer::decl(&cfg),

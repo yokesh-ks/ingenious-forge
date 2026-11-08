@@ -147,7 +147,11 @@ export type ProviderKeyTest = { ok: boolean,
  */
 message: string | null, };
 
-export type ProviderModel = { id: string, name: string, };
+export type ProviderModel = { id: string, name: string, 
+/**
+ * How many tokens the model's context holds, when its provider says.
+ */
+context_window?: number, };
 
 export type ProviderCustomization = { base_url: string | null, models: Array<ProviderModel> | null, };
 
@@ -251,6 +255,42 @@ export type ModelRef = { provider: string, model: string, };
 export type TitleSource = "first_message" | "user";
 
 export type FileChange = { path: string, diff: string, additions: number, deletions: number, };
+
+export type SessionStats = { turns: number, 
+/**
+ * Model requests that settled.
+ */
+steps: number, 
+/**
+ * Summed token usage over every step.
+ */
+usage: Usage, 
+/**
+ * Summed time from each step's start to its settled reply.
+ */
+model_ms: number, 
+/**
+ * Summed time tool calls ran.
+ */
+tool_ms: number, 
+/**
+ * Summed time to the first token, over `ttft_steps` steps.
+ */
+ttft_ms: number, ttft_steps: number, 
+/**
+ * Summed generation time and output tokens over steps that report
+ * both, for the output speed.
+ */
+decode_ms: number, decode_tokens: number, 
+/**
+ * The prompt size of the latest request: its input, cache reads and
+ * cache writes.
+ */
+last_context_tokens: number, 
+/**
+ * The latest request's model context window, when known.
+ */
+context_window: number | null, };
 
 export type Question = { 
 /**
