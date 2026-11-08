@@ -22,4 +22,4 @@ new ADR that supersedes the old one. See
 | [0012](0012-record-timing-steps-and-usage-in-the-session-log.md) | Record timing, model steps and token usage in the session log | Accepted | 2026-11-07 |
 | [0013](0013-render-markdown-with-react-markdown-and-shiki.md) | Render Markdown with react-markdown, remark-gfm and Shiki | Proposed | 2026-11-07 |
 | [0014](0014-search-files-with-ignore-globset-and-regex.md) | Search files with ignore, globset and regex; strip HTML in-house | Proposed | 2026-11-07 |
-| [0015](0015-preview-documents-with-pdfjs-fortunesheet-and-a-libreoffice-kit.md) | Preview documents with PDF.js, FortuneSheet and a LibreOffice kit | Proposed | 2026-11-08 |
+| [0015](0015-preview-documents-with-pdfjs-fortunesheet-and-a-libreoffice-kit.md) | Preview documents with PDF.js, FortuneSheet and a LibreOffice kit | Accepted | 2026-11-08 |
