@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReasoningItem, ToolItem } from "@/features/session/session-reducer";
 import ChatRow from "../../components/ChatRow";
 import ProcessGroup from "../../components/ProcessGroup";
-import TurnControl from "../../components/TurnControl";
+import TurnControl, { RunningStatus } from "../../components/TurnControl";
 import type { ChatGroup, ChatTurn } from "../../model/build-chat";
 
 function tool(overrides: Partial<ToolItem>): ToolItem {
@@ -66,19 +66,22 @@ describe("TurnControl", () => {
     );
   });
 
-  it("counts up while the turn runs", () => {
+  it("shows nothing above a running turn; its status sits below it", () => {
     vi.useFakeTimers();
     vi.setSystemTime(6_000);
-    render(
-      <TurnControl
-        turn={turn({ status: "running", durationMs: null, collapsible: false })}
-        folded={false}
-        onToggle={() => {}}
-      />,
-    );
-    expect(screen.getByRole("status")).toHaveTextContent("Working 0:05");
-    act(() => vi.advanceTimersByTime(2_000));
-    expect(screen.getByRole("status")).toHaveTextContent("Working 0:07");
+    const running = turn({ status: "running", durationMs: null, collapsible: false });
+    const { container } = render(<TurnControl turn={running} folded={false} onToggle={() => {}} />);
+    expect(container).toBeEmptyDOMElement();
+    render(<RunningStatus startedAt={1_000} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Deep diving for 5s");
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(screen.getByRole("status")).toHaveTextContent("Deep diving for 1m 5s");
+  });
+
+  it("says Deep diving without a time when the start is unknown", () => {
+    render(<RunningStatus startedAt={null} />);
+    expect(screen.getByRole("status")).toHaveTextContent(/^Deep diving/);
+    expect(screen.getByRole("status")).not.toHaveTextContent("for");
   });
 
   it("shows failed and stopped turns without a fold button", () => {
@@ -126,6 +129,12 @@ describe("ProcessGroup", () => {
     expect(header).toHaveAttribute("aria-expanded", "true");
     const body = document.getElementById(header.getAttribute("aria-controls") ?? "");
     expect(body).toHaveTextContent("README.md");
+  });
+
+  it("shows its rows with no header in a running turn", () => {
+    render(<ProcessGroup group={group({ running: true, title: "Reading files" })} live />);
+    expect(screen.queryByRole("button", { name: "Reading files" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Read/ })).toBeInTheDocument();
   });
 
   it("is open while running or waiting for the user", () => {

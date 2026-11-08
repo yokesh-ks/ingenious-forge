@@ -278,12 +278,6 @@ export function formatDuration(ms: number): string {
   return `${Math.floor(total / 60)}m ${total % 60}s`;
 }
 
-/** A running turn's time so far, as m:ss. */
-export function formatElapsed(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
-}
-
 /** A tool's display name in its row. */
 export function toolDisplayName(name: string): string {
   return DISPLAY_NAMES[name] ?? name;

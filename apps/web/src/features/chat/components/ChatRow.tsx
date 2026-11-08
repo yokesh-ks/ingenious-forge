@@ -86,7 +86,7 @@ export default function ChatRow({
             )}
           />
         </span>
-        <span className="shrink-0 font-medium text-foreground">{name}</span>
+        <span className="shrink-0 font-medium">{name}</span>
         {detail.text && (
           <span className="min-w-0 truncate">
             {"· "}

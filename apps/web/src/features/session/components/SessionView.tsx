@@ -13,7 +13,7 @@ import {
 import Markdown from "@/components/markdown/Markdown";
 import { Button } from "@/components/ui/button";
 import ProcessGroup from "@/features/chat/components/ProcessGroup";
-import TurnControl from "@/features/chat/components/TurnControl";
+import TurnControl, { RunningStatus } from "@/features/chat/components/TurnControl";
 import {
   buildChat,
   type ChatGroup,
@@ -115,10 +115,11 @@ function Notice({ item }: { item: SessionNotice }) {
 /** A group re-renders only when one of its items or its title changed, so
  * a streaming reply leaves earlier groups alone. */
 const Group = memo(
-  function Group({ group, ...handlers }: { group: ChatGroup } & Handlers) {
-    return <ProcessGroup group={group} {...handlers} />;
+  function Group({ group, live, ...handlers }: { group: ChatGroup; live?: boolean } & Handlers) {
+    return <ProcessGroup group={group} live={live} {...handlers} />;
   },
   (a, b) =>
+    a.live === b.live &&
     a.onAnswerApproval === b.onAnswerApproval &&
     a.onAnswerQuestion === b.onAnswerQuestion &&
     a.group.title === b.group.title &&
@@ -129,21 +130,30 @@ const Group = memo(
     a.group.items.every((item, i) => item === b.group.items[i]),
 );
 
-/** One turn: its control line, then its groups (unless folded), replies,
- * steering messages and notices. */
+/**
+ * One turn: once finished, its control line first; then its groups
+ * (unless folded), replies, steering messages and notices; while it runs,
+ * its status last. Rows sit 4px apart, replies 12px from process rows and
+ * the control line 16px from its neighbours.
+ */
 function Turn({
   turn,
   folded,
   onToggle,
   ...handlers
 }: { turn: ChatTurn; folded: boolean; onToggle: (turn: number) => void } & Handlers) {
+  const live = turn.status === "running";
   return (
-    <div className="flex flex-col gap-6">
-      <TurnControl turn={turn} folded={folded} onToggle={() => onToggle(turn.turn)} />
+    <div className="flex flex-col gap-3">
+      {!live && (
+        <div className="mb-1">
+          <TurnControl turn={turn} folded={folded} onToggle={() => onToggle(turn.turn)} />
+        </div>
+      )}
       {turn.nodes.map((node) => {
         switch (node.kind) {
           case "group":
-            return folded ? null : <Group key={node.id} group={node} {...handlers} />;
+            return folded ? null : <Group key={node.id} group={node} live={live} {...handlers} />;
           case "reply":
             return <Reply key={node.item.id} item={node.item} />;
           case "steer":
@@ -154,6 +164,7 @@ function Turn({
             return null;
         }
       })}
+      {live && <RunningStatus startedAt={turn.startedAt} />}
     </div>
   );
 }
@@ -204,8 +215,13 @@ export default function SessionView({
   }
 
   const last = messages[messages.length - 1];
+  // A running turn shows its own status; this covers the moment between
+  // sending and the turn starting, and sessions logged without turns.
+  const runningTurn = turns[turns.length - 1]?.status === "running";
   const waitingForReply =
-    running && (last?.role === "user" || (last?.role === "tool" && last.status !== "running"));
+    running &&
+    !runningTurn &&
+    (last?.role === "user" || (last?.role === "tool" && last.status !== "running"));
 
   return (
     <MessageScrollerProvider autoScroll>
