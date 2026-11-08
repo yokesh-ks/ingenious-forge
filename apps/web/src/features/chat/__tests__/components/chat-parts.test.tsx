@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReasoningItem, ToolItem } from "@/features/session/session-reducer";
 import ChatRow from "../../components/ChatRow";
+import FailureRow from "../../components/FailureRow";
 import ProcessGroup from "../../components/ProcessGroup";
 import TurnControl, { RunningStatus } from "../../components/TurnControl";
 import type { ChatGroup, ChatTurn } from "../../model/build-chat";
@@ -42,6 +43,7 @@ function turn(overrides: Partial<ChatTurn>): ChatTurn {
     durationMs: 17_000,
     collapsible: true,
     nodes: [],
+    failure: null,
     ...overrides,
   };
 }
@@ -222,5 +224,32 @@ describe("ChatRow", () => {
       "true",
     );
     expect(screen.getByRole("region", { name: /approval needed/i })).toBeInTheDocument();
+  });
+});
+
+describe("FailureRow", () => {
+  it("says the turn failed, why, and its code", () => {
+    render(<FailureRow failure={{ code: "PROVIDER_ERROR", message: "rate limited" }} />);
+    const row = screen.getByRole("alert");
+    expect(row).toHaveTextContent("This turn failed rate limited");
+    expect(row).toHaveTextContent("PROVIDER_ERROR");
+  });
+});
+
+describe("context rows", () => {
+  it("shows what was injected and opens to its text", async () => {
+    render(
+      <ChatRow
+        item={{
+          id: "c1",
+          role: "context",
+          kind: "system-prompt",
+          summary: "AGENTS.md",
+          text: "Be brief.",
+        }}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Context injection · AGENTS.md" }));
+    expect(screen.getByText("Be brief.")).toBeInTheDocument();
   });
 });

@@ -26,6 +26,18 @@ export interface ReasoningItem {
   text: string;
 }
 
+/** Context the model was given apart from the conversation, such as the
+ * project instructions in its system prompt. */
+export interface ContextItem {
+  id: string;
+  role: "context";
+  /** What kind of context, such as `system-prompt`. */
+  kind: string;
+  /** A short description, such as the instruction files it holds. */
+  summary: string;
+  text: string;
+}
+
 /** One turn: where its items start in the timeline, when it ran and how
  * it ended. */
 export interface TurnRecord {
@@ -36,6 +48,8 @@ export interface TurnRecord {
   startedAt: number | null;
   endedAt: number | null;
   status: "running" | "completed" | "failed" | "stopped";
+  /** Why a failed turn failed; `code` is `null` in older logs. */
+  failure: { code: string | null; message: string } | null;
 }
 
 /** A tool call the agent made, with its result once it arrives. */
@@ -97,7 +111,7 @@ export interface SessionNotice {
 /** A file the agent changed this session and its diff from before. */
 export type FileChange = ApiFileChange;
 
-export type SessionItem = SessionMessage | ReasoningItem | ToolItem | SessionNotice;
+export type SessionItem = SessionMessage | ReasoningItem | ContextItem | ToolItem | SessionNotice;
 
 export interface SessionState {
   /** The session timeline: messages and tool calls in arrival order. */
@@ -197,7 +211,18 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
         startedAt: loggedAt(event),
         endedAt: null,
         status: "running",
+        failure: null,
       });
+      return true;
+    case "system_prompt":
+      items.push({
+        id: nextId(draft),
+        role: "context",
+        kind: "system-prompt",
+        summary: instructionFiles(event.text),
+        text: event.text,
+      });
+      draft.streamingId = null;
       return true;
     case "output":
       return stream(draft, "assistant", event.chunk);
@@ -328,7 +353,10 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
         closeTurn(draft, "stopped", event);
         return interruptTurn(draft);
       }
-      closeTurn(draft, "failed", event);
+      closeTurn(draft, "failed", event, {
+        code: event.reason.code,
+        message: event.reason.message,
+      });
       return failTurn(draft, event.reason.message);
     case "done":
       closeTurn(draft, "completed", event);
@@ -337,7 +365,7 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
       closeTurn(draft, "stopped", event);
       return interruptTurn(draft);
     case "error":
-      closeTurn(draft, "failed", event);
+      closeTurn(draft, "failed", event, { code: null, message: event.message });
       return failTurn(draft, event.message);
     default:
       return false;
@@ -368,10 +396,21 @@ function stream(draft: SessionState, role: "assistant" | "reasoning", chunk: str
 }
 
 /** Records how the running turn ended. */
-function closeTurn(draft: SessionState, status: TurnRecord["status"], event: SessionEvent) {
+function closeTurn(
+  draft: SessionState,
+  status: TurnRecord["status"],
+  event: SessionEvent,
+  failure: TurnRecord["failure"] = null,
+) {
   const last = draft.turns[draft.turns.length - 1];
   if (last?.status !== "running") return;
-  draft.turns[draft.turns.length - 1] = { ...last, status, endedAt: loggedAt(event) };
+  draft.turns[draft.turns.length - 1] = { ...last, status, endedAt: loggedAt(event), failure };
+}
+
+/** The instruction files a system prompt holds, by their tags. */
+function instructionFiles(text: string): string {
+  const files = [...text.matchAll(/<project_instructions path="([^"]+)">/g)].map((m) => m[1]);
+  return files.length > 0 ? files.join(", ") : "system prompt";
 }
 
 function endTurn(draft: SessionState): boolean {

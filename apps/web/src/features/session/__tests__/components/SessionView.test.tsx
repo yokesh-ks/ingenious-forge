@@ -76,7 +76,7 @@ describe("SessionView", () => {
     // The call sits in a closed group, as a row under its title.
     await userEvent.click(screen.getByRole("button", { name: "Read files" }));
     await userEvent.click(screen.getByRole("button", { name: "Read · README.md" }));
-    expect(screen.getByTestId("tool-output")).toHaveTextContent("# Forge");
+    expect(screen.getByRole("figure", { name: "README.md" })).toHaveTextContent("# Forge");
   });
 
   it("shows the thinking indicator after a tool finishes mid-turn", () => {
@@ -201,7 +201,9 @@ describe("SessionView", () => {
             todos: null,
           },
         ]}
-        turns={[{ turn: 1, start: 1, startedAt: null, endedAt: null, status: "running" }]}
+        turns={[
+          { turn: 1, start: 1, startedAt: null, endedAt: null, status: "running", failure: null },
+        ]}
         running
         error={null}
       />,
@@ -211,6 +213,31 @@ describe("SessionView", () => {
     // One status line: the turn's, not the generic one.
     expect(screen.getByRole("status")).toHaveTextContent(/^Deep diving/);
     expect(screen.queryByText(/thinking/i)).not.toBeInTheDocument();
+  });
+
+  it("ends a failed turn with its reason once, not again as an alert", () => {
+    render(
+      <SessionView
+        messages={[conversation[0]]}
+        turns={[
+          {
+            turn: 1,
+            start: 1,
+            startedAt: null,
+            endedAt: null,
+            status: "failed",
+            failure: { code: "PROVIDER_ERROR", message: "rate limited" },
+          },
+        ]}
+        running={false}
+        error="rate limited"
+      />,
+    );
+    expect(screen.getByText("Failed")).toBeInTheDocument();
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent("This turn failed rate limited");
+    expect(alerts[0]).toHaveTextContent("PROVIDER_ERROR");
   });
 
   it("shows notices such as an interrupted turn", () => {

@@ -114,6 +114,28 @@ describe("buildChat", () => {
     expect(turn.collapsible).toBe(true);
   });
 
+  it("puts injected context in the turn's groups and titles a context-only group", () => {
+    const prompt: SessionEvent = {
+      type: "system_prompt",
+      session_id: S,
+      text: '<project_instructions path="AGENTS.md">\nx\n</project_instructions>',
+    };
+    const alone = turnOf(fold([user("hi"), started(1), prompt, say("Hello"), ended(1)]));
+    expect(groups(alone)[0].title).toBe("Injected context");
+    const mixed = turnOf(
+      fold([user("go"), started(1), prompt, call("t1", "read"), result("t1"), ended(1)]),
+    );
+    expect(groups(mixed)[0].title).toBe("Read files");
+    expect(groups(mixed)[0].items.map((i) => i.role)).toEqual(["context", "tool"]);
+  });
+
+  it("carries a failed turn's reason", () => {
+    const turn = turnOf(
+      fold([user("go"), started(1), call("t1", "read"), result("t1"), ended(1, "error")]),
+    );
+    expect(turn.failure).toEqual({ code: "PROVIDER_ERROR", message: "boom" });
+  });
+
   it("ignores whitespace-only text between tool calls", () => {
     const turn = turnOf(
       fold([
