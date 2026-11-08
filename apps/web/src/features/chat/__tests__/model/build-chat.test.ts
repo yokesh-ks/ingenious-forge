@@ -10,7 +10,6 @@ import {
   type ChatGroup,
   type ChatTurn,
   formatDuration,
-  formatElapsed,
   groupTitle,
   rowDetail,
 } from "../../model/build-chat";
@@ -256,10 +255,5 @@ describe("durations", () => {
     expect(formatDuration(17_200)).toBe("17s");
     expect(formatDuration(59_600)).toBe("1m 0s");
     expect(formatDuration(125_000)).toBe("2m 5s");
-  });
-
-  it("formats a running turn as m:ss", () => {
-    expect(formatElapsed(5_000)).toBe("0:05");
-    expect(formatElapsed(125_000)).toBe("2:05");
   });
 });

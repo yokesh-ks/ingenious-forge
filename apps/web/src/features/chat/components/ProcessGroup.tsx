@@ -6,16 +6,31 @@ import ChatRow, { type RowHandlers } from "./ChatRow";
 import { CATEGORY_ICONS } from "./category-icons";
 
 /**
- * A run of reasoning and tool calls under one title. Finished groups start
- * closed; a running group, or one waiting for the user, is open.
+ * A run of reasoning and tool calls under one title. In a running turn
+ * (`live`) the rows show directly, with no header or height cap. Once the
+ * turn is history, finished groups start closed; one still waiting for
+ * the user is open.
  */
-export default function ProcessGroup({ group, ...handlers }: { group: ChatGroup } & RowHandlers) {
+export default function ProcessGroup({
+  group,
+  live = false,
+  ...handlers
+}: { group: ChatGroup; live?: boolean } & RowHandlers) {
   const [toggled, setToggled] = useState<boolean | null>(null);
   const open = toggled ?? (group.running || group.waiting);
   const bodyId = useId();
   const Icon = group.activity ? CATEGORY_ICONS[group.activity] : SparklesIcon;
   const Chevron = open ? ChevronUpIcon : ChevronDownIcon;
 
+  if (live) {
+    return (
+      <div className="flex flex-col gap-1">
+        {group.items.map((item) => (
+          <ChatRow key={item.id} item={item} {...handlers} />
+        ))}
+      </div>
+    );
+  }
   return (
     <section className="flex flex-col gap-2">
       <button

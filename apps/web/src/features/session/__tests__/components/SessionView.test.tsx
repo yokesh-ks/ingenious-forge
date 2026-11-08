@@ -179,6 +179,40 @@ describe("SessionView", () => {
     expect(screen.queryByRole("button", { name: /earlier messages/ })).not.toBeInTheDocument();
   });
 
+  it("shows a running turn's rows directly and its status below them", () => {
+    render(
+      <SessionView
+        messages={[
+          conversation[0],
+          {
+            id: "m1",
+            role: "tool",
+            callId: "t1",
+            name: "bash",
+            args: { command: "ls", description: "List files" },
+            status: "running",
+            output: null,
+            lines: [],
+            hiddenLines: 0,
+            exitCode: null,
+            approval: null,
+            meta: null,
+            question: null,
+            todos: null,
+          },
+        ]}
+        turns={[{ turn: 1, start: 1, startedAt: null, endedAt: null, status: "running" }]}
+        running
+        error={null}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Bash · List files" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Running commands" })).not.toBeInTheDocument();
+    // One status line: the turn's, not the generic one.
+    expect(screen.getByRole("status")).toHaveTextContent(/^Deep diving/);
+    expect(screen.queryByText(/thinking/i)).not.toBeInTheDocument();
+  });
+
   it("shows notices such as an interrupted turn", () => {
     render(
       <SessionView
