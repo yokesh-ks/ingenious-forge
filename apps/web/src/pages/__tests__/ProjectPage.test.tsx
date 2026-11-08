@@ -171,10 +171,16 @@ describe("ProjectPage", () => {
 
     const texts = screen.getAllByTestId("message-text").map((el) => el.textContent);
     expect(texts).toEqual(["fix the typo", "Reading it.", "Fixed."]);
+    // The finished turn is folded; unfold it, then its group and the row.
+    await userEvent.click(screen.getByRole("button", { name: "Completed" }));
+    await userEvent.click(screen.getByRole("button", { name: "Edited files" }));
+    await userEvent.click(screen.getByRole("button", { name: "Edit · a.md" }));
     expect(screen.getByRole("article", { name: /edit tool call/i })).toHaveTextContent(
       "Edited a.md",
     );
-    expect(screen.getByRole("button", { name: /a\.md/ })).toHaveTextContent("+1−1");
+    expect(
+      screen.getAllByRole("button", { name: /a\.md/ }).some((b) => b.textContent?.includes("+1−1")),
+    ).toBe(true);
   });
 
   it("shows an error for an unknown project", async () => {

@@ -47,7 +47,7 @@ describe("SessionView", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("renders tool calls inline between messages", () => {
+  it("renders tool calls inline between messages", async () => {
     render(
       <SessionView
         messages={[
@@ -73,7 +73,9 @@ describe("SessionView", () => {
         error={null}
       />,
     );
-    expect(screen.getByText("README.md")).toBeInTheDocument();
+    // The call sits in a closed group, as a row under its title.
+    await userEvent.click(screen.getByRole("button", { name: "Read files" }));
+    await userEvent.click(screen.getByRole("button", { name: "Read · README.md" }));
     expect(screen.getByTestId("tool-output")).toHaveTextContent("# Forge");
   });
 

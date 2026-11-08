@@ -48,6 +48,7 @@ export default function SessionWorkspace({
       <div className="flex min-h-0 flex-1">
         <SessionView
           messages={state.messages}
+          turns={state.turns}
           running={state.running}
           error={state.error}
           onAnswerApproval={onAnswerApproval}

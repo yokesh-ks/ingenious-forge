@@ -3,10 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { SessionEvent } from "@/api/types";
 import SessionView from "@/features/session/components/SessionView";
 
-// Counts tool card renders, so the test can check which entries re-render
-// without relying on wall-clock time.
+// Counts process group renders, so the test can check which entries
+// re-render without relying on wall-clock time.
 const toolCardRenders = vi.hoisted(() => ({ count: 0 }));
-vi.mock("@/features/session/components/ToolCallCard", () => ({
+vi.mock("@/features/chat/components/ProcessGroup", () => ({
   default: () => {
     toolCardRenders.count++;
     return null;
@@ -129,7 +129,7 @@ describe("long sessions", () => {
     expect(toolCardRenders.count).toBe(0);
     // This test counts renders, not time. Mounting 1,000 Markdown replies
     // takes about 1.6 s in jsdom, which can pass the default 5 s limit when
-    // the whole suite runs in parallel; virtual rows (plan step 8) remove
-    // that cost.
+    // the whole suite runs in parallel; in the app a session opens on one
+    // page of events, so far fewer mount at once.
   }, 15_000);
 });

@@ -31,7 +31,55 @@ describe("sessionReducer", () => {
       error: null,
       streamingId: null,
       changedFiles: [],
+      turns: [],
     });
+  });
+
+  it("streams reasoning into its own item, apart from the reply", () => {
+    const state = apply(
+      sent("go"),
+      { type: "reasoning_delta", session_id: S, turn: 1, step: 1, chunk: "Let me " },
+      { type: "reasoning_delta", session_id: S, turn: 1, step: 1, chunk: "think." },
+      { type: "output", session_id: S, chunk: "Done." },
+    );
+    expect(state.messages.slice(1)).toEqual([
+      { id: "m1", role: "reasoning", text: "Let me think." },
+      { id: "m2", role: "assistant", text: "Done." },
+    ]);
+  });
+
+  it("marks a message typed during a turn as steering", () => {
+    const state = apply(sent("go"), {
+      type: "user_message",
+      session_id: S,
+      text: "also this",
+      source: "steering",
+    });
+    expect(state.messages[1]).toEqual({
+      id: "m1",
+      role: "user",
+      text: "also this",
+      steering: true,
+    });
+  });
+
+  it("records each turn's start, times and how it ended", () => {
+    const at = (ts: number, event: SessionEvent) =>
+      ({ ...event, seq: ts, ts }) as unknown as SessionEvent;
+    const state = apply(
+      sent("go"),
+      at(1_000, { type: "turn_started", session_id: S, turn: 1 }),
+      { type: "output", session_id: S, chunk: "hi" },
+      at(5_000, {
+        type: "turn_ended",
+        session_id: S,
+        turn: 1,
+        reason: { kind: "interrupted" },
+      }),
+    );
+    expect(state.turns).toEqual([
+      { turn: 1, start: 1, startedAt: 1_000, endedAt: 5_000, status: "stopped" },
+    ]);
   });
 
   it("marks the turn running as soon as a message is sent", () => {
