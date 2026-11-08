@@ -269,6 +269,9 @@ fn edit_replaces_a_unique_match_and_summarises() {
         ),
         (json!(false), json!(2), json!(1))
     );
+    // The diff of this call alone, for the edit's card.
+    let diff = meta["diff"].as_str().unwrap();
+    assert!(diff.contains("-two\n+2\n+2b\n"), "{diff}");
 }
 
 #[test]
