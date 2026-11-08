@@ -1,9 +1,9 @@
 //! The workspace terminal (PRD §6.2 Workspace panel): one PTY per project
 //! that outlives browser connections.
 
-use std::{path::PathBuf, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use services::terminal::{TermEvent, Terminals};
+use services::terminal::{discover_shells, TermEvent, Terminals};
 use tokio::sync::broadcast;
 
 fn folder() -> PathBuf {
@@ -142,4 +142,61 @@ fn closing_a_project_forgets_its_tabs_and_no_other_project() {
     assert!(!std::sync::Arc::ptr_eq(&tab.terminal, &fresh.terminal));
     let same = terminals.attach("p10:terminal-2", &dir).unwrap();
     assert!(std::sync::Arc::ptr_eq(&other.terminal, &same.terminal));
+}
+
+#[cfg(unix)]
+fn fake_shell(dir: &std::path::Path, name: &str) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let path = dir.join(name);
+    std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path.to_string_lossy().into_owned()
+}
+
+#[cfg(unix)]
+#[test]
+fn the_default_shell_comes_first_and_each_kind_appears_once() {
+    let first = folder();
+    let second = folder();
+    let bash = fake_shell(&first, "bash");
+    fake_shell(&second, "bash");
+    let fish = fake_shell(&second, "fish");
+    let search = std::env::join_paths([&first, &second]).unwrap();
+
+    let shells = discover_shells("/bin/zsh", &["zsh", "bash", "fish", "nope"], &search);
+    let seen: Vec<_> = shells
+        .iter()
+        .map(|s| (s.name.as_str(), s.path.as_str()))
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            ("zsh", "/bin/zsh"),
+            ("bash", bash.as_str()),
+            ("fish", fish.as_str())
+        ]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_file_that_cannot_run_is_not_a_shell() {
+    let dir = folder();
+    std::fs::write(dir.join("fish"), "not a program").unwrap();
+    let shells = discover_shells("/bin/sh", &["fish"], dir.as_os_str());
+    assert_eq!(shells.len(), 1);
+}
+
+#[tokio::test]
+async fn a_new_terminal_runs_the_chosen_shell_and_a_rejoined_one_keeps_its_own() {
+    let dir = folder();
+    let terminals = Terminals::with_shell("/bin/bash");
+    let attached = terminals.attach_shell("p1", &dir, "/bin/sh").unwrap();
+    let mut events = attached.events;
+    attached.terminal.write(b"echo shell-is-$0\n").unwrap();
+    read_until(&mut events, String::new(), "shell-is-/bin/sh").await;
+
+    // Asking for another shell does not replace a running terminal.
+    let again = terminals.attach_shell("p1", &dir, "/bin/bash").unwrap();
+    assert!(Arc::ptr_eq(&again.terminal, &attached.terminal));
 }

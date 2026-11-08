@@ -12,6 +12,15 @@ export interface PanelTab {
   line?: number;
   /** Counts the times a file tab was asked to show something. */
   revision?: number;
+  /** A terminal's shell: `undefined` until known, `null` for the server's default. */
+  shell?: TabShell | null;
+  /** A name the user gave the tab. */
+  title?: string;
+}
+
+export interface TabShell {
+  name: string;
+  path: string;
 }
 
 export interface PanelTabs {
@@ -129,8 +138,11 @@ const TITLES: Record<TabKind, string> = {
   file: "File",
 };
 
-/** A tab's title; later terminals are numbered in the order they opened. */
+/** A tab's title: the name the user gave it, its file or its shell. Terminals
+ * whose shell is unknown are numbered in the order they opened. */
 export function titleOf(state: PanelTabs, tab: PanelTab): string {
+  if (tab.title) return tab.title;
+  if (tab.kind === "terminal" && tab.shell) return tab.shell.name;
   if (tab.kind === "file" && tab.path) return tab.path.split("/").pop() ?? tab.path;
   if (tab.kind !== "terminal") return TITLES[tab.kind];
   const position = state.tabs.filter((t) => t.kind === "terminal").indexOf(tab);

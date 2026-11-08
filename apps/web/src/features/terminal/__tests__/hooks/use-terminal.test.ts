@@ -11,6 +11,12 @@ function setup(onOutput = vi.fn()) {
 }
 
 describe("terminalSocketUrl", () => {
+  it("names the shell a new terminal runs", () => {
+    expect(terminalSocketUrl({ protocol: "http:", host: "h" }, "p1", "t-1", "/bin/bash")).toBe(
+      "ws://h/api/projects/p1/terminal?tab=t-1&shell=%2Fbin%2Fbash",
+    );
+  });
+
   it("names a panel tab's own shell", () => {
     expect(terminalSocketUrl({ protocol: "http:", host: "h" }, "p1", "terminal-2")).toBe(
       "ws://h/api/projects/p1/terminal?tab=terminal-2",

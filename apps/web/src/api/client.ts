@@ -32,6 +32,7 @@ import type {
   SessionStats,
   SetApprovalModeRequest,
   SetSessionModelRequest,
+  TerminalShells,
   UpdateSessionRequest,
 } from "./types";
 
@@ -115,6 +116,8 @@ export const api = {
       `/api/projects/${encodeURIComponent(projectId)}/terminal?${new URLSearchParams({ tab })}`,
       { method: "DELETE" },
     ),
+  /** The installed shells a terminal can run, the default first. */
+  terminalShells: () => request<TerminalShells>("/api/terminal/shells"),
   /** One folder's direct entries; an empty path is the project's top. */
   projectDirectory: (id: string, path: string) =>
     request<DirectoryListing>(

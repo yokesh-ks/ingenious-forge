@@ -7,6 +7,8 @@ interface Options {
   createSocket?: (url: string) => WebSocket;
   /** A workspace panel tab with its own shell; none means the project's. */
   tab?: string;
+  /** The shell a new terminal runs; none means the server's default. */
+  shell?: string;
 }
 
 const defaultCreateSocket = (url: string) => new WebSocket(url);
@@ -16,9 +18,13 @@ export function terminalSocketUrl(
   location: Pick<Location, "protocol" | "host">,
   projectId: string,
   tab?: string,
+  shell?: string,
 ): string {
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-  const query = tab ? `?tab=${encodeURIComponent(tab)}` : "";
+  const params = new URLSearchParams();
+  if (tab) params.set("tab", tab);
+  if (shell) params.set("shell", shell);
+  const query = params.size > 0 ? `?${params}` : "";
   return `${scheme}//${location.host}/api/projects/${encodeURIComponent(projectId)}/terminal${query}`;
 }
 
@@ -29,7 +35,7 @@ export function terminalSocketUrl(
 export function useTerminal(
   projectId: string,
   onOutput: (bytes: Uint8Array) => void,
-  { createSocket = defaultCreateSocket, tab }: Options = {},
+  { createSocket = defaultCreateSocket, tab, shell }: Options = {},
 ) {
   const [status, setStatus] = useState<TerminalStatus>("connecting");
   const [generation, setGeneration] = useState(0);
@@ -40,7 +46,7 @@ export function useTerminal(
   // biome-ignore lint/correctness/useExhaustiveDependencies: `generation` reconnects on restart
   useEffect(() => {
     setStatus("connecting");
-    const socket = createSocket(terminalSocketUrl(window.location, projectId, tab));
+    const socket = createSocket(terminalSocketUrl(window.location, projectId, tab, shell));
     socket.binaryType = "arraybuffer";
     socketRef.current = socket;
     let exited = false;

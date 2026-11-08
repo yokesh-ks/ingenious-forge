@@ -128,3 +128,15 @@ describe("openFile", () => {
     expect(titleOf(state, state.tabs[0])).toBe("util.ts");
   });
 });
+
+describe("terminal titles", () => {
+  it("uses the shell's name once known, and a name the user gave above all", () => {
+    const state = openTab(initialTabs(), "terminal");
+    const tab = state.tabs[0];
+    expect(titleOf(state, tab)).toBe("Terminal");
+    expect(titleOf(state, { ...tab, shell: { name: "zsh", path: "/bin/zsh" } })).toBe("zsh");
+    expect(
+      titleOf(state, { ...tab, shell: { name: "zsh", path: "/bin/zsh" }, title: "server" }),
+    ).toBe("server");
+  });
+});
