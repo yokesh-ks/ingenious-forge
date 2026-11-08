@@ -3,12 +3,14 @@
 //! until the shell exits, so a browser can leave and come back to it.
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
+    ffi::OsStr,
     io::{Read, Write},
     path::Path,
     sync::{Arc, Mutex},
 };
 
+use api_types::TerminalShell;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::broadcast;
 
@@ -74,6 +76,58 @@ impl Drop for Terminal {
     }
 }
 
+/// Shells offered beside the default when they are installed.
+const SHELL_CANDIDATES: &[&str] = &["zsh", "bash", "fish", "pwsh", "powershell", "cmd"];
+
+fn executable_name(path: &str) -> &str {
+    path.rsplit(['/', '\\']).next().unwrap_or(path)
+}
+
+/// What makes two shells the same shell: `/bin/bash` and `/usr/bin/bash`,
+/// or `cmd` and `CMD.EXE`.
+fn shell_kind(path: &str) -> String {
+    let name = executable_name(path).to_lowercase();
+    name.strip_suffix(".exe").unwrap_or(&name).to_string()
+}
+
+fn is_executable(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        path.metadata()
+            .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(not(unix))]
+    {
+        path.is_file()
+    }
+}
+
+fn find_on_path(name: &str, search: &OsStr) -> Option<String> {
+    let names = [name.to_string(), format!("{name}.exe")];
+    std::env::split_paths(search).find_map(|dir| {
+        names
+            .iter()
+            .map(|name| dir.join(name))
+            .find(|candidate| is_executable(candidate))
+            .map(|found| found.to_string_lossy().into_owned())
+    })
+}
+
+/// The shells to offer: `default` first, then each of `candidates` found in
+/// `search` (a `PATH` value), one per kind of shell.
+pub fn discover_shells(default: &str, candidates: &[&str], search: &OsStr) -> Vec<TerminalShell> {
+    let mut seen = HashSet::new();
+    std::iter::once(default.to_string())
+        .chain(candidates.iter().filter_map(|c| find_on_path(c, search)))
+        .filter(|path| seen.insert(shell_kind(path)))
+        .map(|path| TerminalShell {
+            name: executable_name(&path).to_string(),
+            path,
+        })
+        .collect()
+}
+
 /// The terminals of every project, by project id, or `project:tab` for a
 /// workspace panel tab with its own shell.
 #[derive(Clone)]
@@ -83,9 +137,14 @@ pub struct Terminals {
 }
 
 impl Default for Terminals {
-    /// Runs the user's `$SHELL`, or `/bin/sh`.
+    /// Runs the user's `$SHELL`, or the system's own shell.
     fn default() -> Self {
-        Self::with_shell(std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()))
+        let system = if cfg!(windows) {
+            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into())
+        } else {
+            "/bin/sh".into()
+        };
+        Self::with_shell(std::env::var("SHELL").unwrap_or(system))
     }
 }
 
@@ -97,14 +156,26 @@ impl Terminals {
         }
     }
 
-    /// Attaches to the terminal of project `key`, starting a shell in `cwd`
-    /// when it has none (or its shell has exited).
+    /// The shells a terminal can run: the default, then the others found
+    /// on the `PATH`.
+    pub fn shells(&self) -> Vec<TerminalShell> {
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        discover_shells(&self.shell, SHELL_CANDIDATES, &path)
+    }
+
+    /// Attaches to the terminal of project `key`, starting the default
+    /// shell in `cwd` when it has none (or its shell has exited).
     pub fn attach(&self, key: &str, cwd: &Path) -> Result<Attached, String> {
+        self.attach_shell(key, cwd, &self.shell)
+    }
+
+    /// Like [`Self::attach`], but a new terminal runs `shell`.
+    pub fn attach_shell(&self, key: &str, cwd: &Path, shell: &str) -> Result<Attached, String> {
         let mut open = self.open.lock().unwrap();
         let terminal = match open.get(key).filter(|t| !t.exited()) {
             Some(terminal) => terminal.clone(),
             None => {
-                let terminal = self.spawn(cwd)?;
+                let terminal = Self::spawn(shell, cwd)?;
                 open.insert(key.to_string(), terminal.clone());
                 terminal
             }
@@ -136,7 +207,7 @@ impl Terminals {
             .retain(|key, _| key != project && !key.starts_with(&tabs));
     }
 
-    fn spawn(&self, cwd: &Path) -> Result<Arc<Terminal>, String> {
+    fn spawn(shell: &str, cwd: &Path) -> Result<Arc<Terminal>, String> {
         if !cwd.is_dir() {
             return Err(format!("{} is not a folder", cwd.display()));
         }
@@ -148,13 +219,13 @@ impl Terminals {
                 pixel_height: 0,
             })
             .map_err(|e| format!("cannot open a terminal: {e}"))?;
-        let mut command = CommandBuilder::new(&self.shell);
+        let mut command = CommandBuilder::new(shell);
         command.cwd(cwd);
         command.env("TERM", "xterm-256color");
         let child = pair
             .slave
             .spawn_command(command)
-            .map_err(|e| format!("cannot start {}: {e}", self.shell))?;
+            .map_err(|e| format!("cannot start {shell}: {e}"))?;
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
         let writer = pair.master.take_writer().map_err(|e| e.to_string())?;

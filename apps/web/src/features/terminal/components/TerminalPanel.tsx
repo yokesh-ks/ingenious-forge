@@ -4,15 +4,38 @@ import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useTerminal } from "@/features/terminal/hooks/use-terminal";
+import { useTheme } from "@/hooks/use-theme";
+
+/** The terminal's colours, taken from the page's current theme. */
+function themeColors() {
+  const style = getComputedStyle(document.documentElement);
+  const color = (name: string) => style.getPropertyValue(name).trim() || undefined;
+  return {
+    background: color("--background"),
+    foreground: color("--foreground"),
+    cursor: color("--foreground"),
+    cursorAccent: color("--background"),
+    selectionBackground: color("--accent"),
+  };
+}
 
 /** An interactive shell in the project folder (ADR 0007). */
-export default function TerminalPanel({ projectId, tab }: { projectId: string; tab?: string }) {
+export default function TerminalPanel({
+  projectId,
+  tab,
+  shell,
+}: {
+  projectId: string;
+  tab?: string;
+  shell?: string;
+}) {
+  const { theme } = useTheme();
   const container = useRef<HTMLDivElement>(null);
   const term = useRef<Terminal | null>(null);
   const { status, send, resize, restart } = useTerminal(
     projectId,
     (bytes) => term.current?.write(bytes),
-    { tab },
+    { tab, shell },
   );
   const input = useRef(send);
   input.current = send;
@@ -24,7 +47,8 @@ export default function TerminalPanel({ projectId, tab }: { projectId: string; t
       convertEol: false,
       cursorBlink: true,
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-      fontSize: 12,
+      fontSize: 13,
+      theme: themeColors(),
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
@@ -50,6 +74,11 @@ export default function TerminalPanel({ projectId, tab }: { projectId: string; t
       term.current = null;
     };
   }, []);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new theme means new colours
+  useEffect(() => {
+    if (term.current) term.current.options.theme = themeColors();
+  }, [theme]);
 
   // Send the size again once connected, so the shell gets it.
   useEffect(() => {
@@ -79,11 +108,7 @@ export default function TerminalPanel({ projectId, tab }: { projectId: string; t
           </Button>
         </p>
       )}
-      <div
-        ref={container}
-        data-testid="terminal"
-        className="min-h-64 flex-1 overflow-hidden rounded-md border bg-black p-1"
-      />
+      <div ref={container} data-testid="terminal" className="min-h-0 flex-1 overflow-hidden" />
     </div>
   );
 }

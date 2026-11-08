@@ -444,6 +444,21 @@ pub struct ConnectGitHubRequest {
     pub token: String,
 }
 
+/// A shell a terminal can run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct TerminalShell {
+    /// The executable's name, as a tab shows it.
+    pub name: String,
+    pub path: String,
+}
+
+/// Body of `GET /api/terminal/shells`: the installed shells, the default
+/// first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct TerminalShells {
+    pub shells: Vec<TerminalShell>,
+}
+
 /// What the browser sends on a project's terminal socket.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -1066,6 +1081,8 @@ pub fn typescript_bindings() -> String {
         CommitResult::decl(&cfg),
         PushResult::decl(&cfg),
         CommitMessageDraft::decl(&cfg),
+        TerminalShell::decl(&cfg),
+        TerminalShells::decl(&cfg),
         TerminalInput::decl(&cfg),
         TerminalNotice::decl(&cfg),
         ApiError::decl(&cfg),

@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use api_types::{TerminalInput, TerminalNotice};
+use api_types::{TerminalInput, TerminalNotice, TerminalShells};
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -11,9 +11,13 @@ use axum::{
     },
     http::StatusCode,
     response::Response,
+    Json,
 };
 use serde::Deserialize;
-use services::{projects, terminal::TermEvent};
+use services::{
+    projects,
+    terminal::{TermEvent, Terminals},
+};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::{projects::ApiFailure, state::AppState};
@@ -23,6 +27,28 @@ use crate::{projects::ApiFailure, state::AppState};
 #[derive(Deserialize)]
 pub struct TerminalTab {
     tab: Option<String>,
+    /// The shell a new terminal runs; one of those `/terminal/shells` lists.
+    shell: Option<String>,
+}
+
+/// The installed shells a terminal can run, the default first.
+pub async fn terminal_shells(State(state): State<Arc<AppState>>) -> Json<TerminalShells> {
+    let terminals = state.terminals.clone();
+    let shells = tokio::task::spawn_blocking(move || terminals.shells())
+        .await
+        .unwrap_or_default();
+    Json(TerminalShells { shells })
+}
+
+/// Only a listed shell may run: this path comes from the browser.
+fn listed_shell(terminals: &Terminals, shell: &str) -> Result<(), ApiFailure> {
+    if terminals.shells().iter().any(|s| s.path == shell) {
+        return Ok(());
+    }
+    Err(ApiFailure::new(
+        StatusCode::BAD_REQUEST,
+        "that shell is not available",
+    ))
 }
 
 const TAB_MAX: usize = 64;
@@ -55,12 +81,21 @@ pub async fn terminal_socket(
     let project = projects::get_project(&state.db, &id).await?;
     let key = terminal_key(&project.id, query.tab.as_deref())?;
     let terminals = state.terminals.clone();
+    let shell = query.shell;
     let attached = tokio::task::spawn_blocking(move || {
-        terminals.attach(&key, std::path::Path::new(&project.path))
+        let cwd = std::path::Path::new(&project.path);
+        match shell {
+            Some(shell) => {
+                listed_shell(&terminals, &shell)?;
+                terminals
+                    .attach_shell(&key, cwd, &shell)
+                    .map_err(ApiFailure::internal)
+            }
+            None => terminals.attach(&key, cwd).map_err(ApiFailure::internal),
+        }
     })
     .await
-    .map_err(|e| ApiFailure::internal(e.to_string()))?
-    .map_err(ApiFailure::internal)?;
+    .map_err(|e| ApiFailure::internal(e.to_string()))??;
     Ok(ws.on_upgrade(move |socket| serve(socket, attached)))
 }
 
@@ -242,6 +277,25 @@ mod tests {
                 break;
             }
         }
+    }
+
+    #[tokio::test]
+    async fn a_terminal_runs_a_listed_shell_and_refuses_any_other() {
+        let (base, id) = start().await;
+        let shells = base
+            .replace("ws://", "http://")
+            .replace("/projects", "/terminal/shells");
+        let listed: serde_json::Value = reqwest::get(&shells).await.unwrap().json().await.unwrap();
+        assert_eq!(listed["shells"][0]["path"], "/bin/sh");
+        assert_eq!(listed["shells"][0]["name"], "sh");
+
+        let url = format!("{base}/{id}/terminal?tab=t1&shell=%2Fbin%2Fsh");
+        let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        input(&mut ws, "echo listed-ok\n").await;
+        read_until(&mut ws, "listed-ok").await;
+
+        let refused = format!("{base}/{id}/terminal?tab=t2&shell=%2Ftmp%2Fevil");
+        assert!(tokio_tungstenite::connect_async(&refused).await.is_err());
     }
 
     #[tokio::test]

@@ -219,6 +219,14 @@ url: string, branch: string, };
 
 export type CommitMessageDraft = { message: string, };
 
+export type TerminalShell = { 
+/**
+ * The executable's name, as a tab shows it.
+ */
+name: string, path: string, };
+
+export type TerminalShells = { shells: Array<TerminalShell>, };
+
 export type TerminalInput = { "type": "input", data: string, } | { "type": "resize", cols: number, rows: number, };
 
 export type TerminalNotice = { "type": "exit" };

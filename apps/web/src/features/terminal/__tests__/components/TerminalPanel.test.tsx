@@ -20,6 +20,7 @@ vi.mock("@xterm/xterm", () => ({
     disposed = false;
     cols = 80;
     rows = 24;
+    options: Record<string, unknown> = {};
     private listener: ((data: string) => void) | null = null;
     constructor() {
       xterm.instances.push(this);

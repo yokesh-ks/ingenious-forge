@@ -48,6 +48,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/projects/{id}/git/commit", post(commit))
         .route("/projects/{id}/git/push", post(push))
         .route("/sessions/{id}/commit-message", post(draft_commit_message))
+        .route("/terminal/shells", get(crate::terminal::terminal_shells))
         .route(
             "/projects/{id}/terminal",
             get(crate::terminal::terminal_socket).delete(crate::terminal::close_terminal),

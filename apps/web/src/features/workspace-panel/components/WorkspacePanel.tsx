@@ -1,18 +1,11 @@
 import {
-  CompassIcon,
-  FolderIcon,
-  GitCompareArrowsIcon,
-  type LucideIcon,
   Maximize2Icon,
   Minimize2Icon,
+  MoveIcon,
+  PanelLeftIcon,
   PanelRightIcon,
-  PlusIcon,
-  SquareSplitHorizontalIcon,
-  SquareTerminalIcon,
-  XIcon,
 } from "lucide-react";
 import {
-  Fragment,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -30,25 +23,32 @@ import type { FileChange } from "@/features/session/session-reducer";
 import TerminalPanel from "@/features/terminal/components/TerminalPanel";
 import { type FileTarget, toProjectPath } from "@/lib/open-file";
 import { cn } from "@/lib/utils";
+import { type DropTarget, useTabDrag } from "../hooks/use-tab-drag";
 import { useWorkspaceTree } from "../hooks/use-workspace-tree";
 import {
-  activate,
-  addStart,
-  canAddStart,
-  canClose,
-  closeTab,
-  initialTabs,
-  openFile as openFileTab,
-  openTab,
-  type PanelTab,
-  type PanelTabs,
-  type TabKind,
-  titleOf,
-} from "../model/tabs";
+  activateTab,
+  activePaneOf,
+  addStartTab,
+  canCloseTab,
+  closePaneTab,
+  dropToSplit,
+  focusPane,
+  initialLayout,
+  moveTab,
+  openFileTab,
+  openPage,
+  type Pane,
+  renameTab,
+  resolveShells,
+  setRatio,
+  split,
+} from "../model/panes";
+import { pickShell } from "../model/shell-choice";
+import { type PanelTab, type TabKind, type TabShell, titleOf } from "../model/tabs";
 import FilesPage from "./FilesPage";
 import FileTab from "./FileTab";
-import FileTypeIcon from "./FileTypeIcon";
 import StartPage from "./StartPage";
+import TabStrip, { STRIP_BUTTON } from "./TabStrip";
 
 const WIDTH_MIN = 300;
 const WIDTH_MAX_RATIO = 0.7;
@@ -66,94 +66,89 @@ const clampWidth = (width: number, parent: number) =>
     ),
   );
 
-const ICONS: Record<Exclude<TabKind, "file">, LucideIcon> = {
-  start: CompassIcon,
-  files: FolderIcon,
-  changes: GitCompareArrowsIcon,
-  terminal: SquareTerminalIcon,
-};
-
 /** Lets the page beside the panel open files in it. */
 export interface WorkspacePanelControl {
   openFile: (target: FileTarget) => void;
 }
 
-const STRIP_BUTTON =
-  "flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent";
-
-/** The title fades out over the 16px before the close button. Written out
- * in full so Tailwind can find the classes. */
-const FADE_UNDER_CLOSE =
-  "group-focus-within:[mask-image:linear-gradient(to_right,black_calc(100%-30px),transparent_calc(100%-14px))] group-hover:[mask-image:linear-gradient(to_right,black_calc(100%-30px),transparent_calc(100%-14px))]";
-const ACTIVE_FADE =
-  "[mask-image:linear-gradient(to_right,black_calc(100%-30px),transparent_calc(100%-14px))]";
-
-function TabIcon({ kind }: { kind: Exclude<TabKind, "file"> }) {
-  const Icon = ICONS[kind];
+/** The hairline between two panes, with a wider place to grab it. */
+function PaneDivider({
+  ratio,
+  grid,
+  onRatio,
+}: {
+  ratio: number;
+  grid: RefObject<HTMLDivElement | null>;
+  onRatio: (ratio: number) => void;
+}) {
+  const percent = Math.round(ratio * 100);
   return (
-    <Icon aria-hidden className={cn("size-4 shrink-0", kind === "files" && "text-amber-500")} />
+    // biome-ignore lint/a11y/useSemanticElements: a focusable splitter, which <hr> cannot be
+    <div
+      role="separator"
+      aria-label="Resize panes"
+      aria-orientation="vertical"
+      aria-valuenow={percent}
+      aria-valuemin={20}
+      aria-valuemax={80}
+      tabIndex={0}
+      style={{ left: `${percent}%` }}
+      onKeyDown={(event) => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        event.preventDefault();
+        onRatio(ratio + (event.key === "ArrowLeft" ? -0.02 : 0.02));
+      }}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        const onMove = (e: PointerEvent) => {
+          const box = grid.current?.getBoundingClientRect();
+          if (box && box.width > 0) onRatio((e.clientX - box.left) / box.width);
+        };
+        const onUp = () => {
+          window.removeEventListener("pointermove", onMove);
+          window.removeEventListener("pointerup", onUp);
+        };
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+      }}
+      className="absolute inset-y-0 z-[8] w-0 cursor-col-resize touch-none before:absolute before:inset-y-0 before:-left-px before:w-px before:bg-border after:absolute after:inset-y-0 after:-right-1 after:-left-1"
+    />
   );
 }
 
-/** One tab in the strip; its close button shows while active or hovered. */
-function Chip({
-  state,
-  tab,
-  onActivate,
-  onClose,
-}: {
-  state: PanelTabs;
-  tab: PanelTab;
-  onActivate: () => void;
-  onClose: () => void;
-}) {
-  const active = tab.id === state.active;
-  const title = titleOf(state, tab);
-  const closable = canClose(state, tab);
+/** Where releasing the tab will put it. */
+function DropOverlay({ target }: { target: DropTarget }) {
+  const zones =
+    target.kind === "split"
+      ? [
+          { id: "left", label: "Add left split", Icon: PanelLeftIcon, hot: target.side === "left" },
+          {
+            id: "right",
+            label: "Add right split",
+            Icon: PanelRightIcon,
+            hot: target.side === "right",
+          },
+        ]
+      : [{ id: "center", label: "Move here", Icon: MoveIcon, hot: true }];
   return (
-    <div
-      className={cn(
-        "group relative flex h-7 max-w-[170px] min-w-[100px] shrink items-center rounded text-[13px] text-muted-foreground hover:bg-muted/60",
-        active && "bg-muted text-foreground",
-      )}
-    >
-      <button
-        type="button"
-        role="tab"
-        aria-selected={active}
-        title={title}
-        onClick={onActivate}
-        className="flex h-full min-w-0 flex-1 items-center px-2.5"
-      >
-        <span
-          className={cn(
-            "flex min-w-0 flex-1 items-center gap-[5px] overflow-hidden whitespace-nowrap",
-            closable && FADE_UNDER_CLOSE,
-            closable && active && ACTIVE_FADE,
-          )}
-        >
-          {tab.kind === "file" ? (
-            <FileTypeIcon path={tab.path ?? ""} />
-          ) : (
-            <TabIcon kind={tab.kind} />
-          )}
-          {title}
-        </span>
-      </button>
-      {closable && (
-        <button
-          type="button"
-          aria-label={`Close ${title}`}
-          title="Close"
-          onClick={onClose}
-          className={cn(
-            "absolute top-1 right-1 flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 hover:text-foreground",
-            active && "opacity-100",
-          )}
-        >
-          <XIcon aria-hidden className="size-3.5" />
-        </button>
-      )}
+    <div className="absolute inset-0 flex bg-background/70 p-2 backdrop-blur-[6px]">
+      {zones.map(({ id, label, Icon, hot }, index) => (
+        <div key={id} className={cn("flex min-w-0 flex-1", index === 1 && "pl-2")}>
+          <div
+            data-drop-zone={id}
+            className={cn(
+              "flex min-w-0 flex-1 flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border-[1.5px] border-dashed border-border p-3 text-muted-foreground/70",
+              hot && "border-primary bg-primary/10 text-muted-foreground",
+            )}
+          >
+            <Icon aria-hidden className="size-5 flex-none" />
+            <span className="max-w-full truncate text-[13px] leading-[1.4] font-medium">
+              {label}
+            </span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -178,82 +173,133 @@ export default function WorkspacePanel({
 }) {
   const [open, setOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
-  const [state, setState] = useState(() => initialTabs());
+  const [layout, setLayout] = useState(initialLayout);
   const [width, setWidth] = useState<number | null>(null);
   const shownWidth = width ?? firstWidth();
   const aside = useRef<HTMLElement>(null);
-  const tree = useWorkspaceTree(projectId);
+  const grid = useRef<HTMLDivElement>(null);
+  // Each pane keeps its own tree; two panes at most, so two trees.
+  const firstTree = useWorkspaceTree(projectId);
+  const secondTree = useWorkspaceTree(projectId);
+  const trees = [firstTree, secondTree];
   const { project } = useProject(projectId);
   const rootPath = project?.path ?? "";
   // The glow restarts by remounting; each reveal gets a new key.
-  const [glow, setGlow] = useState(0);
-  const latest = useRef({ open, state, rootPath });
-  latest.current = { open, state, rootPath };
+  const [glow, setGlow] = useState<{ pane: string; serial: number } | null>(null);
+  const rooms = useRef<Record<string, boolean>>({});
+  const latest = useRef({ open, layout, rootPath });
+  latest.current = { open, layout, rootPath };
 
-  const openPage = (kind: Exclude<TabKind, "start" | "file">) => {
+  const roomIn = (paneId: string) => rooms.current[paneId] ?? true;
+
+  const drag = useTabDrag({
+    root: grid,
+    paneCount: () => latest.current.layout.panes.length,
+    canDropToSplit: () => roomIn(latest.current.layout.panes[0]?.id ?? ""),
+    onDrop: (tabId, target) =>
+      setLayout((l) => {
+        if (target.kind === "split") return dropToSplit(l, tabId, target.side);
+        return moveTab(l, tabId, target.pane, target.kind === "strip" ? target.index : undefined);
+      }),
+  });
+
+  const openPageIn = (
+    kind: Exclude<TabKind, "start" | "file">,
+    paneId?: string,
+    shell?: TabShell,
+  ) => {
     setOpen(true);
-    setState((s) => openTab(s, kind));
+    setLayout((l) => openPage(l, kind, { paneId, shell }));
   };
 
   const openFile = useCallback((target: FileTarget, replace = false) => {
     const current = latest.current;
     const path = toProjectPath(target.path, current.rootPath);
-    const active = current.state.tabs.find((t) => t.id === current.state.active);
-    if (current.open && active?.kind === "file" && active.path === path) {
-      setGlow((n) => n + 1);
+    const holder = current.layout.panes.find((pane) => {
+      const active = pane.tabs.tabs.find((t) => t.id === pane.tabs.active);
+      return active?.kind === "file" && active.path === path;
+    });
+    if (current.open && holder) {
+      setGlow((g) => ({ pane: holder.id, serial: (g?.serial ?? 0) + 1 }));
     }
     setOpen(true);
-    setState((s) => openFileTab(s, path, { line: target.line, replace }));
+    setLayout((l) => openFileTab(l, path, { line: target.line, replace }));
   }, []);
 
   useImperativeHandle(control, () => ({ openFile: (target) => openFile(target) }), [openFile]);
 
-  const { setShown } = tree;
+  // Terminals opened without a choice run the remembered shell.
+  const waiting = layout.panes.some((pane) =>
+    pane.tabs.tabs.some((t) => t.kind === "terminal" && t.shell === undefined),
+  );
+  useEffect(() => {
+    if (!waiting) return;
+    let live = true;
+    api.terminalShells().then(
+      ({ shells }) => live && setLayout((l) => resolveShells(l, pickShell(shells))),
+      () => live && setLayout((l) => resolveShells(l, null)),
+    );
+    return () => {
+      live = false;
+    };
+  }, [waiting]);
+
+  // A pane's tree goes with it; a new pane starts with its tree hidden.
+  const usedSlots = layout.panes.map((pane) => pane.slot).join();
+  const setFirstShown = firstTree.setShown;
+  const setSecondShown = secondTree.setShown;
+  useEffect(() => {
+    const used = usedSlots.split(",");
+    if (!used.includes("0")) setFirstShown(false);
+    if (!used.includes("1")) setSecondShown(false);
+  }, [usedSlots, setFirstShown, setSecondShown]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const primary = e.metaKey || e.ctrlKey;
+      const { layout: current } = latest.current;
+      const pane = activePaneOf(current);
+      const focused = aside.current?.contains(document.activeElement);
       if (e.code === "KeyB" && primary && e.shiftKey && !e.altKey) {
         e.preventDefault();
         setOpen((v) => !v);
       } else if (e.code === "KeyP" && primary && e.altKey && !e.shiftKey) {
         e.preventDefault();
         setOpen(true);
-        const { state: tabs } = latest.current;
-        if (tabs.tabs.find((t) => t.id === tabs.active)?.kind === "file") {
+        if (pane.tabs.tabs.find((t) => t.id === pane.tabs.active)?.kind === "file") {
           // Beside an open file the tree appears there and takes the keyboard.
-          setShown(true);
+          (pane.slot === 0 ? setFirstShown : setSecondShown)(true);
           requestAnimationFrame(() => {
             aside.current
               ?.querySelector<HTMLElement>(
-                '[role="tabpanel"]:not([hidden]) [data-workspace-tree] button',
+                `[data-tab-pane="${pane.id}"]:not([hidden]) [data-workspace-tree] button`,
               )
               ?.focus();
           });
         } else {
-          setState((s) => openTab(s, "files"));
+          setLayout((l) => openPage(l, "files"));
         }
       } else if (e.code === "Backquote" && e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         setOpen(true);
-        setState((s) => openTab(s, "terminal"));
-      } else if (
-        e.code === "Enter" &&
-        primary &&
-        e.altKey &&
-        aside.current?.contains(document.activeElement)
-      ) {
+        setLayout((l) => openPage(l, "terminal"));
+      } else if (e.code === "Enter" && primary && e.altKey && focused) {
         e.preventDefault();
         setFullscreen((v) => !v);
+      } else if (e.code === "Backslash" && primary && !e.altKey && !e.shiftKey && focused) {
+        e.preventDefault();
+        if (rooms.current[pane.id] !== false) setLayout((l) => split(l, pane.id));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setShown]);
+  }, [setFirstShown, setSecondShown]);
 
-  const body = (tab: PanelTab): ReactNode => {
+  const body = (tab: PanelTab, pane: Pane): ReactNode => {
+    const tree = trees[pane.slot];
     switch (tab.kind) {
       case "start":
-        return <StartPage onOpen={openPage} />;
+        return <StartPage onOpen={(kind, shell) => openPageIn(kind, pane.id, shell)} />;
       case "files":
         return (
           <FilesPage
@@ -271,7 +317,7 @@ export default function WorkspacePanel({
             rootPath={rootPath}
             tab={tab}
             tree={tree}
-            active={tab.id === state.active}
+            active={tab.id === pane.tabs.active}
             changeKey={`${busy}:${change?.diff ?? ""}`}
             onOpenInPlace={(path) => openFile({ path }, true)}
           />
@@ -280,9 +326,19 @@ export default function WorkspacePanel({
       case "changes":
         return <ChangedFilesPanel files={changedFiles} onRevertAll={onRevertAll} busy={busy} />;
       case "terminal":
-        return <TerminalPanel projectId={projectId} tab={tab.id} />;
+        return tab.shell === undefined ? null : (
+          <TerminalPanel projectId={projectId} tab={tab.id} shell={tab.shell?.path} />
+        );
     }
   };
+
+  const two = layout.panes.length === 2;
+  // Kept in a fixed order, so moving a tab between panes never moves its DOM.
+  const cells = layout.panes
+    .flatMap((pane, index) => pane.tabs.tabs.map((tab) => ({ tab, pane, column: index + 1 })))
+    .sort((a, b) => a.tab.id.localeCompare(b.tab.id));
+  const lastPane = layout.panes[layout.panes.length - 1];
+  const target = drag.target;
 
   return (
     <>
@@ -324,114 +380,135 @@ export default function WorkspacePanel({
             onWidth={setWidth}
           />
         )}
-        <div className="flex h-[38px] shrink-0 items-center gap-1 pt-2.5 pr-1.5 pl-2.5">
-          <div
-            role="tablist"
-            aria-label="Workspace panel tabs"
-            className="flex min-w-0 shrink items-center overflow-x-auto [scrollbar-width:none]"
-          >
-            {state.tabs.map((tab, index) => {
-              const previous = state.tabs[index - 1];
-              const blank = tab.id === state.active || previous?.id === state.active;
-              return (
-                <Fragment key={tab.id}>
-                  {index > 0 && (
-                    <span
-                      aria-hidden
-                      className="flex h-7 w-2.5 shrink-0 items-center justify-center"
-                    >
-                      <span className={cn("h-3.5 w-px bg-border", blank && "bg-transparent")} />
-                    </span>
-                  )}
-                  <Chip
-                    state={state}
-                    tab={tab}
-                    onActivate={() => setState((s) => activate(s, tab.id))}
-                    onClose={() => {
-                      setState((s) => closeTab(s, tab.id));
-                      if (tab.kind === "terminal") {
-                        api.closeTerminal(projectId, tab.id).catch((err: Error) => {
-                          console.warn("Could not close the terminal", err);
-                        });
-                      }
-                    }}
-                  />
-                </Fragment>
-              );
-            })}
-          </div>
-          {canAddStart(state) && (
-            <button
-              type="button"
-              aria-label="New tab"
-              title="New tab"
-              className={STRIP_BUTTON}
-              onClick={() => setState(addStart)}
-            >
-              <PlusIcon aria-hidden className="size-4" />
-            </button>
-          )}
-          <span className="min-w-0 flex-1" />
-          <div className="ml-1 flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              aria-label="Split"
-              title="Split is not available yet"
-              disabled
-              className={STRIP_BUTTON}
-            >
-              <SquareSplitHorizontalIcon aria-hidden className="size-4" />
-            </button>
-            <button
-              type="button"
-              aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-              title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-              className={STRIP_BUTTON}
-              onClick={() => setFullscreen((v) => !v)}
-            >
-              {fullscreen ? (
-                <Minimize2Icon aria-hidden className="size-4" />
-              ) : (
-                <Maximize2Icon aria-hidden className="size-4" />
-              )}
-            </button>
-            <button
-              type="button"
-              aria-label="Collapse right sidebar"
-              title="Collapse sidebar"
-              className={STRIP_BUTTON}
-              onClick={() => {
-                setFullscreen(false);
-                setOpen(false);
+        <div
+          ref={grid}
+          style={{
+            gridTemplateColumns: two
+              ? `minmax(0,${layout.ratio}fr) minmax(0,${1 - layout.ratio}fr)`
+              : "minmax(0,1fr)",
+            gridTemplateRows: "38px minmax(0,1fr)",
+          }}
+          className="relative grid min-h-0 flex-1"
+        >
+          {layout.panes.map((pane, index) => (
+            <TabStrip
+              key={pane.id}
+              paneId={pane.id}
+              column={index + 1}
+              state={pane.tabs}
+              paneCount={layout.panes.length}
+              draggingId={drag.dragging}
+              closable={(tab) => canCloseTab(layout, pane, tab)}
+              onActivate={(tab) => {
+                if (!drag.consumeDrag()) setLayout((l) => activateTab(l, pane.id, tab.id));
+              }}
+              onClose={(tab) => {
+                setLayout((l) => closePaneTab(l, pane.id, tab.id));
+                if (tab.kind === "terminal") {
+                  api.closeTerminal(projectId, tab.id).catch((err: Error) => {
+                    console.warn("Could not close the terminal", err);
+                  });
+                }
+              }}
+              onRename={(tab, title) => setLayout((l) => renameTab(l, tab.id, title))}
+              onDragStart={(event, tab) => drag.begin(event, tab.id)}
+              onAddStart={() => setLayout((l) => addStartTab(l, pane.id))}
+              onSplit={() => setLayout((l) => split(l, pane.id))}
+              onRoom={(room) => {
+                rooms.current[pane.id] = room;
               }}
             >
-              <PanelRightIcon aria-hidden className="size-4" />
-            </button>
-          </div>
+              {pane === lastPane && (
+                <>
+                  <button
+                    type="button"
+                    aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+                    title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+                    className={STRIP_BUTTON}
+                    onClick={() => setFullscreen((v) => !v)}
+                  >
+                    {fullscreen ? (
+                      <Minimize2Icon aria-hidden className="size-4" />
+                    ) : (
+                      <Maximize2Icon aria-hidden className="size-4" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Collapse right sidebar"
+                    title="Collapse sidebar"
+                    className={STRIP_BUTTON}
+                    onClick={() => {
+                      setFullscreen(false);
+                      setOpen(false);
+                    }}
+                  >
+                    <PanelRightIcon aria-hidden className="size-4" />
+                  </button>
+                </>
+              )}
+            </TabStrip>
+          ))}
+          {cells.map(({ tab, pane, column }) => {
+            const shown = tab.id === pane.tabs.active;
+            return (
+              <div
+                key={tab.id}
+                role="tabpanel"
+                aria-label={titleOf(pane.tabs, tab)}
+                data-tab-pane={pane.id}
+                hidden={!shown}
+                style={{ gridColumn: column, gridRow: 2 }}
+                onPointerDownCapture={() => setLayout((l) => focusPane(l, pane.id))}
+                className={cn(
+                  "min-h-0 min-w-0 flex-col",
+                  shown && "flex",
+                  tab.kind === "file" || tab.kind === "files"
+                    ? "overflow-hidden"
+                    : "overflow-y-auto",
+                  tab.kind === "changes" && "p-3",
+                  tab.kind === "terminal" && "mt-2 overflow-hidden p-2",
+                )}
+              >
+                {body(tab, pane)}
+              </div>
+            );
+          })}
+          {layout.panes.map((pane, index) => (
+            <div
+              key={pane.id}
+              data-pane-body={pane.id}
+              style={{ gridColumn: index + 1, gridRow: 2 }}
+              className="pointer-events-none relative z-[7]"
+            >
+              {glow?.pane === pane.id && (
+                <span
+                  key={glow.serial}
+                  aria-hidden
+                  className="absolute inset-0 animate-[panel-glow_0.6s_ease-in-out]"
+                />
+              )}
+              {target && target.kind !== "strip" && target.pane === pane.id && (
+                <DropOverlay target={target} />
+              )}
+            </div>
+          ))}
+          {two && (
+            <PaneDivider
+              ratio={layout.ratio}
+              grid={grid}
+              onRatio={(ratio) => setLayout((l) => setRatio(l, ratio))}
+            />
+          )}
+          {target?.kind === "strip" && (
+            <span
+              aria-hidden
+              data-drop-caret=""
+              style={{ left: target.caretX - 1, top: 14 }}
+              className="pointer-events-none absolute z-[8] h-5 w-0.5 bg-primary"
+            />
+          )}
         </div>
-        {state.tabs.map((tab) => (
-          <div
-            key={tab.id}
-            role="tabpanel"
-            aria-label={titleOf(state, tab)}
-            hidden={tab.id !== state.active}
-            className={cn(
-              "min-h-0 flex-1 flex-col",
-              tab.id === state.active && "flex",
-              tab.kind === "file" || tab.kind === "files" ? "overflow-hidden" : "overflow-y-auto",
-              (tab.kind === "changes" || tab.kind === "terminal") && "p-3",
-            )}
-          >
-            {body(tab)}
-          </div>
-        ))}
-        {glow > 0 && (
-          <span
-            key={glow}
-            aria-hidden
-            className="pointer-events-none absolute inset-0 z-[7] animate-[panel-glow_0.6s_ease-in-out]"
-          />
-        )}
       </aside>
     </>
   );

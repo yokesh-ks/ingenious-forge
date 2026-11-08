@@ -65,7 +65,7 @@ describe("WorkspacePanel", () => {
     expect(tabs()).toEqual(["Start"]);
     expect(card(/^Workspace files/)).toHaveTextContent("Browse files in this session's workspace");
     expect(card(/^Code review and changes/)).toBeInTheDocument();
-    expect(card(/^New terminal/)).toHaveTextContent("Run commands in the Session workspace");
+    expect(within(panel()).getByText("Run commands in the Session workspace")).toBeVisible();
     expect(card(/^Session log/)).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Open right sidebar" })).not.toBeInTheDocument();
   });
