@@ -1,6 +1,6 @@
 # 0015. Preview documents with PDF.js, FortuneSheet and a LibreOffice kit
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-08
 - **PRD:** §6.2 Workspace panel (File tab), §8 Architecture
 
