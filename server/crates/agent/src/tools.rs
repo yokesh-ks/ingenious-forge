@@ -1,7 +1,8 @@
 //! The agent's built-in file tools (PRD §6.1 Built-in tools: `read`,
-//! `write`, `edit`, and directory listing). Every path is resolved inside
-//! the project root; a path that escapes it is refused. Each result keeps
+//! `write`, `edit`, `glob` and `grep`). Every path is resolved inside the
+//! project root; a path that escapes it is refused. Each result keeps
 //! structured details (`meta`) beside its text for the UI (ADR 0012).
+//! Searching uses `ignore`, `globset` and `regex` (ADR 0014).
 
 use std::{
     fs,
@@ -16,13 +17,21 @@ use crate::changes;
 pub const READ: &str = "read";
 pub const WRITE: &str = "write";
 pub const EDIT: &str = "edit";
-pub const LIST_DIRECTORY: &str = "list_directory";
+pub const GLOB: &str = "glob";
+pub const GREP: &str = "grep";
 /// Runs in the agent rather than here, since it streams (see `shell`).
 pub const BASH: &str = "bash";
+/// Runs in the agent rather than here, since it needs the network policy.
+pub const WEB_FETCH: &str = "web_fetch";
 
 const MAX_READ_BYTES: usize = 200_000;
 const DEFAULT_READ_LINES: usize = 2_000;
-const MAX_LIST_ENTRIES: usize = 1_000;
+const MAX_GLOB_FILES: usize = 100;
+const MAX_GREP_MATCHES: usize = 250;
+/// Longer matching lines are cut, so one minified file cannot fill a result.
+const MAX_GREP_LINE: usize = 500;
+/// Files larger than this are not searched.
+const MAX_GREP_FILE_BYTES: u64 = 5_000_000;
 
 /// A tool definition as sent to the model.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -114,13 +123,41 @@ impl ToolBox {
                 }),
             },
             ToolSpec {
-                name: LIST_DIRECTORY,
-                description: "List the entries of a directory in the project; directories end with '/'.",
+                name: GLOB,
+                description: "Find files, not directories, whose paths match a glob pattern, including hidden and ignored files. Returns up to 100 paths, most recently modified first.",
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "path": { "type": "string", "description": "Directory relative to the project root; defaults to the root" }
+                        "pattern": { "type": "string", "description": "Glob pattern to match file paths against (e.g. \"**/*.ts\", \"src/**/*.test.js\"). A pattern with no \"/\" matches the file name at any depth; include a separator to anchor the depth." },
+                        "path": { "type": "string", "description": "Directory to search in. Defaults to the project root; a relative path resolves against it." }
                     },
+                    "required": ["pattern"],
+                    "additionalProperties": false
+                }),
+            },
+            ToolSpec {
+                name: GREP,
+                description: "Search file contents with a regular expression. Returns matching lines with line numbers, grouped by file, skipping ignored, hidden and binary files. Returns up to 250 matches.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "pattern": { "type": "string", "description": "Regular expression to search for." },
+                        "path": { "type": "string", "description": "File or directory to search. Defaults to the project root; a relative path resolves against it." },
+                        "include": { "type": "string", "description": "One glob filter for which files to search (e.g. \"*.ts\", \"*.{js,jsx}\")." }
+                    },
+                    "required": ["pattern"],
+                    "additionalProperties": false
+                }),
+            },
+            ToolSpec {
+                name: WEB_FETCH,
+                description: "Fetch the content of a specific HTTP(S) URL and return it decoded to text. Needs network access in the session's sandbox.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "url": { "type": "string", "description": "The HTTP(S) URL to fetch." }
+                    },
+                    "required": ["url"],
                     "additionalProperties": false
                 }),
             },
@@ -145,7 +182,8 @@ impl ToolBox {
             READ => self.read(input),
             WRITE => self.write(input),
             EDIT => self.edit(input),
-            LIST_DIRECTORY => self.list_directory(input),
+            GLOB => self.glob(input),
+            GREP => self.grep(input),
             other => Err(format!("unknown tool: {other}")),
         };
         match result {
@@ -371,48 +409,187 @@ impl ToolBox {
         ))
     }
 
-    fn list_directory(&self, input: &Value) -> Result<(String, Value), String> {
+    /// The folder a search starts from: `path`, or the project root.
+    fn search_root(&self, input: &Value) -> Result<(String, PathBuf), String> {
         let rel = match &input["path"] {
             Value::Null => ".",
             Value::String(s) if s.is_empty() => ".",
             Value::String(s) => s.as_str(),
             _ => return Err("path must be a string".into()),
         };
-        let path = self.resolve(rel)?;
-        let read = fs::read_dir(&path).map_err(|e| format!("cannot list {rel}: {e}"))?;
-        let mut entries: Vec<String> = read
+        Ok((rel.to_string(), self.resolve(rel)?))
+    }
+
+    /// A path found under the project root, as the tools show it.
+    fn shown(&self, path: &Path) -> String {
+        self.project_path(&path.to_string_lossy())
+            .unwrap_or_else(|_| path.display().to_string())
+    }
+
+    fn glob(&self, input: &Value) -> Result<(String, Value), String> {
+        let pattern = str_arg(input, "pattern")?;
+        let (rel, base) = self.search_root(input)?;
+        if !base.is_dir() {
+            return Err(format!("{rel} is not a directory"));
+        }
+        // A pattern without a separator matches a file name at any depth.
+        let full = if pattern.contains('/') {
+            pattern.to_string()
+        } else {
+            format!("**/{pattern}")
+        };
+        let matcher = globset::GlobBuilder::new(&full)
+            .literal_separator(true)
+            .build()
+            .map_err(|e| format!("invalid glob pattern: {e}"))?
+            .compile_matcher();
+        let walk = ignore::WalkBuilder::new(&base)
+            .standard_filters(false)
+            .filter_entry(|entry| entry.file_name() != ".git")
+            .build();
+        let mut found: Vec<(std::time::SystemTime, PathBuf)> = walk
             .filter_map(Result::ok)
-            .filter(|e| e.file_name() != ".git")
-            .map(|e| {
-                let name = e.file_name().to_string_lossy().into_owned();
-                if e.file_type().is_ok_and(|t| t.is_dir()) {
-                    format!("{name}/")
-                } else {
-                    name
-                }
+            .filter(|entry| entry.file_type().is_some_and(|t| t.is_file()))
+            .filter(|entry| {
+                entry
+                    .path()
+                    .strip_prefix(&base)
+                    .is_ok_and(|relative| matcher.is_match(relative))
+            })
+            .map(|entry| {
+                let modified = entry
+                    .metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .unwrap_or(std::time::UNIX_EPOCH);
+                (modified, entry.into_path())
             })
             .collect();
-        let shown = path.display().to_string();
-        if entries.is_empty() {
-            let meta = json!({ "path": shown, "entries": 0, "truncated": false });
-            return Ok(("(empty directory)".into(), meta));
-        }
-        entries.sort();
-        let total = entries.len();
-        entries.truncate(MAX_LIST_ENTRIES);
-        let mut out = entries.join("\n");
-        if total > MAX_LIST_ENTRIES {
-            out.push_str(&format!(
-                "\n[{} more entries not shown]",
-                total - MAX_LIST_ENTRIES
+        found.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        let total = found.len();
+        let paths: Vec<String> = found
+            .iter()
+            .take(MAX_GLOB_FILES)
+            .map(|(_, path)| self.shown(path))
+            .collect();
+        let mut output = if paths.is_empty() {
+            "No files found.".to_string()
+        } else {
+            paths.join("\n")
+        };
+        if total > MAX_GLOB_FILES {
+            output.push_str(&format!(
+                "\n[{} more files not shown; narrow the pattern or path]",
+                total - MAX_GLOB_FILES
             ));
         }
         let meta = json!({
-            "path": shown,
-            "entries": total,
-            "truncated": total > MAX_LIST_ENTRIES,
+            "pattern": pattern,
+            "path": base.display().to_string(),
+            "matches": total,
+            "truncated": total > MAX_GLOB_FILES,
         });
-        Ok((out, meta))
+        Ok((output, meta))
+    }
+
+    fn grep(&self, input: &Value) -> Result<(String, Value), String> {
+        let pattern = str_arg(input, "pattern")?;
+        let regex =
+            regex::Regex::new(pattern).map_err(|e| format!("invalid regular expression: {e}"))?;
+        let include = match &input["include"] {
+            Value::Null => None,
+            Value::String(glob) if glob.is_empty() => None,
+            Value::String(glob) => Some(
+                globset::GlobBuilder::new(glob)
+                    .literal_separator(true)
+                    .build()
+                    .map_err(|e| format!("invalid include pattern: {e}"))?
+                    .compile_matcher(),
+            ),
+            _ => return Err("include must be a string".into()),
+        };
+        let (rel, target) = self.search_root(input)?;
+        if !target.exists() {
+            return Err(format!("{rel} does not exist"));
+        }
+        // ripgrep's rules: skip ignored, hidden and binary files.
+        let walk = ignore::WalkBuilder::new(&target)
+            .require_git(false)
+            .filter_entry(|entry| entry.file_name() != ".git")
+            .build();
+        let mut groups: Vec<String> = Vec::new();
+        let (mut files, mut matches, mut truncated) = (0, 0, false);
+        'files: for entry in walk.filter_map(Result::ok) {
+            if !entry.file_type().is_some_and(|t| t.is_file()) {
+                continue;
+            }
+            let path = entry.path();
+            if let Some(include) = &include {
+                let name = path.file_name().map(Path::new).unwrap_or(path);
+                if !include.is_match(name) {
+                    continue;
+                }
+            }
+            if entry
+                .metadata()
+                .is_ok_and(|m| m.len() > MAX_GREP_FILE_BYTES)
+            {
+                continue;
+            }
+            let Ok(bytes) = fs::read(path) else {
+                continue;
+            };
+            if bytes[..bytes.len().min(8_192)].contains(&0) {
+                continue;
+            }
+            let text = String::from_utf8_lossy(&bytes);
+            let mut group = String::new();
+            for (i, line) in text.lines().enumerate() {
+                if !regex.is_match(line) {
+                    continue;
+                }
+                if matches == MAX_GREP_MATCHES {
+                    truncated = true;
+                    if !group.is_empty() {
+                        groups.push(format!("{}\n{group}", self.shown(path)));
+                        files += 1;
+                    }
+                    break 'files;
+                }
+                matches += 1;
+                let mut shown = line;
+                if shown.len() > MAX_GREP_LINE {
+                    let mut end = MAX_GREP_LINE;
+                    while !shown.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    shown = &shown[..end];
+                }
+                group.push_str(&format!("{}: {shown}\n", i + 1));
+            }
+            if !group.is_empty() {
+                groups.push(format!("{}\n{group}", self.shown(path)));
+                files += 1;
+            }
+        }
+        let mut output = if groups.is_empty() {
+            "No matches.".to_string()
+        } else {
+            groups.join("\n").trim_end().to_string()
+        };
+        if truncated {
+            output.push_str(&format!(
+                "\n\n[Stopped at {MAX_GREP_MATCHES} matches; narrow the pattern, path or include]"
+            ));
+        }
+        let meta = json!({
+            "pattern": pattern,
+            "path": target.display().to_string(),
+            "files": files,
+            "matches": matches,
+            "truncated": truncated,
+        });
+        Ok((output, meta))
     }
 
     /// Resolves `rel` inside the project root, refusing `..` escapes,
@@ -485,4 +662,96 @@ fn normalize(path: &Path) -> PathBuf {
         }
     }
     out
+}
+
+/// Readable text from an HTML page: scripts, styles and comments dropped,
+/// block tags turned into line breaks, common entities decoded and blank
+/// runs collapsed. Basic by design (ADR 0014).
+pub fn html_to_text(html: &str) -> String {
+    let lower = html.to_ascii_lowercase();
+    let mut out = String::with_capacity(html.len() / 2);
+    let mut i = 0;
+    while i < html.len() {
+        let rest = &lower[i..];
+        if rest.starts_with("<!--") {
+            i += rest.find("-->").map_or(rest.len(), |end| end + 3);
+            continue;
+        }
+        if let Some(tag) = ["script", "style", "noscript"]
+            .into_iter()
+            .find(|tag| rest.starts_with(&format!("<{tag}")))
+        {
+            let close = format!("</{tag}");
+            i += rest.find(&close).map_or(rest.len(), |at| {
+                rest[at..].find('>').map_or(rest.len(), |end| at + end + 1)
+            });
+            continue;
+        }
+        if let Some(tag) = rest.strip_prefix('<') {
+            let end = rest.find('>').map_or(rest.len(), |end| end + 1);
+            let name: String = tag
+                .chars()
+                .skip_while(|c| *c == '/')
+                .take_while(|c| c.is_ascii_alphanumeric())
+                .collect();
+            let closing = tag.starts_with('/');
+            // Lines break at both ends of a block, and before each list
+            // item, row or line break.
+            let block = matches!(
+                name.as_str(),
+                "p" | "div"
+                    | "h1"
+                    | "h2"
+                    | "h3"
+                    | "h4"
+                    | "h5"
+                    | "h6"
+                    | "section"
+                    | "article"
+                    | "header"
+                    | "footer"
+                    | "pre"
+                    | "table"
+                    | "ul"
+                    | "ol"
+            );
+            let item = matches!(name.as_str(), "li" | "tr" | "br");
+            if block {
+                out.push_str("\n\n");
+            } else if item && !closing {
+                out.push('\n');
+            }
+            i += end;
+            continue;
+        }
+        let ch = html[i..].chars().next().unwrap_or(' ');
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    let decoded = out
+        .replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&");
+    let mut text = String::new();
+    let mut blank = 0;
+    for line in decoded
+        .lines()
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+    {
+        if line.is_empty() {
+            blank += 1;
+            if blank == 1 && !text.is_empty() {
+                text.push('\n');
+            }
+            continue;
+        }
+        blank = 0;
+        text.push_str(&line);
+        text.push('\n');
+    }
+    text.trim().to_string()
 }

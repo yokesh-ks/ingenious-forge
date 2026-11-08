@@ -69,6 +69,24 @@ describe("ToolCallCard", () => {
       expect(screen.getByTestId("shell-command")).toHaveTextContent("ls -la");
     });
 
+    it("labels searches by pattern and fetches by URL", () => {
+      const { unmount } = render(
+        <ToolCallCard
+          tool={tool({ name: "grep", args: { pattern: "TODO" }, output: "a.ts\n1: TODO" })}
+        />,
+      );
+      expect(screen.getByText("Search")).toBeInTheDocument();
+      expect(screen.getByText("TODO")).toBeInTheDocument();
+      unmount();
+      render(
+        <ToolCallCard
+          tool={tool({ name: "web_fetch", args: { url: "https://example.com" }, output: "x" })}
+        />,
+      );
+      expect(screen.getByText("Fetch")).toBeInTheDocument();
+      expect(screen.getByText("https://example.com")).toBeInTheDocument();
+    });
+
     it("labels write and edit by their file", () => {
       render(
         <ToolCallCard

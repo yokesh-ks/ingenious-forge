@@ -12,7 +12,7 @@ use std::{
 use agent::{
     instructions,
     model::{ContentBlock, ModelClient, ModelError, ModelEvent, ModelRequest},
-    tools::{ToolBox, LIST_DIRECTORY, READ},
+    tools::{ToolBox, GLOB, READ},
     Agent,
 };
 use api_types::{SessionEnvelope, SessionEvent, TurnEndReason};
@@ -261,7 +261,7 @@ async fn listing_a_folder_loads_its_agents_md() {
     let (agent, _, mut rx) = setup(
         root,
         vec![
-            vec![tool_use("t1", LIST_DIRECTORY, json!({"path": "web"}))],
+            vec![tool_use("t1", GLOB, json!({"pattern": "*", "path": "web"}))],
             vec![ModelEvent::TextDelta("ok".into())],
         ],
     );

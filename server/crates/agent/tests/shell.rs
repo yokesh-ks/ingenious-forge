@@ -389,8 +389,8 @@ async fn other_tools_report_no_exit_code() {
     let (agent, _, mut rx) = setup(vec![
         vec![ModelEvent::Message(vec![ContentBlock::ToolUse {
             id: "t1".into(),
-            name: "list_directory".into(),
-            input: json!({}),
+            name: "glob".into(),
+            input: json!({ "pattern": "*" }),
         }])],
         vec![ModelEvent::TextDelta("ok".into())],
     ]);

@@ -3,7 +3,7 @@
  * tools were renamed (`read_file`, `edit_file`, `run_shell`) map to the same
  * kinds as the current names, so old sessions keep rendering.
  */
-export type ToolKind = "read" | "write" | "edit" | "list" | "bash" | "other";
+export type ToolKind = "read" | "write" | "edit" | "list" | "search" | "fetch" | "bash" | "other";
 
 const KINDS: Record<string, ToolKind> = {
   read: "read",
@@ -12,6 +12,9 @@ const KINDS: Record<string, ToolKind> = {
   edit: "edit",
   edit_file: "edit",
   list_directory: "list",
+  glob: "search",
+  grep: "search",
+  web_fetch: "fetch",
   bash: "bash",
   run_shell: "bash",
 };
