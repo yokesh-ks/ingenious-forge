@@ -185,6 +185,23 @@ describe("TrajectoryView", () => {
     expect(screen.getAllByRole("row")).toHaveLength(250);
   });
 
+  it("keeps the rows in view when earlier ones are revealed", async () => {
+    const many: SessionEnvelope[] = Array.from({ length: 250 }, (_, i) =>
+      at(1_000 + i, { type: "user_message", session_id: S, text: `m${i}`, source: "human" }),
+    );
+    view({ events: many });
+    const pane = screen.getByRole("table", { name: "Trajectory ledger" })
+      .parentElement as HTMLElement;
+    Object.defineProperty(pane, "scrollHeight", {
+      configurable: true,
+      get: () => pane.querySelectorAll("tr").length * 30,
+    });
+    pane.scrollTop = 12;
+    fireEvent.scroll(pane);
+    await userEvent.click(within(pane).getByRole("button", { name: "Load earlier history" }));
+    expect(pane.scrollTop).toBe(12 + 50 * 30);
+  });
+
   it("narrows the ledger to rows matching the search", async () => {
     view();
     await userEvent.type(screen.getByRole("searchbox", { name: "Search trajectory" }), "b.md");
@@ -320,7 +337,7 @@ describe("TrajectoryView", () => {
       view();
       await userEvent.type(screen.getByRole("searchbox", { name: "Search trajectory" }), "b.md");
       expect(span("tool:t1")).toHaveAttribute("data-search-match", "true");
-      expect(span("reply:3")).toHaveAttribute("data-search-match", "false");
+      expect(span("reply:2.1")).toHaveAttribute("data-search-match", "false");
     });
 
     it("offers earlier history at the left edge", async () => {

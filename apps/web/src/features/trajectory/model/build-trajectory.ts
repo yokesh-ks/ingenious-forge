@@ -269,7 +269,9 @@ export function buildTrajectory(events: SessionEnvelope[]): Trajectory {
           .join(" ");
         reply = {
           kind: "assistant",
-          id: `reply:${request}`,
+          // Turn and step, not the running count: loading older history renumbers
+          // requests but must not change what an id points to.
+          id: `reply:${envelope.turn}.${envelope.step}`,
           turn: envelope.turn,
           step: envelope.step,
           at,
@@ -337,6 +339,9 @@ export function buildTrajectory(events: SessionEnvelope[]): Trajectory {
   }
   return { records };
 }
+
+/** The id that selects the model request behind a reply. */
+export const requestIdOf = (reply: AssistantRecord) => reply.id.replace(/^reply:/, "request:");
 
 /** The usage of every request up to and including `request`. */
 export function sessionUsageUpTo(records: TrajectoryRecord[], request: number): Usage {

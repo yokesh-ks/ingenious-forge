@@ -49,7 +49,7 @@ describe("buildTimeline", () => {
   it("uses recorded times with the idle gaps between operations removed", () => {
     const m = model("duration");
     const tool = m.spans.find((s) => s.id === "tool:t1");
-    const reply = m.spans.find((s) => s.id === "reply:1");
+    const reply = m.spans.find((s) => s.id === "reply:1.1");
     // The reply ran 900 ms from its step's start.
     expect(reply && reply.end - reply.start).toBe(900);
     expect(tool && tool.end - tool.start).toBe(80);
@@ -65,7 +65,7 @@ describe("buildTimeline", () => {
   it("flags failed calls and splits a reply's wait from its generation", () => {
     const m = model("sequence");
     expect(m.spans.find((s) => s.id === "tool:t2")?.isError).toBe(true);
-    expect(m.spans.find((s) => s.id === "reply:1")).toMatchObject({
+    expect(m.spans.find((s) => s.id === "reply:1.1")).toMatchObject({
       ttftMs: 600,
       decodingMs: 300,
       durationMs: 900,
@@ -88,10 +88,10 @@ describe("focusIds", () => {
 describe("nearestSpan", () => {
   it("finds the span at a time, or the closest one to it", () => {
     const m = model("duration");
-    const inside = m.spans.find((s) => s.id === "reply:1");
+    const inside = m.spans.find((s) => s.id === "reply:1.1");
     if (!inside) throw new Error("no span");
-    expect(nearestSpan(m, inside.start + 100).id).toBe("reply:1");
-    expect(nearestSpan(m, m.end + 1_000).id).toBe("reply:3");
+    expect(nearestSpan(m, inside.start + 100).id).toBe("reply:1.1");
+    expect(nearestSpan(m, m.end + 1_000).id).toBe("reply:2.1");
   });
 });
 
@@ -138,7 +138,7 @@ describe("viewport", () => {
 
 describe("tooltipLabel", () => {
   it("names the kind, its times and its split", () => {
-    const span = model("sequence").spans.find((s) => s.id === "reply:1");
+    const span = model("sequence").spans.find((s) => s.id === "reply:1.1");
     if (!span) throw new Error("no span");
     const lines = tooltipLabel(span).split("\n");
     expect(lines[0]).toBe("ASSISTANT");

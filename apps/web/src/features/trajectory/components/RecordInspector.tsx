@@ -9,6 +9,7 @@ import {
   type AssistantRecord,
   type Block,
   replyDuration,
+  requestIdOf,
   sessionUsageUpTo,
   type ToolRecord,
   type TrajectoryRecord,
@@ -318,7 +319,7 @@ function tabsFor(
             <>
               <Fields>
                 <Field label="Source">
-                  <LinkButton onClick={() => select(`request:${record.request}`)}>
+                  <LinkButton onClick={() => select(requestIdOf(record))}>
                     Request #{record.request}
                   </LinkButton>
                 </Field>

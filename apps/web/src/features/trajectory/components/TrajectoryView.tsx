@@ -11,6 +11,7 @@ import {
   matchesSearch,
   previewText,
   replyDuration,
+  requestIdOf,
   type TrajectoryRecord,
 } from "../model/build-trajectory";
 import { buildTimeline, focusIds, type TimeRange } from "../model/timeline";
@@ -125,7 +126,7 @@ function RecordRow({
 }) {
   const { record } = row;
   const isSelected = selected === record.id;
-  const requestSelected = record.kind === "assistant" && selected === `request:${record.request}`;
+  const requestSelected = record.kind === "assistant" && selected === requestIdOf(record);
   const inActiveTurn =
     activeTurn !== null && record.turn === activeTurn && record.preview !== "Initial System Prompt";
   const outside = focus !== null && !focus.has(record.id);
@@ -179,7 +180,7 @@ function RecordRow({
             title={`Request #${record.request}`}
             onClick={(e) => {
               e.stopPropagation();
-              onSelect(`request:${record.request}`);
+              onSelect(requestIdOf(record));
             }}
             onDoubleClick={(e) => e.stopPropagation()}
             className="group absolute -top-2 left-3 z-[6] size-4"
@@ -311,22 +312,45 @@ export default function TrajectoryView({
 
   const selection = useMemo((): Selection | null => {
     if (!selected) return null;
-    const request = /^request:(\d+)$/.exec(selected);
-    if (request) {
-      const reply = records.find((r) => r.kind === "assistant" && r.request === Number(request[1]));
+    if (selected.startsWith("request:")) {
+      const reply = records.find((r) => r.id === rowId(selected));
       return reply?.kind === "assistant" ? { type: "request", reply } : null;
     }
     const record = records.find((r) => r.id === selected);
     return record ? { type: "record", record } : null;
   }, [records, selected]);
 
+  // The latest rows, reaching back far enough to hold the selected one.
+  const target = rowId(selected);
+  const selectedIndex = rows.findIndex((r) => r.type === "record" && r.record.id === target);
+  const tail = Math.max(0, rows.length - limit);
+  const firstFocused = focus
+    ? rows.findIndex((r) => r.type === "record" && focus.has(r.record.id))
+    : -1;
+  const from = Math.min(
+    tail,
+    selectedIndex === -1 ? tail : selectedIndex,
+    firstFocused === -1 ? tail : firstFocused,
+  );
+  const shown = rows.slice(from);
+  const shownFirst = shown[0]?.key;
+
   // Follow new rows while the user is at the bottom; open at the tail.
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
+  const anchor = useRef<{ top: number; height: number; firstKey?: string } | null>(null);
   useLayoutEffect(() => {
     const el = scroller.current;
-    if (el && following.current && !selected && rows.length > 0) el.scrollTop = el.scrollHeight;
-  }, [rows, selected]);
+    if (!el) return;
+    // Rows added above stay out of the way of the ones being read.
+    const held = anchor.current;
+    if (held && shownFirst !== held.firstKey) {
+      anchor.current = null;
+      el.scrollTop = held.top + el.scrollHeight - held.height;
+      return;
+    }
+    if (following.current && !selected && rows.length > 0) el.scrollTop = el.scrollHeight;
+  }, [rows, selected, shownFirst]);
 
   // Bring a record chosen from elsewhere, such as Inspect, into view.
   useEffect(() => {
@@ -369,6 +393,14 @@ export default function TrajectoryView({
     setSelected(id);
   };
 
+  /** Remembers the scroll position before adding rows at the top. */
+  const holdScroll = (firstKey: string | undefined) => {
+    const el = scroller.current;
+    if (!el) return;
+    following.current = false;
+    anchor.current = { top: el.scrollTop, height: el.scrollHeight, firstKey };
+  };
+
   const flip = (key: string) =>
     setFlipped((all) => {
       const next = new Set(all);
@@ -378,20 +410,6 @@ export default function TrajectoryView({
 
   const activeTurn =
     selection?.type === "request" ? selection.reply.turn : (selection?.record.turn ?? null);
-
-  // The latest rows, reaching back far enough to hold the selected one.
-  const target = rowId(selected);
-  const selectedIndex = rows.findIndex((r) => r.type === "record" && r.record.id === target);
-  const tail = Math.max(0, rows.length - limit);
-  const firstFocused = focus
-    ? rows.findIndex((r) => r.type === "record" && focus.has(r.record.id))
-    : -1;
-  const from = Math.min(
-    tail,
-    selectedIndex === -1 ? tail : selectedIndex,
-    firstFocused === -1 ? tail : firstFocused,
-  );
-  const shown = rows.slice(from);
 
   return (
     <section aria-label="Trajectory" className="flex min-h-0 w-full min-w-0 flex-1 flex-col">
@@ -456,7 +474,10 @@ export default function TrajectoryView({
         searchIds={searchIds}
         hasOlder={hasOlder}
         loadingOlder={loadingOlder}
-        onLoadOlder={onLoadOlder}
+        onLoadOlder={() => {
+          holdScroll(shown[0]?.key);
+          onLoadOlder();
+        }}
         onRangeChange={setRange}
         onSelect={setSelected}
         onFocusRecord={(id) => {
@@ -477,7 +498,11 @@ export default function TrajectoryView({
               <button
                 type="button"
                 disabled={loadingOlder}
-                onClick={() => (from > 0 ? setLimit((n) => n + WINDOW) : onLoadOlder())}
+                onClick={() => {
+                  holdScroll(shown[0]?.key);
+                  if (from > 0) setLimit((n) => n + WINDOW);
+                  else onLoadOlder();
+                }}
                 className="text-xs text-muted-foreground hover:text-foreground"
               >
                 {loadingOlder ? "Loading earlier history…" : "Load earlier history"}
