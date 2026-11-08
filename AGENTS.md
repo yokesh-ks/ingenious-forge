@@ -110,8 +110,8 @@ working.
 - `apps/web/`: the React + TypeScript SPA (Vite, Tailwind CSS, Shadcn UI
   conventions, Biome for lint/format). Builds to `apps/web/dist`, served by
   the Rust server. `src/` is organized feature-first: each domain lives
-  under `src/features/<domain>/` (currently `session`, `chat`, `git`,
-  `sandbox`, `terminal`), holding that domain's `components/`, `hooks/`, `api/`,
+  under `src/features/<domain>/` (currently `session`, `chat`, `stats`,
+  `git`, `sandbox`, `terminal`), holding that domain's `components/`, `hooks/`, `api/`,
   `store/` (session's paged event store) and `model/` (chat's pure
   projection) as needed. Only genuinely cross-cutting code stays in the top-level
   shared layers: `components/ui/` (CLI-owned Shadcn primitives),

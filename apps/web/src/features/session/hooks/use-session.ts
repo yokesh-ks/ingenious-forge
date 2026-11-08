@@ -47,6 +47,8 @@ export function useSession(
   const [connected, setConnected] = useState(false);
   const [hasOlder, setHasOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  // The raw events, for views that need more than the chat keeps.
+  const [events, setEvents] = useState<SessionEnvelope[]>([]);
   const socketRef = useRef<WebSocket | null>(null);
   const storeRef = useRef<EventStore>(emptyEventStore);
   const hasOlderRef = useRef(false);
@@ -60,6 +62,7 @@ export function useSession(
   const ingest = useCallback((envelopes: SessionEnvelope[]) => {
     const next = mergeEvents(storeRef.current, envelopes);
     storeRef.current = next;
+    if (next.appended === null || next.appended.length > 0) setEvents(next.events);
     if (next.appended === null) dispatch({ kind: "reset", events: next.events });
     else if (next.appended.length > 0) dispatch({ kind: "events", events: next.appended });
   }, []);
@@ -71,6 +74,7 @@ export function useSession(
 
   useEffect(() => {
     storeRef.current = emptyEventStore;
+    setEvents([]);
     markOlder(false);
     dispatch({ kind: "reset", events: [] });
     // Live frames held back while the backlog loads; null when not syncing.
@@ -226,6 +230,7 @@ export function useSession(
 
   return {
     state,
+    events,
     connected,
     hasOlder,
     loadingOlder,

@@ -1,7 +1,7 @@
 import { act, render, renderHook, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { Link, matchPath, navigate, usePath } from "../router";
+import { Link, matchPath, navigate, usePath, useQueryParam } from "../router";
 
 afterEach(() => window.history.replaceState(null, "", "/"));
 
@@ -45,5 +45,20 @@ describe("usePath and navigate", () => {
     render(<Link to="/projects/p2">Open</Link>);
     await userEvent.click(screen.getByRole("link", { name: "Open" }));
     expect(window.location.pathname).toBe("/projects/p2");
+  });
+});
+
+describe("useQueryParam", () => {
+  it("reads and sets one query parameter, keeping the path and others", () => {
+    window.history.replaceState(null, "", "/projects/p1?x=1");
+    const { result } = renderHook(() => useQueryParam("view"));
+    expect(result.current[0]).toBeNull();
+    act(() => result.current[1]("statistics"));
+    expect(result.current[0]).toBe("statistics");
+    expect(window.location.pathname).toBe("/projects/p1");
+    expect(new URLSearchParams(window.location.search).get("x")).toBe("1");
+    act(() => result.current[1](null));
+    expect(result.current[0]).toBeNull();
+    expect(window.location.search).toBe("?x=1");
   });
 });

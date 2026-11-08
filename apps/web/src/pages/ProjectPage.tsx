@@ -12,10 +12,12 @@ import { useModelCatalog } from "@/features/sandbox/hooks/use-model-catalog";
 import { useSandbox } from "@/features/sandbox/hooks/use-sandbox";
 import ProjectPicker from "@/features/session/components/ProjectPicker";
 import SessionRightSidebar from "@/features/session/components/SessionRightSidebar";
+import SessionTabs from "@/features/session/components/SessionTabs";
 import SessionWorkspace from "@/features/session/components/SessionWorkspace";
 import { useProjectSessions } from "@/features/session/hooks/use-project-sessions";
 import { useSession } from "@/features/session/hooks/use-session";
 import type { TurnRecord } from "@/features/session/session-reducer";
+import StatisticsView from "@/features/stats/components/StatisticsView";
 import { navigate } from "@/lib/router";
 
 /** Changes whenever a step settles or a turn starts or ends, so the
@@ -57,6 +59,7 @@ function SessionPane({
   const { sandbox } = useSandbox(sessionId);
   const {
     state,
+    events,
     connected,
     hasOlder,
     loadingOlder,
@@ -83,6 +86,26 @@ function SessionPane({
           loadingOlder={loadingOlder}
           onLoadOlder={loadOlder}
           footer={<SessionMetrics sessionId={sessionId} refreshKey={metricsKey(state.turns)} />}
+          frame={(chat) => (
+            <SessionTabs
+              chat={chat}
+              trajectory={
+                <p className="m-auto text-sm text-muted-foreground">
+                  The Trajectory view is not built yet.
+                </p>
+              }
+              statistics={
+                <StatisticsView
+                  sessionId={sessionId}
+                  refreshKey={metricsKey(state.turns)}
+                  events={events}
+                  hasOlder={hasOlder}
+                  loadingOlder={loadingOlder}
+                  onLoadOlder={loadOlder}
+                />
+              }
+            />
+          )}
           composerBar={
             <div className="flex items-center justify-between gap-2">
               <ProjectPicker projectId={projectId} />
