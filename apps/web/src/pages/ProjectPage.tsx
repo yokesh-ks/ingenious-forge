@@ -142,7 +142,9 @@ function SessionPane({
           />
         </div>
         <WorkspacePanel
+          key={sessionId}
           projectId={projectId}
+          sessionId={sessionId}
           changedFiles={state.changedFiles}
           onRevertAll={revertAll}
           busy={state.running}

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeFetch } from "@/test/fake-fetch";
@@ -22,6 +22,7 @@ function setup() {
   render(
     <WorkspacePanel
       projectId="p1"
+      sessionId="s1"
       changedFiles={[]}
       onRevertAll={() => {}}
       busy={false}
@@ -357,5 +358,40 @@ describe("floating a tab", () => {
     expect(floating().style.visibility).toBe("visible");
     await userEvent.click(within(floating()).getByRole("button", { name: "Close" }));
     expect(floating()).toBeNull();
+  });
+});
+
+describe("remembering the panel", () => {
+  it("brings back tabs, splits, floats and the open state after a reload", async () => {
+    const first = setup();
+    await expand();
+    act(() => first.control.current?.openFile({ path: "a.txt" }));
+    await userEvent.click(button("Split")[0]);
+    await waitFor(() => expect(strips()).toEqual([["a.txt"], ["Start"]]));
+    cleanup();
+
+    setup();
+    expect(panel()).toBeVisible();
+    expect(strips()).toEqual([["a.txt"], ["Start"]]);
+  });
+
+  it("keeps each session's panel apart", async () => {
+    const first = setup();
+    await expand();
+    act(() => first.control.current?.openFile({ path: "a.txt" }));
+    await waitFor(() => expect(strips()).toEqual([["a.txt"]]));
+    cleanup();
+
+    render(
+      <WorkspacePanel
+        projectId="p1"
+        sessionId="s2"
+        changedFiles={[]}
+        onRevertAll={() => {}}
+        busy={false}
+      />,
+    );
+    await expand();
+    expect(strips()).toEqual([["Start"]]);
   });
 });

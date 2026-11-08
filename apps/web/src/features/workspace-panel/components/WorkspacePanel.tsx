@@ -13,6 +13,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -57,6 +58,7 @@ import {
   split,
   unfloat,
 } from "../model/panes";
+import { readPanel, readWidth, writePanel, writeWidth } from "../model/saved-layout";
 import { pickShell } from "../model/shell-choice";
 import { type PanelTab, type TabKind, type TabShell, titleOf } from "../model/tabs";
 import FilesPage from "./FilesPage";
@@ -223,21 +225,25 @@ function DropOverlay({ target }: { target: DropTarget }) {
  */
 export default function WorkspacePanel({
   projectId,
+  sessionId,
   changedFiles,
   onRevertAll,
   busy,
   control,
 }: {
   projectId: string;
+  /** Whose panel this is; each session keeps its own. */
+  sessionId: string;
   changedFiles: FileChange[];
   onRevertAll: () => void;
   busy: boolean;
   control?: RefObject<WorkspacePanelControl | null>;
 }) {
-  const [open, setOpen] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
-  const [layout, setLayout] = useState(initialLayout);
-  const [width, setWidth] = useState<number | null>(null);
+  const [saved] = useState(() => readPanel(sessionId));
+  const [open, setOpen] = useState(saved?.open ?? false);
+  const [fullscreen, setFullscreen] = useState(saved?.fullscreen ?? false);
+  const [layout, setLayout] = useState(() => saved?.layout ?? initialLayout());
+  const [width, setWidth] = useState<number | null>(readWidth);
   const shownWidth = width ?? firstWidth();
   const aside = useRef<HTMLElement>(null);
   const grid = useRef<HTMLDivElement>(null);
@@ -253,6 +259,14 @@ export default function WorkspacePanel({
   const latest = useRef({ open, layout, rootPath });
   latest.current = { open, layout, rootPath };
 
+  useEffect(() => {
+    writePanel(sessionId, { open, fullscreen, layout });
+  }, [sessionId, open, fullscreen, layout]);
+
+  useEffect(() => {
+    if (width !== null) writeWidth(width);
+  }, [width]);
+
   const roomIn = (paneId: string) => rooms.current[paneId] ?? true;
 
   const drag = useTabDrag({
@@ -266,6 +280,13 @@ export default function WorkspacePanel({
         return moveTab(l, tabId, target.pane, target.kind === "strip" ? target.index : undefined);
       }),
   });
+
+  const [origin, setOrigin] = useState({ x: 0, y: 0 });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the frame only moves with the panel's layout
+  useLayoutEffect(() => {
+    const next = fixedOrigin(aside.current);
+    setOrigin((o) => (o.x === next.x && o.y === next.y ? o : next));
+  }, [open, fullscreen, layout.floats.length]);
 
   const [lifted, setLifted] = useState<{ id: string; rect: FloatPanel["rect"] } | null>(null);
   const [settling, setSettling] = useState<string | null>(null);
@@ -307,9 +328,12 @@ export default function WorkspacePanel({
     window.addEventListener("pointercancel", cancel);
   };
 
+  /** A terminal's name on the server: tab ids repeat between sessions. */
+  const terminalTab = (id: string) => `${sessionId.slice(0, 12)}-${id}`;
+
   const endTerminal = (tab: PanelTab) => {
     if (tab.kind !== "terminal") return;
-    api.closeTerminal(projectId, tab.id).catch((err: Error) => {
+    api.closeTerminal(projectId, terminalTab(tab.id)).catch((err: Error) => {
       console.warn("Could not close the terminal", err);
     });
   };
@@ -486,13 +510,12 @@ export default function WorkspacePanel({
         return <ChangedFilesPanel files={changedFiles} onRevertAll={onRevertAll} busy={busy} />;
       case "terminal":
         return tab.shell === undefined ? null : (
-          <TerminalPanel projectId={projectId} tab={tab.id} shell={tab.shell?.path} />
+          <TerminalPanel projectId={projectId} tab={terminalTab(tab.id)} shell={tab.shell?.path} />
         );
     }
   };
 
   const two = layout.panes.length === 2;
-  const origin = fixedOrigin(aside.current);
   // Kept in a fixed order, so moving a tab between panes never moves its DOM.
   const cells = [
     ...layout.panes.flatMap((pane, index) =>
