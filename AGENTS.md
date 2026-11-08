@@ -111,8 +111,8 @@ working.
   conventions, Biome for lint/format). Builds to `apps/web/dist`, served by
   the Rust server. `src/` is organized feature-first: each domain lives
   under `src/features/<domain>/` (currently `session`, `git`, `sandbox`,
-  `terminal`), holding that domain's `components/`, `hooks/` and `api/`
-  as needed. Only genuinely cross-cutting code stays in the top-level
+  `terminal`), holding that domain's `components/`, `hooks/`, `api/`
+  and `store/` (session's paged event store) as needed. Only genuinely cross-cutting code stays in the top-level
   shared layers: `components/ui/` (CLI-owned Shadcn primitives),
   `components/ai-elements/` (the hand-copied chat primitives —
   `message-scroller`, `message`, `bubble` — kept apart from `ui/` since

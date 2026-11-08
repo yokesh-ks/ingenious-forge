@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useEffect, useRef } from "react";
 import type { ApprovalDecision, QuestionAnswer } from "@/api/types";
 import { Bubble, BubbleContent } from "@/components/ai-elements/bubble";
 import { Message, MessageContent } from "@/components/ai-elements/message";
@@ -11,6 +11,7 @@ import {
   MessageScrollerViewport,
 } from "@/components/ai-elements/message-scroller";
 import Markdown from "@/components/markdown/Markdown";
+import { Button } from "@/components/ui/button";
 import type { SessionItem } from "@/features/session/session-reducer";
 import ToolCallCard from "./ToolCallCard";
 
@@ -22,6 +23,34 @@ interface SessionViewProps {
   onAnswerApproval?: (callId: string, decision: ApprovalDecision) => void;
   /** Answers a tool call's question card. */
   onAnswerQuestion?: (callId: string, answers: QuestionAnswer[]) => void;
+  /** Whether older events exist that are not loaded yet. */
+  hasOlder?: boolean;
+  loadingOlder?: boolean;
+  onLoadOlder?: () => void;
+}
+
+/**
+ * The top of a session whose older events are not loaded: loads them when
+ * it scrolls into view, or when its button is pressed.
+ */
+function OlderRow({ loading, onLoad }: { loading: boolean; onLoad: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) onLoad();
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [onLoad]);
+  return (
+    <div ref={ref} className="flex justify-center">
+      <Button variant="ghost" size="sm" disabled={loading} onClick={onLoad}>
+        {loading ? "Loading earlier messages…" : "Load earlier messages"}
+      </Button>
+    </div>
+  );
 }
 
 function ErrorAlert({ message }: { message: string }) {
@@ -80,6 +109,9 @@ export default function SessionView({
   error,
   onAnswerApproval,
   onAnswerQuestion,
+  hasOlder = false,
+  loadingOlder = false,
+  onLoadOlder,
 }: SessionViewProps) {
   if (messages.length === 0) {
     return (
@@ -104,6 +136,7 @@ export default function SessionView({
       <MessageScroller className="flex-1" aria-label="Session">
         <MessageScrollerViewport>
           <MessageScrollerContent className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-6">
+            {hasOlder && onLoadOlder && <OlderRow loading={loadingOlder} onLoad={onLoadOlder} />}
             {messages.map((message) => (
               <TimelineItem
                 key={message.id}

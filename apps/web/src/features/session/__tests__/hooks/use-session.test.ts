@@ -13,6 +13,12 @@ function setup(sessionId = "s1") {
   );
 }
 
+function setupPaged(pageSize: number) {
+  return renderHook(() =>
+    useSession("s1", { createSocket: createFakeSocket, reconnectDelay: 0, pageSize }),
+  );
+}
+
 describe("sessionSocketUrl", () => {
   it("uses ws for http pages and wss for https pages", async () => {
     expect(sessionSocketUrl({ protocol: "http:", host: "localhost:3000" })).toBe(
@@ -134,30 +140,78 @@ describe("useSession", () => {
     expect(result.current.state.running).toBe(false);
   });
 
-  it("loads a long backlog quickly", async () => {
-    const backlog = [];
-    let seq = 0;
-    for (let i = 0; i < 1_000; i++) {
-      for (let c = 0; c < 20; c++)
-        backlog.push({ seq: ++seq, type: "output", session_id: "s1", chunk: "w " });
-      backlog.push({
-        seq: ++seq,
-        type: "tool_call",
-        session_id: "s1",
-        call_id: `t${i}`,
-        name: "read_file",
-        args: {},
-        turn: 1,
-        step: 1,
-      });
-    }
-    fakeFetch({ "GET /api/sessions/s1/events": backlog });
-    const { result } = setup();
-    const start = performance.now();
+  it("opens a long session at its tail and lists every changed file", async () => {
+    const fetch = fakeFetch({
+      "GET /api/sessions/s1/events": [
+        { seq: 7, ts: 0, type: "output", session_id: "s1", chunk: "end of an older turn" },
+        { seq: 8, ts: 0, type: "user_message", session_id: "s1", text: "latest", source: "human" },
+        { seq: 9, ts: 0, type: "turn_started", session_id: "s1", turn: 4 },
+      ],
+      "GET /api/sessions/s1/changes": [
+        { path: "early.txt", diff: "+x", additions: 1, deletions: 0 },
+      ],
+    });
+    const { result } = setupPaged(3);
     await openSocket(FakeSocket.latest());
-    // A loose guard against pathological slowdowns; about 60 ms when idle.
-    expect(performance.now() - start).toBeLessThan(2_000);
-    expect(result.current.state.messages).toHaveLength(2_000);
+    await waitFor(() => expect(result.current.state.changedFiles).toHaveLength(1));
+
+    const url = new URL(String(fetch.mock.calls[0][0]), "http://localhost");
+    expect(url.searchParams.get("limit")).toBe("3");
+    expect(url.searchParams.has("after")).toBe(false);
+    // The page starts at the turn, so the turn shows as running.
+    expect(result.current.state.messages).toEqual([{ id: "m0", role: "user", text: "latest" }]);
+    expect(result.current.state.running).toBe(true);
+    expect(result.current.hasOlder).toBe(true);
+  });
+
+  it("loads older pages before the oldest held event until none are left", async () => {
+    const pages: Record<string, unknown[]> = {
+      "": [
+        { seq: 5, ts: 0, type: "user_message", session_id: "s1", text: "third", source: "human" },
+        { seq: 6, ts: 0, type: "done", session_id: "s1" },
+      ],
+      "5": [
+        { seq: 3, ts: 0, type: "user_message", session_id: "s1", text: "second", source: "human" },
+        { seq: 4, ts: 0, type: "done", session_id: "s1" },
+      ],
+      "3": [
+        { seq: 1, ts: 0, type: "user_message", session_id: "s1", text: "first", source: "human" },
+      ],
+    };
+    const fetch = fakeFetch({
+      "GET /api/sessions/s1/events": (_init: unknown, url: URL) => ({
+        body: pages[url.searchParams.get("before") ?? ""],
+      }),
+      "GET /api/sessions/s1/changes": [],
+    });
+    const { result } = setupPaged(2);
+    await openSocket(FakeSocket.latest());
+    const texts = () => result.current.state.messages.map((m) => ("text" in m ? m.text : ""));
+    expect(texts()).toEqual(["third"]);
+
+    await act(() => result.current.loadOlder());
+    expect(texts()).toEqual(["second", "third"]);
+    expect(result.current.hasOlder).toBe(true);
+
+    await act(() => result.current.loadOlder());
+    expect(texts()).toEqual(["first", "second", "third"]);
+    expect(result.current.hasOlder).toBe(false);
+
+    const calls = fetch.mock.calls.length;
+    await act(() => result.current.loadOlder());
+    expect(fetch.mock.calls.length).toBe(calls);
+  });
+
+  it("does not page a session shorter than one page", async () => {
+    fakeFetch({
+      "GET /api/sessions/s1/events": [
+        { seq: 1, ts: 0, type: "output", session_id: "s1", chunk: "short" },
+      ],
+    });
+    const { result } = setupPaged(3);
+    await openSocket(FakeSocket.latest());
+    expect(result.current.state.messages).toMatchObject([{ text: "short" }]);
+    expect(result.current.hasOlder).toBe(false);
   });
 
   it("applies overlapping backlog and live frames once, in order", async () => {

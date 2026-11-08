@@ -149,6 +149,34 @@ describe("SessionView", () => {
     ]);
   });
 
+  it("offers to load earlier messages when older events exist", async () => {
+    const onLoadOlder = vi.fn();
+    const { rerender } = render(
+      <SessionView
+        messages={conversation}
+        running={false}
+        error={null}
+        hasOlder
+        onLoadOlder={onLoadOlder}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Load earlier messages" }));
+    expect(onLoadOlder).toHaveBeenCalled();
+    rerender(
+      <SessionView
+        messages={conversation}
+        running={false}
+        error={null}
+        hasOlder
+        loadingOlder
+        onLoadOlder={onLoadOlder}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /Loading earlier messages/ })).toBeDisabled();
+    rerender(<SessionView messages={conversation} running={false} error={null} />);
+    expect(screen.queryByRole("button", { name: /earlier messages/ })).not.toBeInTheDocument();
+  });
+
   it("shows notices such as an interrupted turn", () => {
     render(
       <SessionView
