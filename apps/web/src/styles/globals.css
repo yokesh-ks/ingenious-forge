@@ -313,6 +313,46 @@
   .markdown input[type="checkbox"] {
     margin-right: 0.375rem;
   }
+
+  /* A whole document, read in the workspace panel, gets more air than a reply. */
+  .markdown.markdown-document p,
+  .markdown.markdown-document ul,
+  .markdown.markdown-document ol,
+  .markdown.markdown-document blockquote {
+    margin: 1rem 0;
+    line-height: 1.5rem;
+  }
+  .markdown.markdown-document h1,
+  .markdown.markdown-document h2,
+  .markdown.markdown-document h3,
+  .markdown.markdown-document h4,
+  .markdown.markdown-document h5,
+  .markdown.markdown-document h6 {
+    margin: 2rem 0 1rem;
+    font-weight: 700;
+  }
+  .markdown.markdown-document h1 {
+    font-size: 21px;
+    line-height: 30px;
+  }
+  .markdown.markdown-document h2 {
+    font-size: 19px;
+    line-height: 28px;
+  }
+  .markdown.markdown-document h3 {
+    font-size: 17px;
+    line-height: 26px;
+  }
+  .markdown.markdown-document hr {
+    margin: 2rem 0;
+    border-top-width: 0.5px;
+  }
+  .markdown.markdown-document > :first-child {
+    margin-top: 0;
+  }
+  .markdown.markdown-document > :last-child {
+    margin-bottom: 0;
+  }
 }
 
 /* Shiki dual themes: tokens carry both colours as variables. */
@@ -321,4 +361,33 @@
 }
 .dark .shiki-token {
   color: var(--shiki-dark);
+}
+
+/* A line opened by a link: the band holds briefly, then fades. */
+@keyframes line-mark-fade {
+  0%,
+  30% {
+    background-color: color-mix(in srgb, var(--primary) 15%, transparent);
+  }
+
+  100% {
+    background-color: transparent;
+  }
+}
+
+/* A reveal of a tab already on screen draws the eye to the panel once. */
+@keyframes panel-glow {
+  from {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--primary) 48%, transparent),
+      inset 0 2px 4px 0 color-mix(in srgb, var(--primary) 16%, transparent),
+      inset 0 0 10px 0 color-mix(in srgb, var(--primary) 10%, transparent);
+  }
+
+  to {
+    box-shadow:
+      inset 0 0 0 1px transparent,
+      inset 0 2px 4px 0 transparent,
+      inset 0 0 10px 0 transparent;
+  }
 }

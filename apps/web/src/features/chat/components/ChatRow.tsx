@@ -2,6 +2,7 @@ import { BrainIcon, ChevronDownIcon, ChevronUpIcon, FileInputIcon } from "lucide
 import { type KeyboardEvent, useState } from "react";
 import type { ApprovalDecision, QuestionAnswer } from "@/api/types";
 import Markdown from "@/components/markdown/Markdown";
+import { useOpenFile } from "@/lib/open-file";
 import { cn } from "@/lib/utils";
 import type { ProcessItem } from "../model/build-chat";
 import { category, rowDetail, toolDisplayName } from "../model/build-chat";
@@ -41,6 +42,8 @@ export default function ChatRow({
     (item.approval?.status === "pending" || item.question?.status === "pending");
   const [toggled, setToggled] = useState<boolean | null>(null);
   const open = toggled ?? waiting;
+  const openFile = useOpenFile();
+  const openFromPanel = (path: string) => openFile?.({ path });
   const toggle = () => setToggled(!open);
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     // Keys pressed on the file link inside belong to the link.
@@ -108,7 +111,7 @@ export default function ChatRow({
                 className="underline decoration-dotted underline-offset-2 hover:text-foreground"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (detail.path) onOpenFile?.(detail.path);
+                  if (detail.path) (onOpenFile ?? openFromPanel)(detail.path);
                 }}
               >
                 {detail.text}

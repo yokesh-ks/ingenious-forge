@@ -3,7 +3,7 @@
 
 use std::{collections::BTreeSet, fs, path::Path, process::Command};
 
-use api_types::FileList;
+use api_types::{DirectoryEntry, DirectoryListing, EntryKind, FileList};
 
 /// Folders that hold dependencies or build output, skipped outside git.
 const SKIPPED_DIRS: &[&str] = &["node_modules", "target", "dist", "build", "vendor"];
@@ -16,6 +16,31 @@ pub fn list_files(root: &Path, limit: usize) -> FileList {
     let truncated = files.len() > limit;
     files.truncate(limit);
     FileList { files, truncated }
+}
+
+/// The direct entries of the folder `dir`, sorted by name, at most `limit`
+/// of them. Links are listed but not followed.
+pub fn list_directory(dir: &Path, limit: usize) -> std::io::Result<DirectoryListing> {
+    if !fs::symlink_metadata(dir)?.is_dir() {
+        return Err(std::io::ErrorKind::NotADirectory.into());
+    }
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let kind = match entry.file_type()? {
+            kind if kind.is_dir() => EntryKind::Directory,
+            kind if kind.is_file() => EntryKind::File,
+            _ => EntryKind::Other,
+        };
+        entries.push(DirectoryEntry {
+            name: entry.file_name().to_string_lossy().into_owned(),
+            kind,
+        });
+    }
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    let truncated = entries.len() > limit;
+    entries.truncate(limit);
+    Ok(DirectoryListing { entries, truncated })
 }
 
 fn git_files(root: &Path) -> Option<Vec<String>> {

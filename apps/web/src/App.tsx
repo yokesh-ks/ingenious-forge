@@ -5,6 +5,7 @@ import AppSidebar from "@/components/layout/AppSidebar";
 import AppTopBar from "@/components/layout/AppTopBar";
 import { sectionForPath } from "@/components/layout/app-sections";
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+import { Toaster } from "@/components/ui/sonner";
 import SettingsSidebar from "@/features/settings/components/SettingsSidebar";
 import { SETTINGS_SECTIONS, settingsSectionForPath } from "@/features/settings/settings-sections";
 import { Link, matchPath, navigate, usePath } from "@/lib/router";
@@ -76,6 +77,7 @@ export default function App() {
 
   return (
     <div className="flex h-svh flex-col bg-sidebar">
+      <Toaster />
       <AppTopBar />
       <div className="flex min-h-0 flex-1">
         <AppRail path={path} />

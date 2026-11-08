@@ -5,10 +5,10 @@ use std::sync::Arc;
 use agent::{model::ModelError, tools::ToolBox};
 use api_types::{
     ApiError, CommitMessageDraft, CommitRequest, CommitResult, CreateBranchRequest,
-    CreateSessionRequest, FileContent, FileList, GitStatus, ModelCatalog, OpenInRequest,
-    OpenProjectRequest, PickedFolder, Project, PushResult, RenameProjectRequest, SandboxInfo,
-    Session, SessionEnvelope, SessionEvent, SetApprovalModeRequest, SetSessionModelRequest,
-    TitleSource, UpdateSessionRequest,
+    CreateSessionRequest, DirectoryListing, FileContent, FileList, GitStatus, ModelCatalog,
+    OpenInRequest, OpenProjectRequest, PickedFolder, Project, PushResult, RenameProjectRequest,
+    SandboxInfo, Session, SessionEnvelope, SessionEvent, SetApprovalModeRequest,
+    SetSessionModelRequest, TitleSource, UpdateSessionRequest,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -42,6 +42,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/sessions/{id}/fork", post(fork_session))
         .route("/projects/{id}/files", get(project_files))
         .route("/projects/{id}/file", get(project_file))
+        .route("/projects/{id}/directory", get(project_directory))
         .route("/projects/{id}/git/status", get(git_status))
         .route("/projects/{id}/git/branch", post(create_branch))
         .route("/projects/{id}/git/commit", post(commit))
@@ -166,11 +167,19 @@ async fn open_project_in(
     Json(body): Json<OpenInRequest>,
 ) -> ApiResult<Project> {
     let project = projects::get_project(&state.db, &id).await?;
-    let path = std::path::PathBuf::from(&project.path);
-    tokio::task::spawn_blocking(move || folders::open_folder_in(body.app, &path))
-        .await
-        .map_err(|e| ApiFailure::internal(e.to_string()))?
-        .map_err(ApiFailure::internal)?;
+    let root = std::path::PathBuf::from(&project.path);
+    let file = body
+        .path
+        .map(|rel| ToolBox::new(&project.path).project_path(&rel))
+        .transpose()
+        .map_err(|message| ApiFailure(StatusCode::BAD_REQUEST, message))?;
+    tokio::task::spawn_blocking(move || match file {
+        Some(rel) => folders::open_file_in(body.app, &root, &root.join(rel)),
+        None => folders::open_folder_in(body.app, &root),
+    })
+    .await
+    .map_err(|e| ApiFailure::internal(e.to_string()))?
+    .map_err(ApiFailure::internal)?;
     Ok(Json(project))
 }
 
@@ -360,33 +369,103 @@ struct FileQuery {
 }
 
 /// One project file for the read-only viewer. Paths outside the project
-/// are refused, as for the agent's own tools.
+/// are refused, as for the agent's own tools, and each reason a file cannot
+/// be shown has its own status so the viewer can offer the right next step.
 async fn project_file(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Query(query): Query<FileQuery>,
 ) -> ApiResult<FileContent> {
     let project = projects::get_project(&state.db, &id).await?;
-    let tools = ToolBox::new(&project.path);
-    let rel = query.path;
-    let read = tokio::task::spawn_blocking(move || {
-        let path = tools.project_path(&rel)?;
-        Ok::<_, String>((path, tools.read_text(&rel)?))
+    tokio::task::spawn_blocking(move || read_viewed_file(&project.path, &query.path))
+        .await
+        .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map(Json)
+}
+
+fn read_viewed_file(root: &str, requested: &str) -> Result<FileContent, ApiFailure> {
+    let path = ToolBox::new(root)
+        .project_path(requested)
+        .map_err(|message| ApiFailure(StatusCode::BAD_REQUEST, message))?;
+    let full = std::path::Path::new(root).join(&path);
+    let meta = match std::fs::symlink_metadata(&full) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Err(ApiFailure(
+                StatusCode::NOT_FOUND,
+                format!("{path} does not exist"),
+            ));
+        }
+        Err(err) => {
+            return Err(ApiFailure(
+                StatusCode::BAD_REQUEST,
+                format!("cannot read {path}: {err}"),
+            ));
+        }
+    };
+    if !meta.is_file() {
+        return Err(ApiFailure(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{path} is not a regular file"),
+        ));
+    }
+    if meta.len() > MAX_VIEWED_BYTES as u64 {
+        return Err(ApiFailure(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!("{path} is too large to show ({} bytes)", meta.len()),
+        ));
+    }
+    let bytes = std::fs::read(&full).map_err(|err| {
+        ApiFailure(
+            StatusCode::BAD_REQUEST,
+            format!("cannot read {path}: {err}"),
+        )
+    })?;
+    match String::from_utf8(bytes) {
+        Ok(content) if !content.contains('\0') => Ok(FileContent { path, content }),
+        _ => Err(ApiFailure(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            format!("{path} is not a UTF-8 text file"),
+        )),
+    }
+}
+
+/// Most entries listed for one folder.
+const MAX_LISTED_ENTRIES: usize = 2000;
+
+#[derive(Deserialize)]
+struct DirectoryQuery {
+    /// Relative to the project; empty for its top folder.
+    #[serde(default)]
+    path: String,
+}
+
+/// One folder's direct entries for the workspace file tree.
+async fn project_directory(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Query(query): Query<DirectoryQuery>,
+) -> ApiResult<DirectoryListing> {
+    let project = projects::get_project(&state.db, &id).await?;
+    let rel = ToolBox::new(&project.path)
+        .project_path(&query.path)
+        .map_err(|message| ApiFailure(StatusCode::BAD_REQUEST, message))?;
+    let dir = std::path::Path::new(&project.path).join(&rel);
+    tokio::task::spawn_blocking(move || {
+        services::workspace::list_directory(&dir, MAX_LISTED_ENTRIES)
     })
     .await
-    .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    match read {
-        Ok((path, Some(content))) if content.len() > MAX_VIEWED_BYTES => Err(ApiFailure(
-            StatusCode::BAD_REQUEST,
-            format!("{path} is too large to show ({} bytes)", content.len()),
-        )),
-        Ok((path, Some(content))) => Ok(Json(FileContent { path, content })),
-        Ok((path, None)) => Err(ApiFailure(
-            StatusCode::NOT_FOUND,
-            format!("{path} does not exist"),
-        )),
-        Err(message) => Err(ApiFailure(StatusCode::BAD_REQUEST, message)),
-    }
+    .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map(Json)
+    .map_err(|err| match err.kind() {
+        std::io::ErrorKind::NotFound => {
+            ApiFailure(StatusCode::NOT_FOUND, format!("{rel} does not exist"))
+        }
+        std::io::ErrorKind::NotADirectory => {
+            ApiFailure(StatusCode::BAD_REQUEST, format!("{rel} is not a folder"))
+        }
+        _ => ApiFailure(StatusCode::BAD_REQUEST, format!("cannot read {rel}: {err}")),
+    })
 }
 
 /// The models to pick from, with the saved default model pre-selected
@@ -1312,6 +1391,8 @@ mod tests {
         let (_, project) = post_json(&format!("{api}/projects"), json!({ "path": repo })).await;
         let pid = project["id"].as_str().unwrap();
         fs::write(repo.join("bin.dat"), [0xff, 0xfe, 0x00]).unwrap();
+        fs::create_dir_all(repo.join("src")).unwrap();
+        fs::write(repo.join("src/main.rs"), "fn main() {}\n").unwrap();
 
         let (status, body) = get_json(&format!(
             "{api}/projects/{pid}/file?path=..%2F..%2Fetc%2Fpasswd"
@@ -1327,16 +1408,62 @@ mod tests {
         assert_eq!(status, StatusCode::NOT_FOUND);
 
         let (status, body) = get_json(&format!("{api}/projects/{pid}/file?path=bin.dat")).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE);
         assert!(body["error"].as_str().unwrap().contains("UTF-8"), "{body}");
 
         fs::write(repo.join("big.txt"), "x".repeat(MAX_VIEWED_BYTES + 1)).unwrap();
         let (status, body) = get_json(&format!("{api}/projects/{pid}/file?path=big.txt")).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
         assert!(
             body["error"].as_str().unwrap().contains("too large"),
             "{body}"
         );
+
+        // A folder is not a file to show, and a link may not lead out.
+        let (status, _) = get_json(&format!("{api}/projects/{pid}/file?path=src")).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("/etc/hosts", repo.join("link.txt")).unwrap();
+            let (status, _) = get_json(&format!("{api}/projects/{pid}/file?path=link.txt")).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+        }
+
+        let (status, listing) = get_json(&format!("{api}/projects/{pid}/directory")).await;
+        assert_eq!(status, StatusCode::OK);
+        let src = listing["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["name"] == "src")
+            .unwrap();
+        assert_eq!(src["kind"], "directory");
+        #[cfg(unix)]
+        {
+            let link = listing["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|e| e["name"] == "link.txt")
+                .unwrap();
+            assert_eq!(link["kind"], "other");
+        }
+
+        let (status, listing) = get_json(&format!("{api}/projects/{pid}/directory?path=src")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(listing["entries"][0]["name"], "main.rs");
+        assert_eq!(listing["entries"][0]["kind"], "file");
+        assert_eq!(listing["truncated"], false);
+
+        let (status, _) = get_json(&format!("{api}/projects/{pid}/directory?path=nope")).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, _) = get_json(&format!(
+            "{api}/projects/{pid}/directory?path=src%2Fmain.rs"
+        ))
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let (status, _) = get_json(&format!("{api}/projects/{pid}/directory?path=..")).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
 
         let (status, _) = get_json(&format!("{api}/projects/zzz/files")).await;
         assert_eq!(status, StatusCode::NOT_FOUND);

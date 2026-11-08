@@ -69,10 +69,16 @@ export default function ResizeHandle({
         drag.current = null;
       }}
       onKeyDown={(e) => {
-        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
         e.preventDefault();
         const measured = measure(e.currentTarget);
-        onWidth(clamp(measured.width + (e.key === "ArrowLeft" ? STEP : -STEP), measured.parent));
+        const next =
+          e.key === "Home"
+            ? min
+            : e.key === "End"
+              ? max
+              : measured.width + (e.key === "ArrowLeft" ? STEP : -STEP);
+        onWidth(clamp(next, measured.parent));
       }}
       className="absolute inset-y-0 -left-1 z-[6] w-2 cursor-col-resize touch-none select-none"
     />

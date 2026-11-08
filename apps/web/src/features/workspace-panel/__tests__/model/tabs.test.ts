@@ -6,6 +6,7 @@ import {
   canClose,
   closeTab,
   initialTabs,
+  openFile,
   openTab,
   titleOf,
 } from "../../model/tabs";
@@ -77,5 +78,53 @@ describe("panel tabs", () => {
     const next = closeTab(s, s.tabs[0].id);
     expect(kinds(next)).toEqual(["start"]);
     expect(next.active).toBe(next.tabs[0].id);
+  });
+});
+
+describe("openFile", () => {
+  it("takes Start's place", () => {
+    const state = openFile(initialTabs(), "a/b.ts");
+    expect(state.tabs).toHaveLength(1);
+    expect(state.tabs[0]).toMatchObject({ kind: "file", path: "a/b.ts" });
+    expect(state.active).toBe(state.tabs[0].id);
+  });
+
+  it("is added after other tabs and leaves them open", () => {
+    const state = openFile(openTab(initialTabs(), "files"), "a.ts");
+    expect(state.tabs.map((t) => t.kind)).toEqual(["files", "file"]);
+    expect(state.active).toBe(state.tabs[1].id);
+  });
+
+  it("selects the tab a file already has, and asks it to show the line", () => {
+    const once = openFile(initialTabs(), "a.ts");
+    const other = openFile(once, "b.ts");
+    const again = openFile(other, "a.ts", { line: 9 });
+    expect(again.tabs).toHaveLength(2);
+    expect(again.active).toBe(once.tabs[0].id);
+    expect(again.tabs[0].line).toBe(9);
+    expect(again.tabs[0].revision).toBe(2);
+  });
+
+  it("gives way to a Start tab being shown when the file already has a tab", () => {
+    const opened = openFile(initialTabs(), "a.ts");
+    const state = openFile(addStart(opened), "a.ts");
+    expect(state.tabs.map((t) => t.kind)).toEqual(["file"]);
+  });
+
+  it("replaces the active file in place, keeping its tab", () => {
+    const first = openFile(initialTabs(), "a.ts");
+    const state = openFile(first, "b.ts", { replace: true });
+    expect(state.tabs).toHaveLength(1);
+    expect(state.tabs[0]).toMatchObject({ id: first.tabs[0].id, path: "b.ts" });
+  });
+
+  it("does not replace a page that is not a file", () => {
+    const state = openFile(openTab(initialTabs(), "files"), "a.ts", { replace: true });
+    expect(state.tabs.map((t) => t.kind)).toEqual(["files", "file"]);
+  });
+
+  it("is titled by the file's name", () => {
+    const state = openFile(initialTabs(), "src/lib/util.ts");
+    expect(titleOf(state, state.tabs[0])).toBe("util.ts");
   });
 });

@@ -54,7 +54,7 @@ function Entry({
 export default function StartPage({
   onOpen,
 }: {
-  onOpen: (kind: Exclude<TabKind, "start">) => void;
+  onOpen: (kind: Exclude<TabKind, "start" | "file">) => void;
 }) {
   return (
     <div className="flex min-h-full flex-col items-center justify-center gap-3.5 px-6 after:shrink after:basis-[10%] after:content-['']">

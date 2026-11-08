@@ -11,15 +11,26 @@ import {
   SquareTerminalIcon,
   XIcon,
 } from "lucide-react";
-import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { api } from "@/api/client";
 import ResizeHandle from "@/components/layout/ResizeHandle";
 import { Button } from "@/components/ui/button";
 import ChangedFilesPanel from "@/features/git/components/ChangedFilesPanel";
-import FilesPanel from "@/features/git/components/FilesPanel";
+import { useProject } from "@/features/session/hooks/use-project";
 import type { FileChange } from "@/features/session/session-reducer";
 import TerminalPanel from "@/features/terminal/components/TerminalPanel";
+import { type FileTarget, toProjectPath } from "@/lib/open-file";
 import { cn } from "@/lib/utils";
+import { useWorkspaceTree } from "../hooks/use-workspace-tree";
 import {
   activate,
   addStart,
@@ -27,12 +38,16 @@ import {
   canClose,
   closeTab,
   initialTabs,
+  openFile as openFileTab,
   openTab,
   type PanelTab,
   type PanelTabs,
   type TabKind,
   titleOf,
 } from "../model/tabs";
+import FilesPage from "./FilesPage";
+import FileTab from "./FileTab";
+import FileTypeIcon from "./FileTypeIcon";
 import StartPage from "./StartPage";
 
 const WIDTH_MIN = 300;
@@ -51,12 +66,17 @@ const clampWidth = (width: number, parent: number) =>
     ),
   );
 
-const ICONS: Record<TabKind, LucideIcon> = {
+const ICONS: Record<Exclude<TabKind, "file">, LucideIcon> = {
   start: CompassIcon,
   files: FolderIcon,
   changes: GitCompareArrowsIcon,
   terminal: SquareTerminalIcon,
 };
+
+/** Lets the page beside the panel open files in it. */
+export interface WorkspacePanelControl {
+  openFile: (target: FileTarget) => void;
+}
 
 const STRIP_BUTTON =
   "flex size-7 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent";
@@ -67,6 +87,13 @@ const FADE_UNDER_CLOSE =
   "group-focus-within:[mask-image:linear-gradient(to_right,black_calc(100%-30px),transparent_calc(100%-14px))] group-hover:[mask-image:linear-gradient(to_right,black_calc(100%-30px),transparent_calc(100%-14px))]";
 const ACTIVE_FADE =
   "[mask-image:linear-gradient(to_right,black_calc(100%-30px),transparent_calc(100%-14px))]";
+
+function TabIcon({ kind }: { kind: Exclude<TabKind, "file"> }) {
+  const Icon = ICONS[kind];
+  return (
+    <Icon aria-hidden className={cn("size-4 shrink-0", kind === "files" && "text-amber-500")} />
+  );
+}
 
 /** One tab in the strip; its close button shows while active or hovered. */
 function Chip({
@@ -82,7 +109,6 @@ function Chip({
 }) {
   const active = tab.id === state.active;
   const title = titleOf(state, tab);
-  const Icon = ICONS[tab.kind];
   const closable = canClose(state, tab);
   return (
     <div
@@ -106,7 +132,11 @@ function Chip({
             closable && active && ACTIVE_FADE,
           )}
         >
-          <Icon aria-hidden className="size-3.5 shrink-0" />
+          {tab.kind === "file" ? (
+            <FileTypeIcon path={tab.path ?? ""} />
+          ) : (
+            <TabIcon kind={tab.kind} />
+          )}
           {title}
         </span>
       </button>
@@ -138,11 +168,13 @@ export default function WorkspacePanel({
   changedFiles,
   onRevertAll,
   busy,
+  control,
 }: {
   projectId: string;
   changedFiles: FileChange[];
   onRevertAll: () => void;
   busy: boolean;
+  control?: RefObject<WorkspacePanelControl | null>;
 }) {
   const [open, setOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -150,12 +182,33 @@ export default function WorkspacePanel({
   const [width, setWidth] = useState<number | null>(null);
   const shownWidth = width ?? firstWidth();
   const aside = useRef<HTMLElement>(null);
+  const tree = useWorkspaceTree(projectId);
+  const { project } = useProject(projectId);
+  const rootPath = project?.path ?? "";
+  // The glow restarts by remounting; each reveal gets a new key.
+  const [glow, setGlow] = useState(0);
+  const latest = useRef({ open, state, rootPath });
+  latest.current = { open, state, rootPath };
 
-  const openPage = (kind: Exclude<TabKind, "start">) => {
+  const openPage = (kind: Exclude<TabKind, "start" | "file">) => {
     setOpen(true);
     setState((s) => openTab(s, kind));
   };
 
+  const openFile = useCallback((target: FileTarget, replace = false) => {
+    const current = latest.current;
+    const path = toProjectPath(target.path, current.rootPath);
+    const active = current.state.tabs.find((t) => t.id === current.state.active);
+    if (current.open && active?.kind === "file" && active.path === path) {
+      setGlow((n) => n + 1);
+    }
+    setOpen(true);
+    setState((s) => openFileTab(s, path, { line: target.line, replace }));
+  }, []);
+
+  useImperativeHandle(control, () => ({ openFile: (target) => openFile(target) }), [openFile]);
+
+  const { setShown } = tree;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const primary = e.metaKey || e.ctrlKey;
@@ -165,7 +218,20 @@ export default function WorkspacePanel({
       } else if (e.code === "KeyP" && primary && e.altKey && !e.shiftKey) {
         e.preventDefault();
         setOpen(true);
-        setState((s) => openTab(s, "files"));
+        const { state: tabs } = latest.current;
+        if (tabs.tabs.find((t) => t.id === tabs.active)?.kind === "file") {
+          // Beside an open file the tree appears there and takes the keyboard.
+          setShown(true);
+          requestAnimationFrame(() => {
+            aside.current
+              ?.querySelector<HTMLElement>(
+                '[role="tabpanel"]:not([hidden]) [data-workspace-tree] button',
+              )
+              ?.focus();
+          });
+        } else {
+          setState((s) => openTab(s, "files"));
+        }
       } else if (e.code === "Backquote" && e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         setOpen(true);
@@ -182,14 +248,35 @@ export default function WorkspacePanel({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [setShown]);
 
   const body = (tab: PanelTab): ReactNode => {
     switch (tab.kind) {
       case "start":
         return <StartPage onOpen={openPage} />;
       case "files":
-        return <FilesPanel projectId={projectId} />;
+        return (
+          <FilesPage
+            projectId={projectId}
+            rootPath={rootPath}
+            tree={tree}
+            onOpen={(path) => openFile({ path })}
+          />
+        );
+      case "file": {
+        const change = changedFiles.find((f) => f.path === tab.path);
+        return (
+          <FileTab
+            projectId={projectId}
+            rootPath={rootPath}
+            tab={tab}
+            tree={tree}
+            active={tab.id === state.active}
+            changeKey={`${busy}:${change?.diff ?? ""}`}
+            onOpenInPlace={(path) => openFile({ path }, true)}
+          />
+        );
+      }
       case "changes":
         return <ChangedFilesPanel files={changedFiles} onRevertAll={onRevertAll} busy={busy} />;
       case "terminal":
@@ -329,14 +416,22 @@ export default function WorkspacePanel({
             aria-label={titleOf(state, tab)}
             hidden={tab.id !== state.active}
             className={cn(
-              "min-h-0 flex-1 flex-col overflow-y-auto",
+              "min-h-0 flex-1 flex-col",
               tab.id === state.active && "flex",
-              tab.kind !== "start" && "p-3",
+              tab.kind === "file" || tab.kind === "files" ? "overflow-hidden" : "overflow-y-auto",
+              (tab.kind === "changes" || tab.kind === "terminal") && "p-3",
             )}
           >
             {body(tab)}
           </div>
         ))}
+        {glow > 0 && (
+          <span
+            key={glow}
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-[7] animate-[panel-glow_0.6s_ease-in-out]"
+          />
+        )}
       </aside>
     </>
   );

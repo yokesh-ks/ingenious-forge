@@ -84,6 +84,7 @@ export function TokenLine({ tokens }: { tokens: HighlightToken[] }) {
 
 const LANGUAGES: Record<string, string> = {
   md: "markdown",
+  markdown: "markdown",
   mdx: "mdx",
   ts: "typescript",
   tsx: "tsx",
@@ -111,6 +112,30 @@ const LANGUAGES: Record<string, string> = {
   sql: "sql",
   swift: "swift",
   kt: "kotlin",
+  scss: "scss",
+  less: "less",
+  vue: "vue",
+  svelte: "svelte",
+  astro: "astro",
+  htm: "html",
+  xml: "xml",
+  svg: "xml",
+  ini: "ini",
+  cc: "cpp",
+  hpp: "cpp",
+  cs: "csharp",
+  php: "php",
+  lua: "lua",
+  dart: "dart",
+  zig: "zig",
+  ex: "elixir",
+  exs: "elixir",
+  hs: "haskell",
+  scala: "scala",
+  graphql: "graphql",
+  proto: "proto",
+  ps1: "powershell",
+  bat: "bat",
 };
 
 /** A file's extension, for its badge, and the highlighting language. */

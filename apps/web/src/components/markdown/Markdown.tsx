@@ -1,12 +1,51 @@
-import { isValidElement, memo } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import { createContext, isValidElement, memo, type ReactNode, useContext, useMemo } from "react";
+import ReactMarkdown, { type Components, defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { isPathWithLine, parseFileLink, useOpenFile } from "@/lib/open-file";
 import { cn } from "@/lib/utils";
 import CodeCard from "./CodeCard";
 
 interface MarkdownProps {
   text: string;
   className?: string;
+  /** The folder relative links start from; the project's top by default. */
+  baseDir?: string;
+}
+
+const BaseDir = createContext("");
+
+/** The usual safe-link filter, which would take `a.ts:7` for a scheme. */
+const safeUrl = (url: string) => (isPathWithLine(url) ? url : defaultUrlTransform(url));
+
+const LINK = "text-primary underline underline-offset-2";
+
+/** A link: to the web in a new tab, to a project file in the workspace
+ * panel. Without a place to open it, or with an unsafe protocol (which
+ * arrives with an empty href), it stays as text. */
+function Anchor({ href, children }: { href?: string; children?: ReactNode }) {
+  const openFile = useOpenFile();
+  const baseDir = useContext(BaseDir);
+  if (href && WEB_LINK.test(href)) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={LINK}>
+        {children}
+      </a>
+    );
+  }
+  const target = href && openFile ? parseFileLink(href, baseDir) : null;
+  if (!target || !openFile) return <span>{children}</span>;
+  return (
+    <a
+      href={href}
+      className={LINK}
+      onClick={(event) => {
+        event.preventDefault();
+        openFile(target);
+      }}
+    >
+      {children}
+    </a>
+  );
 }
 
 interface MdNode {
@@ -30,19 +69,7 @@ const WEB_LINK = /^https?:\/\//i;
 
 const components: Components = {
   a({ href, children }) {
-    // Unsafe protocols arrive with an empty href; local paths have no
-    // opener yet, so both stay as text.
-    if (!href || !WEB_LINK.test(href)) return <span>{children}</span>;
-    return (
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-primary underline underline-offset-2"
-      >
-        {children}
-      </a>
-    );
+    return <Anchor href={href}>{children}</Anchor>;
   },
   pre({ children }) {
     const code = isValidElement<{ className?: string; children?: unknown }>(children)
@@ -81,16 +108,23 @@ const components: Components = {
  * Renders untrusted Markdown (ADR 0013): GitHub-flavoured, raw HTML shown as
  * text, unsafe links inert, fenced code as code cards.
  */
-function Markdown({ text, className }: MarkdownProps) {
-  return (
-    <div className={cn("markdown text-sm leading-6 break-words", className)}>
+function Markdown({ text, className, baseDir = "" }: MarkdownProps) {
+  const body = useMemo(
+    () => (
       <ReactMarkdown
         remarkPlugins={[[remarkGfm, { singleTilde: false }], remarkLiteralHtml]}
         components={components}
+        urlTransform={safeUrl}
       >
         {text}
       </ReactMarkdown>
-    </div>
+    ),
+    [text],
+  );
+  return (
+    <BaseDir.Provider value={baseDir}>
+      <div className={cn("markdown text-sm leading-6 break-words", className)}>{body}</div>
+    </BaseDir.Provider>
   );
 }
 

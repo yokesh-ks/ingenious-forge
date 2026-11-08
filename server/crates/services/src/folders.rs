@@ -59,9 +59,9 @@ fn open_commands(app: OpenApp, path: &str) -> Vec<Vec<&str>> {
     let macos = cfg!(target_os = "macos");
     let windows = cfg!(windows);
     match app {
-        OpenApp::FileManager if macos => vec![vec!["open", path]],
-        OpenApp::FileManager if windows => vec![vec!["explorer", path]],
-        OpenApp::FileManager => vec![vec!["xdg-open", path]],
+        OpenApp::FileManager | OpenApp::DefaultApp if macos => vec![vec!["open", path]],
+        OpenApp::FileManager | OpenApp::DefaultApp if windows => vec![vec!["explorer", path]],
+        OpenApp::FileManager | OpenApp::DefaultApp => vec![vec!["xdg-open", path]],
         OpenApp::VsCode if macos => vec![
             vec!["code", path],
             // A server started outside a login shell may not have `code`.
@@ -87,6 +87,54 @@ pub fn open_folder_in(app: OpenApp, path: &Path) -> Result<(), String> {
     // Explorer exits with 1 even when it opened the folder.
     let ignore_exit = cfg!(windows) && app == OpenApp::FileManager;
     open_with(&open_commands(app, &text), path, ignore_exit)
+}
+
+/// The commands that open the file `file`; `select` is Explorer's argument
+/// for showing it and `parent` its folder.
+fn file_commands<'a>(
+    app: OpenApp,
+    file: &'a str,
+    select: &'a str,
+    parent: &'a str,
+) -> Vec<Vec<&'a str>> {
+    let macos = cfg!(target_os = "macos");
+    let windows = cfg!(windows);
+    match app {
+        OpenApp::FileManager if macos => vec![vec!["open", "-R", file]],
+        OpenApp::FileManager if windows => vec![vec!["explorer", select]],
+        OpenApp::FileManager => vec![vec!["xdg-open", parent]],
+        OpenApp::Terminal => Vec::new(),
+        OpenApp::VsCode | OpenApp::DefaultApp => open_commands(app, file),
+    }
+}
+
+/// True when `cmd.exe` would treat part of `path` as syntax.
+fn has_shell_syntax(path: &str) -> bool {
+    path.contains(['&', '|', '<', '>', '^', '%', '"'])
+}
+
+/// Opens the file `file` of the project at `root` in `app`, or shows it in
+/// its folder for `FileManager`.
+pub fn open_file_in(app: OpenApp, root: &Path, file: &Path) -> Result<(), String> {
+    if !file.is_file() {
+        return Err(format!("{} no longer exists", file.display()));
+    }
+    if app == OpenApp::Terminal {
+        return Err("a file cannot be opened in a terminal".to_string());
+    }
+    let text = file.to_string_lossy();
+    // VS Code starts through `cmd` on Windows, and a file name is not ours.
+    if cfg!(windows) && app == OpenApp::VsCode && has_shell_syntax(&text) {
+        return Err(format!("{} cannot be opened safely", file.display()));
+    }
+    let select = format!("/select,{text}");
+    let parent = file.parent().unwrap_or(root).to_string_lossy();
+    let ignore_exit = cfg!(windows) && app != OpenApp::VsCode;
+    open_with(
+        &file_commands(app, &text, &select, &parent),
+        root,
+        ignore_exit,
+    )
 }
 
 /// How long a program gets to report failure; one still running by then,
