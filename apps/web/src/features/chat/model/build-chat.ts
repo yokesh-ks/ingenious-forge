@@ -94,6 +94,10 @@ export interface ChatTurn {
   collapsible: boolean;
   /** Why it failed, when it did. */
   failure: TurnRecord["failure"];
+  /** When it ended, if known. */
+  endedAt: number | null;
+  /** The tokens its steps used. */
+  usage: TurnRecord["usage"];
   nodes: TurnNode[];
 }
 
@@ -158,6 +162,8 @@ function buildTurn(record: TurnRecord, items: SessionItem[]): ChatTurn {
         : null,
     collapsible: record.status === "completed" && firstGroup !== -1 && !steeredAfter,
     failure: record.failure,
+    endedAt: record.endedAt,
+    usage: record.usage,
     nodes,
   };
 }

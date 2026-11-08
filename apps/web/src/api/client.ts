@@ -28,6 +28,7 @@ import type {
   SessionDefaults,
   SessionEnvelope,
   SessionModel,
+  SessionStats,
   SetApprovalModeRequest,
   SetSessionModelRequest,
   UpdateSessionRequest,
@@ -194,6 +195,9 @@ export const api = {
   /** The files the agent changed in a session, each with its latest diff. */
   sessionChanges: (sessionId: string) =>
     request<FileChange[]>(`/api/sessions/${encodeURIComponent(sessionId)}/changes`),
+  /** A session's totals, folded from its whole log. */
+  sessionStats: (sessionId: string) =>
+    request<SessionStats>(`/api/sessions/${encodeURIComponent(sessionId)}/stats`),
   /** Shows the OS folder dialog and resolves when the user has answered it. */
   pickFolder: () => post<PickedFolder>("/api/fs/pick-folder", {}),
 };

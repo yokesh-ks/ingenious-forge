@@ -202,7 +202,16 @@ describe("SessionView", () => {
           },
         ]}
         turns={[
-          { turn: 1, start: 1, startedAt: null, endedAt: null, status: "running", failure: null },
+          {
+            turn: 1,
+            start: 1,
+            startedAt: null,
+            endedAt: null,
+            status: "running",
+            failure: null,
+            steps: 0,
+            usage: null,
+          },
         ]}
         running
         error={null}
@@ -227,6 +236,8 @@ describe("SessionView", () => {
             endedAt: null,
             status: "failed",
             failure: { code: "PROVIDER_ERROR", message: "rate limited" },
+            steps: 0,
+            usage: null,
           },
         ]}
         running={false}
@@ -238,6 +249,38 @@ describe("SessionView", () => {
     expect(alerts).toHaveLength(1);
     expect(alerts[0]).toHaveTextContent("This turn failed rate limited");
     expect(alerts[0]).toHaveTextContent("PROVIDER_ERROR");
+  });
+
+  it("puts the footer under a finished turn's last reply only", () => {
+    render(
+      <SessionView
+        messages={[
+          { id: "m0", role: "user", text: "hi", at: new Date().setHours(9, 15) },
+          { id: "m1", role: "assistant", text: "First." },
+          { id: "m2", role: "assistant", text: "Second." },
+        ]}
+        turns={[
+          {
+            turn: 1,
+            start: 1,
+            startedAt: 1_000,
+            endedAt: new Date().setHours(14, 34),
+            status: "completed",
+            failure: null,
+            steps: 2,
+            usage: { input: 50_000, output: 900, cache_read: 9_000, cache_write: 0 },
+          },
+        ]}
+        running={false}
+        error={null}
+      />,
+    );
+    expect(screen.getAllByRole("button", { name: "Copy reply" })).toHaveLength(1);
+    expect(screen.getByText("Usage 59.9K tok")).toBeInTheDocument();
+    expect(screen.getByText("14:34")).toBeInTheDocument();
+    // The user's message shows when it was sent, with its own Copy.
+    expect(screen.getByText("09:15")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy message" })).toBeInTheDocument();
   });
 
   it("shows notices such as an interrupted turn", () => {

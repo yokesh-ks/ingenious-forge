@@ -21,6 +21,8 @@ interface SessionWorkspaceProps {
   startControls?: ReactNode;
   /** Controls at the right of the composer's bottom row. */
   endControls?: ReactNode;
+  /** A line under the composer, such as the session's metrics. */
+  footer?: ReactNode;
 }
 
 /** One session: the conversation and the composer. */
@@ -37,6 +39,7 @@ export default function SessionWorkspace({
   composerBar,
   startControls,
   endControls,
+  footer,
 }: SessionWorkspaceProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -68,6 +71,7 @@ export default function SessionWorkspace({
           startControls={startControls}
           endControls={endControls}
         />
+        {footer}
       </div>
     </div>
   );

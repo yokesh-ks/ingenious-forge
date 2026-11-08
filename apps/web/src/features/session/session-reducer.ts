@@ -8,6 +8,7 @@ import type {
   QuestionAnswer,
   SessionEvent,
   TodoItem,
+  Usage,
 } from "@/api/types";
 import { approvalModeLabel } from "@/lib/approval-modes";
 
@@ -17,6 +18,8 @@ export interface SessionMessage {
   text: string;
   /** Set on a user message typed while a turn ran. */
   steering?: true;
+  /** When a user message was logged, in ms since the epoch, if known. */
+  at?: number;
 }
 
 /** A block of the model's reasoning, as it streamed. */
@@ -50,6 +53,10 @@ export interface TurnRecord {
   status: "running" | "completed" | "failed" | "stopped";
   /** Why a failed turn failed; `code` is `null` in older logs. */
   failure: { code: string | null; message: string } | null;
+  /** Model requests that settled in the turn. */
+  steps: number;
+  /** Their summed token usage; `null` until one reports usage. */
+  usage: Usage | null;
 }
 
 /** A tool call the agent made, with its result once it arrives. */
@@ -193,15 +200,16 @@ const nextId = (draft: SessionState) => `m${draft.messages.length}`;
 function applyEvent(draft: SessionState, event: SessionEvent): boolean {
   const items = draft.messages;
   switch (event.type) {
-    case "user_message":
+    case "user_message": {
       // During a turn this steers it; the reply continues in a new message.
-      items.push(
-        event.source === "steering"
-          ? { id: nextId(draft), role: "user", text: event.text, steering: true }
-          : { id: nextId(draft), role: "user", text: event.text },
-      );
+      const message: SessionMessage = { id: nextId(draft), role: "user", text: event.text };
+      if (event.source === "steering") message.steering = true;
+      const at = loggedAt(event);
+      if (at !== null) message.at = at;
+      items.push(message);
       draft.streamingId = null;
       return true;
+    }
     case "turn_started":
       draft.running = true;
       draft.streamingId = null;
@@ -212,8 +220,20 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
         endedAt: null,
         status: "running",
         failure: null,
+        steps: 0,
+        usage: null,
       });
       return true;
+    case "step_ended": {
+      const last = draft.turns[draft.turns.length - 1];
+      if (!last) return false;
+      draft.turns[draft.turns.length - 1] = {
+        ...last,
+        steps: last.steps + 1,
+        usage: event.usage ? addUsage(last.usage, event.usage) : last.usage,
+      };
+      return true;
+    }
     case "system_prompt":
       items.push({
         id: nextId(draft),
@@ -405,6 +425,16 @@ function closeTurn(
   const last = draft.turns[draft.turns.length - 1];
   if (last?.status !== "running") return;
   draft.turns[draft.turns.length - 1] = { ...last, status, endedAt: loggedAt(event), failure };
+}
+
+function addUsage(sum: Usage | null, add: Usage): Usage {
+  if (!sum) return add;
+  return {
+    input: sum.input + add.input,
+    output: sum.output + add.output,
+    cache_read: sum.cache_read + add.cache_read,
+    cache_write: sum.cache_write + add.cache_write,
+  };
 }
 
 /** The instruction files a system prompt holds, by their tags. */
