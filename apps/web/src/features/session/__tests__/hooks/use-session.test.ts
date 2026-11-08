@@ -140,6 +140,14 @@ describe("useSession", () => {
     expect(result.current.state.running).toBe(false);
   });
 
+  it("says when the latest page has arrived", async () => {
+    fakeFetch({ "GET /api/sessions/s1/events": [] });
+    const { result } = setup();
+    expect(result.current.loaded).toBe(false);
+    await openSocket(FakeSocket.latest());
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+  });
+
   it("opens a long session at its tail and lists every changed file", async () => {
     const fetch = fakeFetch({
       "GET /api/sessions/s1/events": [
