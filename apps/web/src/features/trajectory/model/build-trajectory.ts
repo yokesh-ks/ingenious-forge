@@ -351,6 +351,18 @@ export function sessionUsageUpTo(records: TrajectoryRecord[], request: number): 
   return sum;
 }
 
+/** How long the model took on a reply: its wait for the first token plus
+ * generation. The step's own span also holds its tools and approvals, so it
+ * is only the fallback when those two were not recorded. */
+export function replyDuration(reply: AssistantRecord): number | null {
+  if (reply.firstTokenMs !== null || reply.generationMs !== null) {
+    return (reply.firstTokenMs ?? 0) + (reply.generationMs ?? 0);
+  }
+  return reply.startedAt !== null && reply.endedAt !== null
+    ? reply.endedAt - reply.startedAt
+    : null;
+}
+
 /** All of a record's text, for search. */
 function searchText(record: TrajectoryRecord): string {
   switch (record.kind) {
@@ -384,6 +396,8 @@ export interface LedgerOptions {
   /** Fold each reply's tool calls. */
   calls: boolean;
   query: string;
+  /** Narrow to these records, from a timeline range; `null` for all. */
+  focus?: Set<string> | null;
   /** Groups the user folded or opened one by one, against the toggles
    * above, by row key (`turn:N`, `calls:<reply id>`). */
   flipped?: Set<string>;
@@ -396,6 +410,12 @@ const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? "
 export function ledgerRows(records: TrajectoryRecord[], options: LedgerOptions): LedgerRow[] {
   const flipped = options.flipped ?? new Set<string>();
   const query = options.query.trim();
+  if (options.focus) {
+    const focus = options.focus;
+    return records
+      .filter((r) => focus.has(r.id) && (query === "" || matchesSearch(r, query)))
+      .map((record) => ({ type: "record", key: record.id, record, turnStart: false }));
+  }
   if (query !== "") {
     const byId = new Map(records.map((r) => [r.id, r]));
     const keep = new Set<string>();

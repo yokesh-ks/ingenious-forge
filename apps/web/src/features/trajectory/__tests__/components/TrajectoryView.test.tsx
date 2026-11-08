@@ -1,6 +1,6 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionEnvelope } from "@/api/types";
 import TrajectoryView from "../../components/TrajectoryView";
 import { at, S, session } from "../fixture";
@@ -33,7 +33,7 @@ describe("TrajectoryView", () => {
     expect(row(/^Request 1, ASSISTANT, I'll list the files/)).toBeInTheDocument();
     expect(row(/^TOOL, bash/)).toHaveTextContent('bash{"command":"ls"}→a.md b.md');
     expect(row(/^TOOL, read/)).toHaveTextContent("30 ms");
-    expect(row(/^Request 1, ASSISTANT/)).toHaveTextContent("1.19 s · 40 tok");
+    expect(row(/^Request 1, ASSISTANT/)).toHaveTextContent("900 ms · 40 tok");
     expect(row(/^USER, Thanks/)).toHaveTextContent("Turn 2");
   });
 
@@ -208,10 +208,118 @@ describe("TrajectoryView", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/^No records yet/);
   });
 
+  describe("timeline", () => {
+    const track = () => screen.getByLabelText(/^Timeline overview/);
+    const span = (id: string) =>
+      document.querySelector(`[data-timeline-id="${id}"]`) as HTMLElement;
+    function sized() {
+      vi.spyOn(track(), "getBoundingClientRect").mockReturnValue({
+        left: 0,
+        width: 900,
+      } as DOMRect);
+    }
+    const drag = (from: number, to: number) => {
+      fireEvent.pointerDown(track(), { button: 0, clientX: from, pointerId: 1 });
+      fireEvent.pointerMove(track(), { clientX: to, pointerId: 1 });
+      fireEvent.pointerUp(track(), { clientX: to, pointerId: 1 });
+    };
+
+    beforeEach(() => {
+      Element.prototype.setPointerCapture = vi.fn();
+      window.localStorage.removeItem("forge.trajectory.duration");
+    });
+
+    it("draws lanes, narrows the ledger on drag and clears with Escape", () => {
+      view();
+      expect(screen.getByRole("region", { name: "Trajectory timeline" })).toHaveTextContent(
+        /Input\s*Model\s*Tools/,
+      );
+      sized();
+      // Nine equal slots of 100px; the two tool calls fill 400-600.
+      drag(450, 550);
+      expect(
+        screen.getAllByRole("row").map((r) => r.getAttribute("aria-label")?.slice(0, 10)),
+      ).toEqual(["TOOL, bash", "TOOL, read"]);
+      fireEvent.keyDown(track(), { key: "Escape" });
+      expect(row(/^USER, Thanks/)).toBeInTheDocument();
+    });
+
+    it("clears the range on double-click and on a right-click without moving", () => {
+      view();
+      sized();
+      drag(450, 550);
+      fireEvent.doubleClick(track());
+      expect(row(/^USER, Thanks/)).toBeInTheDocument();
+      drag(450, 550);
+      fireEvent.pointerDown(track(), { button: 2, clientX: 300, pointerId: 2 });
+      fireEvent.pointerUp(track(), { clientX: 300, pointerId: 2 });
+      expect(row(/^USER, Thanks/)).toBeInTheDocument();
+    });
+
+    it("selects a clicked block and outlines the selected record", () => {
+      view();
+      sized();
+      const bar = span("tool:t2");
+      fireEvent.pointerDown(bar, { button: 0, clientX: 550, pointerId: 1 });
+      fireEvent.pointerUp(bar, { clientX: 550, pointerId: 1 });
+      expect(details()).toHaveTextContent(/^TOOL/);
+      expect(span("tool:t2")).toHaveAttribute("data-current", "true");
+    });
+
+    it("zooms with the wheel, keeping the view inside the session", () => {
+      view();
+      sized();
+      const lanes = () => (span("tool:t1").parentElement as HTMLElement).style.width;
+      expect(lanes()).toBe("100%");
+      fireEvent.wheel(track(), { deltaY: -300, clientX: 450 });
+      expect(Number.parseFloat(lanes())).toBeGreaterThan(100);
+    });
+
+    it("switches between equal widths and recorded durations, and remembers", async () => {
+      const { unmount } = view();
+      const toggle = screen.getByRole("button", { name: "Use actual duration" });
+      const equal = span("tool:t1").style.getPropertyValue("--span-width");
+      await userEvent.click(toggle);
+      expect(toggle).toHaveAttribute("aria-pressed", "true");
+      expect(span("tool:t1").style.getPropertyValue("--span-width")).not.toBe(equal);
+      unmount();
+      view();
+      expect(screen.getByRole("button", { name: "Use actual duration" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    it("dims blocks that do not match the search", async () => {
+      view();
+      await userEvent.type(screen.getByRole("searchbox", { name: "Search trajectory" }), "b.md");
+      expect(span("tool:t1")).toHaveAttribute("data-search-match", "true");
+      expect(span("reply:3")).toHaveAttribute("data-search-match", "false");
+    });
+
+    it("offers earlier history at the left edge", async () => {
+      const onLoadOlder = vi.fn();
+      view({ hasOlder: true, onLoadOlder });
+      const region = screen.getByRole("region", { name: "Trajectory timeline" });
+      await userEvent.click(within(region).getByRole("button", { name: "Load earlier history" }));
+      expect(onLoadOlder).toHaveBeenCalled();
+    });
+
+    it("says when there is nothing to draw", () => {
+      view({ events: [] });
+      expect(screen.getByRole("region", { name: "Trajectory timeline" })).toHaveTextContent(
+        "No timing data",
+      );
+    });
+  });
+
   it("loads earlier history on request", async () => {
     const onLoadOlder = vi.fn();
     view({ hasOlder: true, onLoadOlder });
-    await userEvent.click(screen.getByRole("button", { name: "Load earlier history" }));
+    const ledger = screen.getByRole("region", { name: "Trajectory" });
+    await userEvent.click(
+      within(ledger).getAllByRole("button", { name: "Load earlier history" })[1],
+    );
     expect(onLoadOlder).toHaveBeenCalled();
   });
 });

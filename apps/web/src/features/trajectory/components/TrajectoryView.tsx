@@ -1,4 +1,4 @@
-import { SearchIcon, SquareMinusIcon, SquarePlusIcon } from "lucide-react";
+import { ClockIcon, SearchIcon, SquareMinusIcon, SquarePlusIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SessionEnvelope } from "@/api/types";
 import { formatMs } from "@/features/stats/model/build-stats";
@@ -8,11 +8,26 @@ import {
   buildTrajectory,
   type LedgerRow,
   ledgerRows,
+  matchesSearch,
   previewText,
+  replyDuration,
   type TrajectoryRecord,
 } from "../model/build-trajectory";
+import { buildTimeline, focusIds, type TimeRange } from "../model/timeline";
 import KindBadge from "./KindBadge";
 import RecordInspector, { type Selection } from "./RecordInspector";
+import TrajectoryTimeline from "./TrajectoryTimeline";
+
+const DURATION_KEY = "forge.trajectory.duration";
+
+/** Whether the timeline uses recorded durations; a per-browser preference. */
+function storedDuration(): boolean {
+  try {
+    return window.localStorage.getItem(DURATION_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
 
 /** Pixels from the bottom that still count as following new rows. */
 const FOLLOW_SLACK = 40;
@@ -27,10 +42,9 @@ function rowMeta(record: TrajectoryRecord): string {
       : "";
   }
   if (record.kind === "assistant") {
+    const duration = replyDuration(record);
     const parts = [
-      ...(record.startedAt !== null && record.endedAt !== null
-        ? [formatMs(record.endedAt - record.startedAt)]
-        : []),
+      ...(duration === null ? [] : [formatMs(duration)]),
       ...(record.usage ? [`${record.usage.output} tok`] : []),
     ];
     return parts.join(" · ");
@@ -269,10 +283,24 @@ export default function TrajectoryView({
   const [flipped, setFlipped] = useState<Set<string>>(new Set());
   const [limit, setLimit] = useState(WINDOW);
   const [width, setWidth] = useState<number | null>(null);
+  const [actualDuration, setActualDuration] = useState(storedDuration);
+  const [range, setRange] = useState<TimeRange | null>(null);
+  const mode = actualDuration ? "duration" : "sequence";
+  const focus = useMemo(() => {
+    const model = range ? buildTimeline(records, mode) : null;
+    return model && range ? focusIds(model, range) : null;
+  }, [records, mode, range]);
+  const searchIds = useMemo(
+    () =>
+      query.trim() === ""
+        ? null
+        : new Set(records.filter((r) => matchesSearch(r, query)).map((r) => r.id)),
+    [records, query],
+  );
   const [tab, setTab] = useState("Summary");
   const rows = useMemo(
-    () => ledgerRows(records, { turns, calls, query, flipped }),
-    [records, turns, calls, query, flipped],
+    () => ledgerRows(records, { turns, calls, query, flipped, focus }),
+    [records, turns, calls, query, flipped, focus],
   );
 
   const selection = useMemo((): Selection | null => {
@@ -325,6 +353,26 @@ export default function TrajectoryView({
         aria-label="Trajectory toolbar"
         className="flex items-center gap-1 border-b px-1 py-1"
       >
+        <button
+          type="button"
+          aria-label="Use actual duration"
+          aria-pressed={actualDuration}
+          title={actualDuration ? "Use equal-width operations" : "Use actual duration"}
+          onClick={() => {
+            const next = !actualDuration;
+            setActualDuration(next);
+            setRange(null);
+            try {
+              window.localStorage.setItem(DURATION_KEY, String(next));
+            } catch {
+              // Without storage the choice lasts until the page closes.
+            }
+          }}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground"
+        >
+          <ClockIcon aria-hidden className="size-3" />
+          Duration
+        </button>
         <FoldButton
           label="Turns"
           folded={turns}
@@ -353,6 +401,18 @@ export default function TrajectoryView({
           />
         </label>
       </div>
+      <TrajectoryTimeline
+        records={records}
+        mode={mode}
+        range={range}
+        selectedId={rowId(selected)}
+        searchIds={searchIds}
+        hasOlder={hasOlder}
+        loadingOlder={loadingOlder}
+        onLoadOlder={onLoadOlder}
+        onRangeChange={setRange}
+        onSelect={setSelected}
+      />
       <div className="flex min-h-0 flex-1">
         <div
           ref={scroller}
