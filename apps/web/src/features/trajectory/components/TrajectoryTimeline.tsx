@@ -14,6 +14,7 @@ import {
   buildTimeline,
   commitRange,
   domainOf,
+  nearestSpan,
   panViewport,
   revealSpan,
   type TimelineMode,
@@ -169,6 +170,7 @@ export default function TrajectoryTimeline({
   onLoadOlder,
   onRangeChange,
   onSelect,
+  onFocusRecord,
 }: {
   records: TrajectoryRecord[];
   mode: TimelineMode;
@@ -180,6 +182,8 @@ export default function TrajectoryTimeline({
   onLoadOlder: () => void;
   onRangeChange: (range: TimeRange | null) => void;
   onSelect: (id: string) => void;
+  /** Bring the record nearest a click on empty track into view. */
+  onFocusRecord: (id: string) => void;
 }) {
   const model = useMemo(() => buildTimeline(records, mode), [records, mode]);
   const [viewport, setViewport] = useState<TimeRange | null>(null);
@@ -315,11 +319,13 @@ export default function TrajectoryTimeline({
     if (!drag || drag.pointer !== e.pointerId) return;
     dragRef.current = null;
     setDraft(null);
-    if (Math.abs(e.clientX - drag.anchorX) < MIN_DRAG_PX && drag.id) {
+    const click = Math.abs(e.clientX - drag.anchorX) < MIN_DRAG_PX;
+    if (click && drag.id) {
       onRangeChange(null);
       onSelect(drag.id);
       return;
     }
+    if (click) onFocusRecord(nearestSpan(model, drag.anchorTime).id);
     onRangeChange(commitRange(model, domain, drag.anchorTime, timeAt(fractionAt(e))));
   };
 

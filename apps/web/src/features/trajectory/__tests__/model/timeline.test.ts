@@ -5,6 +5,7 @@ import {
   commitRange,
   domainOf,
   focusIds,
+  nearestSpan,
   panViewport,
   revealSpan,
   type TimelineModel,
@@ -81,6 +82,16 @@ describe("focusIds", () => {
     const m = model("sequence");
     expect([...focusIds(m, { start: 4.5, end: 5.5 })]).toEqual(["tool:t1", "tool:t2"]);
     expect([...focusIds(m, { start: 5, end: 5 })]).toEqual(["tool:t1", "tool:t2"]);
+  });
+});
+
+describe("nearestSpan", () => {
+  it("finds the span at a time, or the closest one to it", () => {
+    const m = model("duration");
+    const inside = m.spans.find((s) => s.id === "reply:1");
+    if (!inside) throw new Error("no span");
+    expect(nearestSpan(m, inside.start + 100).id).toBe("reply:1");
+    expect(nearestSpan(m, m.end + 1_000).id).toBe("reply:3");
   });
 });
 
