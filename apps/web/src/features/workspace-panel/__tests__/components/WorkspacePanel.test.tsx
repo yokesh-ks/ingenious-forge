@@ -81,13 +81,15 @@ describe("WorkspacePanel", () => {
     expect(screen.queryByRole("button", { name: "New tab" })).not.toBeInTheDocument();
   });
 
-  it("closes tabs, returning to Start after the last", async () => {
+  it("closes tabs; closing the last one closes the panel, which reopens on Start", async () => {
     setup();
     await expand();
     expect(screen.queryByRole("button", { name: "Close Start" })).not.toBeInTheDocument();
     await userEvent.click(card(/^Workspace files/));
     expect(await screen.findByRole("button", { name: "README.md" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Close Files" }));
+    expect(panel()).not.toBeVisible();
+    await expand();
     expect(tabs()).toEqual(["Start"]);
   });
 
@@ -122,7 +124,7 @@ describe("WorkspacePanel", () => {
     await expand();
     await userEvent.click(card(/^New terminal/));
     await userEvent.click(screen.getByRole("button", { name: "Close Terminal" }));
-    expect(tabs()).toEqual(["Start"]);
+    expect(panel()).not.toBeVisible();
     const closed = fetch.mock.calls.find(([, init]) => init?.method === "DELETE");
     expect(String(closed?.[0])).toMatch(/\/api\/projects\/p1\/terminal\?tab=terminal-\d+$/);
   });

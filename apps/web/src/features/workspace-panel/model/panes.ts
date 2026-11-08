@@ -22,8 +22,24 @@ export interface Pane {
   tabs: PanelTabs;
 }
 
+export interface FloatRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** A tab taken out of the panel, drawn over the page. */
+export interface FloatPanel {
+  id: string;
+  tab: PanelTab;
+  rect: FloatRect;
+}
+
 export interface PanelLayout {
   panes: Pane[];
+  /** Floating panels, bottom to top. */
+  floats: FloatPanel[];
   activePane: string;
   /** The first pane's share of the width when split. */
   ratio: number;
@@ -35,10 +51,21 @@ export const MAX_PANES = 2;
 const MIN_RATIO = 0.2;
 const MAX_RATIO = 0.8;
 const EVEN = 0.5;
+const FLOAT_SIZE = { width: 380, height: 300 };
+/** How far a new panel's corner sits above and left of the release point. */
+const GRAB = { x: 60, y: 14 };
+
+/** The rectangle of a tab released at a point outside the panel. */
+export const floatRectAt = (x: number, y: number): FloatRect => ({
+  x: Math.max(0, x - GRAB.x),
+  y: Math.max(0, y - GRAB.y),
+  ...FLOAT_SIZE,
+});
 
 export function initialLayout(): PanelLayout {
   return {
     panes: [{ id: "pane-0", slot: 0, tabs: initialTabs(1) }],
+    floats: [],
     activePane: "pane-0",
     ratio: EVEN,
     next: 2,
@@ -103,6 +130,15 @@ export function openFileTab(
   path: string,
   options: OpenFileOptions = {},
 ): PanelLayout {
+  const floating = layout.floats.find((f) => f.tab.kind === "file" && f.tab.path === path);
+  if (floating) {
+    const { tab } = floating;
+    const shown = { ...tab, line: options.line, revision: (tab.revision ?? 0) + 1 };
+    return raiseFloat(
+      { ...layout, floats: layout.floats.map((f) => (f === floating ? { ...f, tab: shown } : f)) },
+      floating.id,
+    );
+  }
   const holder = layout.panes.find((p) =>
     p.tabs.tabs.some((t) => t.kind === "file" && t.path === path),
   );
@@ -123,6 +159,7 @@ const mapTab = (
     ...pane,
     tabs: { ...pane.tabs, tabs: pane.tabs.tabs.map((t) => (t.id === tabId ? change(t) : t)) },
   })),
+  floats: layout.floats.map((f) => (f.tab.id === tabId ? { ...f, tab: change(f.tab) } : f)),
 });
 
 export const renameTab = (layout: PanelLayout, tabId: string, title: string): PanelLayout =>
@@ -131,6 +168,9 @@ export const renameTab = (layout: PanelLayout, tabId: string, title: string): Pa
 /** Fills in the shell of every terminal still waiting for one. */
 export const resolveShells = (layout: PanelLayout, shell: TabShell | null): PanelLayout => ({
   ...layout,
+  floats: layout.floats.map((f) =>
+    f.tab.kind === "terminal" && f.tab.shell === undefined ? { ...f, tab: { ...f.tab, shell } } : f,
+  ),
   panes: layout.panes.map((pane) => ({
     ...pane,
     tabs: {
@@ -167,6 +207,25 @@ export const setRatio = (layout: PanelLayout, ratio: number): PanelLayout => ({
 export const canCloseTab = (layout: PanelLayout, pane: Pane, tab: PanelTab) =>
   layout.panes.length > 1 || canClose(pane.tabs, tab);
 
+/** The panel's only tab: closing it closes the panel too. */
+export const isSoleDocked = (layout: PanelLayout, tabId: string) =>
+  layout.panes.length === 1 &&
+  layout.panes[0].tabs.tabs.length === 1 &&
+  layout.panes[0].tabs.tabs[0].id === tabId;
+
+/** What a tab's menu can close: the tab, the others, those to its right. */
+export function menuTabs(layout: PanelLayout, paneId: string, tabId: string) {
+  const pane = paneOf(layout, paneId);
+  const index = pane?.tabs.tabs.findIndex((t) => t.id === tabId) ?? -1;
+  if (!pane || index === -1) return { close: false, others: [], right: [] };
+  const closable = pane.tabs.tabs.filter((t) => canCloseTab(layout, pane, t));
+  return {
+    close: canCloseTab(layout, pane, pane.tabs.tabs[index]),
+    others: closable.filter((t) => t.id !== tabId),
+    right: pane.tabs.tabs.slice(index + 1).filter((t) => closable.includes(t)),
+  };
+}
+
 /** Takes a pane out; the panel falls back to the other one. */
 function removePane(layout: PanelLayout, paneId: string): PanelLayout {
   const panes = layout.panes.filter((p) => p.id !== paneId);
@@ -198,9 +257,15 @@ function holderOf(layout: PanelLayout, tabId: string) {
   return null;
 }
 
+/** A pane holds one page of each kind; only files and terminals repeat. */
+const samePage = (tabs: PanelTabs, tab: PanelTab) =>
+  tab.kind === "file" || tab.kind === "terminal"
+    ? undefined
+    : tabs.tabs.find((t) => t.kind === tab.kind);
+
 /** Puts a tab at `index` of a pane's strip, counted with the tab still in
- * place. A pane left with nothing goes away; a Start moved beside another
- * Start merges into it. */
+ * place. A pane left with nothing goes away; a page moved beside the same
+ * page merges into it. */
 export function moveTab(
   layout: PanelLayout,
   tabId: string,
@@ -225,14 +290,13 @@ export function moveTab(
     );
   }
 
-  const existingStart =
-    tab.kind === "start" ? target.tabs.tabs.find((t) => t.kind === "start") : undefined;
+  const existing = samePage(target.tabs, tab);
   const emptied = source.tabs.tabs.length === 1;
   let out = emptied
     ? removePane(layout, source.id)
     : inPane(layout, source.id, (tabs) => detach(tabs, tabId));
   out = inPane(out, toPane, (tabs) => {
-    if (existingStart) return { ...tabs, active: existingStart.id };
+    if (existing) return { ...tabs, active: existing.id };
     const list = [...tabs.tabs];
     list.splice(index ?? list.length, 0, tab);
     return { ...tabs, tabs: list, active: tabId };
@@ -266,5 +330,63 @@ export function dropToSplit(
     activePane: id,
     ratio: EVEN,
     next: counter + 1,
+  };
+}
+
+/** What a pane's tabs become without `tabId`; a lone pane is left on Start. */
+function withoutTab(layout: PanelLayout, pane: Pane, tabId: string): PanelLayout {
+  if (pane.tabs.tabs.length > 1) return inPane(layout, pane.id, (tabs) => detach(tabs, tabId));
+  if (layout.panes.length > 1) return removePane(layout, pane.id);
+  return {
+    ...layout,
+    panes: [{ ...pane, tabs: initialTabs(layout.next) }],
+    next: layout.next + 1,
+  };
+}
+
+/** Takes a tab out of the panel into a floating panel on top of the others. */
+export function floatTab(layout: PanelLayout, tabId: string, rect: FloatRect): PanelLayout {
+  const from = holderOf(layout, tabId);
+  if (!from) return layout;
+  const out = withoutTab(layout, from.pane, tabId);
+  const float: FloatPanel = { id: `float-${out.next}`, tab: from.tab, rect };
+  return { ...out, floats: [...out.floats, float], next: out.next + 1 };
+}
+
+const withoutFloat = (layout: PanelLayout, id: string): PanelLayout => ({
+  ...layout,
+  floats: layout.floats.filter((f) => f.id !== id),
+});
+
+export const closeFloat = withoutFloat;
+
+/** Sends a floating tab back to the active pane. */
+export function unfloat(layout: PanelLayout, id: string): PanelLayout {
+  const float = layout.floats.find((f) => f.id === id);
+  if (!float) return layout;
+  const target = activePaneOf(layout);
+  const existing = samePage(target.tabs, float.tab);
+  return focusPane(
+    inPane(withoutFloat(layout, id), target.id, (tabs) =>
+      existing
+        ? { ...tabs, active: existing.id }
+        : { ...tabs, tabs: [...tabs.tabs, float.tab], active: float.tab.id },
+    ),
+    target.id,
+  );
+}
+
+/** Puts a floating panel on top of the others. */
+export function raiseFloat(layout: PanelLayout, id: string): PanelLayout {
+  const float = layout.floats.find((f) => f.id === id);
+  if (!float || layout.floats[layout.floats.length - 1] === float) return layout;
+  return { ...layout, floats: [...layout.floats.filter((f) => f !== float), float] };
+}
+
+/** Records where a dragged floating panel came to rest, on top of the others. */
+export function placeFloat(layout: PanelLayout, id: string, rect: FloatRect): PanelLayout {
+  return {
+    ...raiseFloat(layout, id),
+    floats: raiseFloat(layout, id).floats.map((f) => (f.id === id ? { ...f, rect } : f)),
   };
 }

@@ -62,8 +62,10 @@ describe("splitting the panel", () => {
     await expand();
     await userEvent.click(button("Split")[0]);
     expect(strips()).toEqual([["Start"], ["Start"]]);
-    for (const split of button("Split")) expect(split).toBeDisabled();
-    expect(button("Split")[0].parentElement).toHaveAttribute("title", "Two panes is the limit");
+    for (const split of button("Split")) expect(split).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(button("Split")[0]);
+    expect(strips()).toEqual([["Start"], ["Start"]]);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Two panes is the limit");
   });
 
   it("keeps the panel's own controls in the last pane only", async () => {
@@ -251,5 +253,109 @@ describe("dragging a tab", () => {
     expect(within(panel()).queryByText(/split|Move here/)).toBeNull();
     await drop();
     expect(strips()).toEqual([["a.txt"]]);
+  });
+});
+
+describe("a tab's menu", () => {
+  const openFiles = async (control: { current: WorkspacePanelControl | null }) => {
+    await expand();
+    for (const path of ["a.txt", "b.txt", "c.txt"]) {
+      act(() => control.current?.openFile({ path }));
+    }
+    await waitFor(() => expect(strips()).toEqual([["a.txt", "b.txt", "c.txt"]]));
+  };
+  const openMenu = (name: string) =>
+    fireEvent.contextMenu(screen.getByRole("tab", { name }).closest("[data-chip]") as Element);
+
+  it("closes the other tabs, or those to the right", async () => {
+    const { control } = setup();
+    await openFiles(control);
+    openMenu("b.txt");
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Close Tabs to the Right" }));
+    expect(strips()).toEqual([["a.txt", "b.txt"]]);
+    openMenu("a.txt");
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Close Other Tabs" }));
+    expect(strips()).toEqual([["a.txt"]]);
+  });
+
+  it("offers nothing to the right of the last tab", async () => {
+    const { control } = setup();
+    await openFiles(control);
+    openMenu("c.txt");
+    await screen.findByRole("menu");
+    expect(screen.queryByRole("menuitem", { name: "Close Tabs to the Right" })).toBeNull();
+  });
+
+  it("closes on a middle click, keeping the selected tab", async () => {
+    const { control } = setup();
+    await openFiles(control);
+    const chip = screen.getByRole("tab", { name: "a.txt" }).closest("[data-chip]") as Element;
+    fireEvent(chip, new MouseEvent("auxclick", { bubbles: true, button: 1 }));
+    expect(strips()).toEqual([["b.txt", "c.txt"]]);
+    expect(screen.getByRole("tab", { name: "c.txt" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("moves focus along the strip with the arrow keys, without selecting", async () => {
+    const { control } = setup();
+    await openFiles(control);
+    screen.getByRole("tab", { name: "c.txt" }).focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(screen.getByRole("tab", { name: "a.txt" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "c.txt" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("closes the focused tab with the keyboard", async () => {
+    const { control } = setup();
+    await openFiles(control);
+    screen.getByRole("tab", { name: "c.txt" }).focus();
+    within(panel()).getByRole("tabpanel", { name: "c.txt" }).focus();
+    await userEvent.keyboard("{Meta>}{Alt>}w{/Alt}{/Meta}");
+    expect(strips()).toEqual([["a.txt", "b.txt"]]);
+  });
+});
+
+describe("floating a tab", () => {
+  const boxes = () => {
+    const grid = panel().querySelector("[data-pane-strip]")?.parentElement as HTMLElement;
+    grid.getBoundingClientRect = () => new DOMRect(800, 0, 600, 800);
+  };
+  const dragOut = async (name: string) => {
+    boxes();
+    const chip = screen.getByRole("tab", { name }).closest("[data-chip]") as Element;
+    fireEvent.pointerDown(chip, { button: 0, clientX: 810, clientY: 10 });
+    await act(async () => {
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 300, clientY: 200 }));
+    });
+    await act(async () => {
+      window.dispatchEvent(new MouseEvent("pointerup", { clientX: 300, clientY: 200 }));
+    });
+  };
+  const floating = () => document.querySelector("[data-float-panel]") as HTMLElement;
+
+  it("floats a tab released clear of the panel, and sends it back", async () => {
+    const { control } = setup();
+    await expand();
+    act(() => control.current?.openFile({ path: "a.txt" }));
+    await dragOut("a.txt");
+    expect(strips()).toEqual([["Start"]]);
+    expect(floating().style.left).toContain("240px");
+    expect(floating().style.width).toContain("380px");
+    await userEvent.click(
+      within(floating()).getByRole("button", { name: "Send back to the sidebar" }),
+    );
+    expect(floating()).toBeNull();
+    expect(strips()).toEqual([["Start", "a.txt"]]);
+  });
+
+  it("keeps floating panels on screen while the sidebar is collapsed", async () => {
+    const { control } = setup();
+    await expand();
+    act(() => control.current?.openFile({ path: "a.txt" }));
+    await dragOut("a.txt");
+    await userEvent.click(button("Collapse right sidebar")[0]);
+    expect(panel().style.visibility).toBe("hidden");
+    expect(floating().style.visibility).toBe("visible");
+    await userEvent.click(within(floating()).getByRole("button", { name: "Close" }));
+    expect(floating()).toBeNull();
   });
 });
