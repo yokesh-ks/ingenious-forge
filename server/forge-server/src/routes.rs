@@ -150,6 +150,15 @@ pub(crate) async fn handle_client_message(state: &AppState, text: &str) {
                 tracing::debug!(%session_id, %call_id, "no approval card waiting");
             }
         }
+        ClientMessage::AnswerQuestion {
+            session_id,
+            call_id,
+            answers,
+        } => {
+            if !state.agent.answer_question(&session_id, &call_id, answers) {
+                tracing::debug!(%session_id, %call_id, "no matching question card waiting");
+            }
+        }
         ClientMessage::Interrupt { session_id } => {
             if !state.agent.interrupt(&session_id) {
                 tracing::debug!(%session_id, "interrupt with no running turn");

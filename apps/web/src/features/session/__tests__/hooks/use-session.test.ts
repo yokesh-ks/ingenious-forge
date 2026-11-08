@@ -273,6 +273,19 @@ describe("useSession", () => {
     });
   });
 
+  it("sends a question card's answers for its session", async () => {
+    const { result } = setup();
+    await openSocket(FakeSocket.latest());
+    const answers = [{ id: "color", selected: ["Blue"], custom: "notes" }];
+    act(() => result.current.answerQuestion("q1", answers));
+    expect(JSON.parse(FakeSocket.latest().sent[0])).toEqual({
+      type: "answer_question",
+      session_id: "s1",
+      call_id: "q1",
+      answers,
+    });
+  });
+
   it("closes the socket on unmount", async () => {
     const { unmount } = setup();
     const socket = FakeSocket.latest();

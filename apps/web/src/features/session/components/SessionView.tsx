@@ -1,5 +1,5 @@
 import { memo } from "react";
-import type { ApprovalDecision } from "@/api/types";
+import type { ApprovalDecision, QuestionAnswer } from "@/api/types";
 import { Bubble, BubbleContent } from "@/components/ai-elements/bubble";
 import { Message, MessageContent } from "@/components/ai-elements/message";
 import {
@@ -20,6 +20,8 @@ interface SessionViewProps {
   error: string | null;
   /** Answers a tool call's approval card. */
   onAnswerApproval?: (callId: string, decision: ApprovalDecision) => void;
+  /** Answers a tool call's question card. */
+  onAnswerQuestion?: (callId: string, answers: QuestionAnswer[]) => void;
 }
 
 function ErrorAlert({ message }: { message: string }) {
@@ -41,14 +43,16 @@ function ErrorAlert({ message }: { message: string }) {
 const TimelineItem = memo(function TimelineItem({
   item,
   onAnswerApproval,
+  onAnswerQuestion,
 }: {
   item: SessionItem;
   onAnswerApproval?: (callId: string, decision: ApprovalDecision) => void;
+  onAnswerQuestion?: (callId: string, answers: QuestionAnswer[]) => void;
 }) {
   return (
     <MessageScrollerItem messageId={item.id} scrollAnchor={item.role === "user"}>
       {item.role === "tool" ? (
-        <ToolCallCard tool={item} onAnswer={onAnswerApproval} />
+        <ToolCallCard tool={item} onAnswer={onAnswerApproval} onAnswerQuestion={onAnswerQuestion} />
       ) : item.role === "notice" ? (
         <p className="text-center text-xs text-muted-foreground">{item.text}</p>
       ) : item.role === "assistant" ? (
@@ -75,6 +79,7 @@ export default function SessionView({
   running,
   error,
   onAnswerApproval,
+  onAnswerQuestion,
 }: SessionViewProps) {
   if (messages.length === 0) {
     return (
@@ -100,7 +105,12 @@ export default function SessionView({
         <MessageScrollerViewport>
           <MessageScrollerContent className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-6">
             {messages.map((message) => (
-              <TimelineItem key={message.id} item={message} onAnswerApproval={onAnswerApproval} />
+              <TimelineItem
+                key={message.id}
+                item={message}
+                onAnswerApproval={onAnswerApproval}
+                onAnswerQuestion={onAnswerQuestion}
+              />
             ))}
             {waitingForReply && (
               <p role="status" className="text-sm text-muted-foreground">

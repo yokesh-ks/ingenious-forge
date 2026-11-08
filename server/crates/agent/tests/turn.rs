@@ -146,6 +146,9 @@ fn describe(events: &[SessionEvent]) -> Vec<String> {
             | SessionEvent::SessionTitle { .. }
             | SessionEvent::SessionStarted { .. } => unreachable!(),
             SessionEvent::ChangesReverted { paths, .. } => format!("reverted:{paths:?}"),
+            SessionEvent::TodosUpdated { todos, .. } => format!("todos:{}", todos.len()),
+            SessionEvent::QuestionAsked { call_id, .. } => format!("question:{call_id}"),
+            SessionEvent::QuestionAnswered { call_id, .. } => format!("answer:{call_id}"),
         })
         .collect()
 }
@@ -588,7 +591,17 @@ async fn every_request_offers_the_file_tools_and_the_shell() {
         .collect();
     assert_eq!(
         names,
-        ["read", "write", "edit", "glob", "grep", "web_fetch", "bash"]
+        [
+            "read",
+            "write",
+            "edit",
+            "glob",
+            "grep",
+            "web_fetch",
+            "bash",
+            "todo_write",
+            "ask_user_question"
+        ]
     );
 }
 

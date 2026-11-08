@@ -5,7 +5,8 @@ use std::{
 };
 
 use agent::tools::{
-    html_to_text, ToolBox, ToolOutcome, BASH, EDIT, GLOB, GREP, READ, WEB_FETCH, WRITE,
+    html_to_text, ToolBox, ToolOutcome, ASK_USER_QUESTION, BASH, EDIT, GLOB, GREP, READ,
+    TODO_WRITE, WEB_FETCH, WRITE,
 };
 use serde_json::json;
 
@@ -63,7 +64,20 @@ fn text(outcome: &ToolOutcome) -> (String, bool) {
 fn specs_describe_the_file_tools_and_the_shell() {
     let project = Project::new();
     let names: Vec<_> = project.tools().specs().iter().map(|s| s.name).collect();
-    assert_eq!(names, [READ, WRITE, EDIT, GLOB, GREP, WEB_FETCH, BASH]);
+    assert_eq!(
+        names,
+        [
+            READ,
+            WRITE,
+            EDIT,
+            GLOB,
+            GREP,
+            WEB_FETCH,
+            BASH,
+            TODO_WRITE,
+            ASK_USER_QUESTION
+        ]
+    );
     for spec in project.tools().specs() {
         assert_eq!(spec.input_schema["type"], "object");
         assert!(!spec.description.is_empty());

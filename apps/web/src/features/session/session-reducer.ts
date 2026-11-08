@@ -3,7 +3,10 @@ import type {
   ApprovalKind,
   JsonValue,
   OutputStream,
+  Question,
+  QuestionAnswer,
   SessionEvent,
+  TodoItem,
 } from "@/api/types";
 import { approvalModeLabel } from "@/lib/approval-modes";
 
@@ -32,6 +35,17 @@ export interface ToolItem {
   approval: Approval | null;
   /** Structured details of the result, such as a read's lines. */
   meta: JsonValue | null;
+  /** The question card an `ask_user_question` call showed. */
+  question: QuestionCard | null;
+  /** The plan a `todo_write` call wrote. */
+  todos: TodoItem[] | null;
+}
+
+/** A question card: what the agent asked and, once answered, the answers. */
+export interface QuestionCard {
+  questions: Question[];
+  answers: QuestionAnswer[] | null;
+  status: "pending" | "answered" | "cancelled";
 }
 
 /** An approval card: what it asks about and, once answered, the answer. */
@@ -170,6 +184,8 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
         exitCode: null,
         approval: null,
         meta: null,
+        question: null,
+        todos: null,
       });
       return true;
     case "approval_requested": {
@@ -192,6 +208,35 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
       const item = items[i] as ToolItem | undefined;
       if (!item?.approval) return false;
       items[i] = { ...item, approval: { ...item.approval, status: event.decision } };
+      return true;
+    }
+    case "question_asked": {
+      const i = findTool(items, event.call_id);
+      if (i === -1) return false;
+      items[i] = {
+        ...(items[i] as ToolItem),
+        question: { questions: event.questions, answers: null, status: "pending" },
+      };
+      return true;
+    }
+    case "question_answered": {
+      const i = findTool(items, event.call_id);
+      const item = items[i] as ToolItem | undefined;
+      if (!item?.question) return false;
+      items[i] = {
+        ...item,
+        question: {
+          ...item.question,
+          answers: event.answers,
+          status: event.answers ? "answered" : "cancelled",
+        },
+      };
+      return true;
+    }
+    case "todos_updated": {
+      const i = findTool(items, event.call_id);
+      if (i === -1) return false;
+      items[i] = { ...(items[i] as ToolItem), todos: event.todos };
       return true;
     }
     case "tool_output": {
@@ -257,6 +302,17 @@ function applyEvent(draft: SessionState, event: SessionEvent): boolean {
 function endTurn(draft: SessionState): boolean {
   draft.running = false;
   draft.streamingId = null;
+  // A question still waiting when the turn ends (say, the server
+  // restarted) can no longer be answered. Only this turn's items, back to
+  // the user's message, can hold one, so a long backlog stays linear.
+  const items = draft.messages;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.role === "user") break;
+    if (item.role === "tool" && item.question?.status === "pending") {
+      items[i] = { ...item, question: { ...item.question, status: "cancelled" } };
+    }
+  }
   return true;
 }
 

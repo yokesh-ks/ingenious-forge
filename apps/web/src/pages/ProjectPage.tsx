@@ -46,7 +46,8 @@ function SessionPane({
 }) {
   const git = useGitStatus(projectId);
   const { sandbox } = useSandbox(sessionId);
-  const { state, connected, send, stop, revertAll, answerApproval } = useSession(sessionId);
+  const { state, connected, send, stop, revertAll, answerApproval, answerQuestion } =
+    useSession(sessionId);
 
   return (
     <div className="flex min-h-0 flex-1 gap-4">
@@ -58,6 +59,7 @@ function SessionPane({
           onSend={send}
           onStop={stop}
           onAnswerApproval={answerApproval}
+          onAnswerQuestion={answerQuestion}
           composerBar={
             <div className="flex items-center justify-between gap-2">
               <ProjectPicker projectId={projectId} />

@@ -210,7 +210,7 @@ export type ApprovalKind = "edit" | "command";
 
 export type ApprovalDecision = "approve" | "deny" | "always_allow";
 
-export type ClientMessage = { "type": "send_message", session_id: string, text: string, } | { "type": "interrupt", session_id: string, } | { "type": "revert_all", session_id: string, } | { "type": "answer_approval", session_id: string, call_id: string, decision: ApprovalDecision, };
+export type ClientMessage = { "type": "send_message", session_id: string, text: string, } | { "type": "interrupt", session_id: string, } | { "type": "revert_all", session_id: string, } | { "type": "answer_approval", session_id: string, call_id: string, decision: ApprovalDecision, } | { "type": "answer_question", session_id: string, call_id: string, answers: Array<QuestionAnswer>, };
 
 export type OutputStream = "stdout" | "stderr";
 
@@ -250,6 +250,28 @@ export type ModelRef = { provider: string, model: string, };
 
 export type TitleSource = "first_message" | "user";
 
+export type Question = { 
+/**
+ * Stable id, echoed in the answer.
+ */
+id: string, question: string, 
+/**
+ * A short heading such as "Confirm".
+ */
+header: string | null, options: Array<QuestionOption>, 
+/**
+ * Whether the user may pick more than one option.
+ */
+multi_select: boolean, };
+
+export type QuestionOption = { label: string, description: string | null, };
+
+export type QuestionAnswer = { id: string, selected: Array<string>, custom?: string, };
+
+export type TodoItem = { content: string, status: TodoStatus, };
+
+export type TodoStatus = "pending" | "in_progress" | "completed";
+
 export type SessionEvent = { "type": "session_started", session_id: string, cwd: string, provider: string, model: string, approval_mode: ApprovalMode, sandbox: SandboxInfo | null, } | { "type": "user_message", session_id: string, text: string, 
 /**
  * How it reached the agent; `human` in logs written before ADR 0012.
@@ -286,7 +308,7 @@ meta: JsonValue | null,
  * When the tool started and finished running, in milliseconds
  * since the Unix epoch; 0 in logs written before ADR 0012.
  */
-started_at: number, ended_at: number, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, } | { "type": "approval_mode_changed", session_id: string, mode: ApprovalMode, } | { "type": "approval_requested", session_id: string, call_id: string, kind: ApprovalKind, command: string | null, path: string | null, diff: string | null, } | { "type": "approval_resolved", session_id: string, call_id: string, decision: ApprovalDecision, } | { "type": "sandbox_changed", session_id: string, sandbox: SandboxInfo, };
+started_at: number, ended_at: number, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, } | { "type": "approval_mode_changed", session_id: string, mode: ApprovalMode, } | { "type": "approval_requested", session_id: string, call_id: string, kind: ApprovalKind, command: string | null, path: string | null, diff: string | null, } | { "type": "approval_resolved", session_id: string, call_id: string, decision: ApprovalDecision, } | { "type": "sandbox_changed", session_id: string, sandbox: SandboxInfo, } | { "type": "todos_updated", session_id: string, call_id: string, todos: Array<TodoItem>, } | { "type": "question_asked", session_id: string, call_id: string, questions: Array<Question>, } | { "type": "question_answered", session_id: string, call_id: string, answers: Array<QuestionAnswer> | null, };
 
 export type SessionEnvelope = { seq: number, 
 /**
@@ -329,4 +351,4 @@ meta: JsonValue | null,
  * When the tool started and finished running, in milliseconds
  * since the Unix epoch; 0 in logs written before ADR 0012.
  */
-started_at: number, ended_at: number, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, } | { "type": "approval_mode_changed", session_id: string, mode: ApprovalMode, } | { "type": "approval_requested", session_id: string, call_id: string, kind: ApprovalKind, command: string | null, path: string | null, diff: string | null, } | { "type": "approval_resolved", session_id: string, call_id: string, decision: ApprovalDecision, } | { "type": "sandbox_changed", session_id: string, sandbox: SandboxInfo, });
+started_at: number, ended_at: number, } | { "type": "file_changed", session_id: string, path: string, diff: string, additions: number, deletions: number, } | { "type": "changes_reverted", session_id: string, paths: Array<string>, } | { "type": "error", session_id: string, message: string, } | { "type": "done", session_id: string, } | { "type": "interrupted", session_id: string, } | { "type": "approval_mode_changed", session_id: string, mode: ApprovalMode, } | { "type": "approval_requested", session_id: string, call_id: string, kind: ApprovalKind, command: string | null, path: string | null, diff: string | null, } | { "type": "approval_resolved", session_id: string, call_id: string, decision: ApprovalDecision, } | { "type": "sandbox_changed", session_id: string, sandbox: SandboxInfo, } | { "type": "todos_updated", session_id: string, call_id: string, todos: Array<TodoItem>, } | { "type": "question_asked", session_id: string, call_id: string, questions: Array<Question>, } | { "type": "question_answered", session_id: string, call_id: string, answers: Array<QuestionAnswer> | null, });

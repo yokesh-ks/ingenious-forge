@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { ApiRequestError, api } from "@/api/client";
-import type { ApprovalDecision, ClientMessage, SessionEnvelope } from "@/api/types";
+import type { ApprovalDecision, ClientMessage, QuestionAnswer, SessionEnvelope } from "@/api/types";
 import { initialSessionState, sessionReducer } from "../session-reducer";
 
 export function sessionSocketUrl(location: Pick<Location, "protocol" | "host">): string {
@@ -154,5 +154,14 @@ export function useSession(
     [post, sessionId],
   );
 
-  return { state, connected, send, stop, revertAll, answerApproval };
+  const answerQuestion = useCallback(
+    (callId: string, answers: QuestionAnswer[]) => {
+      if (!post({ type: "answer_question", session_id: sessionId, call_id: callId, answers })) {
+        dispatch({ kind: "local_error", message: "Not connected to the Forge server." });
+      }
+    },
+    [post, sessionId],
+  );
+
+  return { state, connected, send, stop, revertAll, answerApproval, answerQuestion };
 }

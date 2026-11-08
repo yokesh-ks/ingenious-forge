@@ -137,6 +137,8 @@ describe("sessionReducer", () => {
       hiddenLines: 0,
       exitCode: null,
       approval: null,
+      question: null,
+      todos: null,
       meta: null,
     });
   });
@@ -407,6 +409,94 @@ describe("sessionReducer", () => {
       decision: "deny",
     });
     expect(answered.messages[1]).toMatchObject({ approval: { status: "deny" } });
+  });
+
+  describe("questions and plans", () => {
+    const question = {
+      id: "color",
+      question: "Which color do you prefer?",
+      header: "Pick one",
+      options: [{ label: "Blue", description: null }],
+      multi_select: false,
+    };
+    const asking = (tool: string): SessionState =>
+      apply(
+        sent("go"),
+        { type: "turn_started", session_id: S, turn: 1 },
+        {
+          type: "tool_call",
+          session_id: S,
+          call_id: "q1",
+          name: tool,
+          args: {},
+          turn: 1,
+          step: 1,
+        },
+      );
+
+    it("puts a pending question card on the call, then its answers", () => {
+      const asked = apply(asking("ask_user_question"), {
+        type: "question_asked",
+        session_id: S,
+        call_id: "q1",
+        questions: [question],
+      });
+      expect(asked.messages[1]).toMatchObject({
+        question: { questions: [question], answers: null, status: "pending" },
+      });
+      const answers = [{ id: "color", selected: ["Blue"] }];
+      const answered = apply(asked, {
+        type: "question_answered",
+        session_id: S,
+        call_id: "q1",
+        answers,
+      });
+      expect(answered.messages[1]).toMatchObject({ question: { answers, status: "answered" } });
+    });
+
+    it("marks a question cancelled when the turn stops it", () => {
+      const asked = apply(asking("ask_user_question"), {
+        type: "question_asked",
+        session_id: S,
+        call_id: "q1",
+        questions: [question],
+      });
+      const stopped = apply(asked, {
+        type: "question_answered",
+        session_id: S,
+        call_id: "q1",
+        answers: null,
+      });
+      expect(stopped.messages[1]).toMatchObject({ question: { status: "cancelled" } });
+    });
+
+    it("cancels a question left waiting when the turn ends without an answer", () => {
+      const ended = apply(
+        asking("ask_user_question"),
+        { type: "question_asked", session_id: S, call_id: "q1", questions: [question] },
+        {
+          type: "turn_ended",
+          session_id: S,
+          turn: 1,
+          reason: { kind: "error", code: "SERVER_RESTARTED", message: "restarted" },
+        },
+      );
+      expect(ended.messages[1]).toMatchObject({ question: { status: "cancelled" } });
+    });
+
+    it("keeps the plan a todo_write call wrote", () => {
+      const todos = [
+        { content: "Read", status: "completed" as const },
+        { content: "Fix", status: "in_progress" as const },
+      ];
+      const state = apply(asking("todo_write"), {
+        type: "todos_updated",
+        session_id: S,
+        call_id: "q1",
+        todos,
+      });
+      expect(state.messages[1]).toMatchObject({ todos });
+    });
   });
 
   it("ignores an approval for an unknown tool call", () => {

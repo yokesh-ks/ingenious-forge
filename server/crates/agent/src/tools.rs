@@ -23,6 +23,10 @@ pub const GREP: &str = "grep";
 pub const BASH: &str = "bash";
 /// Runs in the agent rather than here, since it needs the network policy.
 pub const WEB_FETCH: &str = "web_fetch";
+/// Runs in the agent rather than here, since the plan is session state.
+pub const TODO_WRITE: &str = "todo_write";
+/// Runs in the agent rather than here, since it waits for the user.
+pub const ASK_USER_QUESTION: &str = "ask_user_question";
 
 const MAX_READ_BYTES: usize = 200_000;
 const DEFAULT_READ_LINES: usize = 2_000;
@@ -174,6 +178,71 @@ impl ToolBox {
                     "additionalProperties": false
                 }),
             },
+            ToolSpec {
+                name: TODO_WRITE,
+                description: "Record and update a task list to plan multi-step work and show progress; skip it for trivial single-step tasks. Add one todo per concrete step before you start. While work remains, keep the todos being worked on `in_progress`, several only when work runs in parallel. Mark each todo `completed` as soon as it is done.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "todos": {
+                            "type": "array",
+                            "description": "The COMPLETE task list, replacing any previous list.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "content": { "type": "string", "description": "What the task is \u{2014} a short imperative line." },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": ["pending", "in_progress", "completed"],
+                                        "description": "pending (not started) | in_progress (now) | completed (done)."
+                                    }
+                                },
+                                "required": ["content", "status"],
+                                "additionalProperties": false
+                            }
+                        }
+                    },
+                    "required": ["todos"],
+                    "additionalProperties": false
+                }),
+            },
+            ToolSpec {
+                name: ASK_USER_QUESTION,
+                description: "Ask the user a concise question when you need confirmation, a choice, or missing information before proceeding. An answer item with empty selected and no custom means the user skipped that question: continue without it, do not ask it again, and do not treat the skip as permission.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "questions": {
+                            "type": "array",
+                            "description": "Questions to ask the user before continuing.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": { "type": "string", "description": "Stable id for this question; echoed in the answer." },
+                                    "question": { "type": "string", "description": "The specific question to ask the user." },
+                                    "header": { "type": "string", "description": "Optional short heading for the question, such as \"Confirm\" or \"Choose Mode\"." },
+                                    "options": {
+                                        "type": "array",
+                                        "description": "Optional choices to show the user. If you recommend one, put it first and append \"(Recommended)\" to that label.",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "label": { "type": "string", "description": "Short user-facing option label." },
+                                                "description": { "type": "string", "description": "One sentence explaining the tradeoff or impact." }
+                                            },
+                                            "required": ["label"]
+                                        }
+                                    },
+                                    "multi_select": { "type": "boolean", "description": "Whether the user may select more than one option. Defaults to false." }
+                                },
+                                "required": ["id", "question"]
+                            }
+                        }
+                    },
+                    "required": ["questions"],
+                    "additionalProperties": false
+                }),
+            },
         ]
     }
 
@@ -194,6 +263,57 @@ impl ToolBox {
             },
             Err(output) => ToolOutcome::error(output),
         }
+    }
+
+    /// The plan a `todo_write` call gives: each entry's content trimmed,
+    /// non-empty and unique.
+    pub fn parse_todos(input: &Value) -> Result<Vec<api_types::TodoItem>, String> {
+        let raw = input["todos"]
+            .as_array()
+            .ok_or("missing array argument: todos")?;
+        let mut todos = Vec::with_capacity(raw.len());
+        let mut seen = std::collections::BTreeSet::new();
+        for item in raw {
+            let content = item["content"]
+                .as_str()
+                .map(str::trim)
+                .filter(|c| !c.is_empty())
+                .ok_or("invalid todo: `content` must be a non-empty string")?;
+            let status = serde_json::from_value(item["status"].clone()).map_err(|_| {
+                format!(
+                    "invalid todo {content:?}: `status` must be pending, in_progress or completed"
+                )
+            })?;
+            if !seen.insert(content.to_string()) {
+                return Err(format!("invalid todos: duplicate content {content:?}"));
+            }
+            todos.push(api_types::TodoItem {
+                content: content.to_string(),
+                status,
+            });
+        }
+        Ok(todos)
+    }
+
+    /// The questions an `ask_user_question` call asks: at least one, each
+    /// with a unique id.
+    pub fn parse_questions(input: &Value) -> Result<Vec<api_types::Question>, String> {
+        let questions: Vec<api_types::Question> =
+            serde_json::from_value(input["questions"].clone())
+                .map_err(|err| format!("invalid questions: {err}"))?;
+        if questions.is_empty() {
+            return Err("invalid questions: ask at least one question".into());
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for question in &questions {
+            if question.id.trim().is_empty() || question.question.trim().is_empty() {
+                return Err("invalid question: `id` and `question` must be non-empty".into());
+            }
+            if !seen.insert(question.id.as_str()) {
+                return Err(format!("invalid questions: duplicate id {:?}", question.id));
+            }
+        }
+        Ok(questions)
     }
 
     /// The file a `write` or `edit` call changes, as given.

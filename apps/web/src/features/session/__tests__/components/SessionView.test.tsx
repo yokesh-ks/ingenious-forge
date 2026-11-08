@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 import type { SessionItem } from "@/features/session/session-reducer";
 import SessionView from "../../components/SessionView";
 
@@ -63,6 +64,8 @@ describe("SessionView", () => {
             hiddenLines: 0,
             exitCode: null,
             approval: null,
+            question: null,
+            todos: null,
             meta: null,
           },
         ]}
@@ -91,6 +94,8 @@ describe("SessionView", () => {
             hiddenLines: 0,
             exitCode: null,
             approval: null,
+            question: null,
+            todos: null,
             meta: null,
           },
         ]}
@@ -99,6 +104,49 @@ describe("SessionView", () => {
       />,
     );
     expect(screen.getByRole("status")).toHaveTextContent(/thinking/i);
+  });
+
+  it("passes a question card's answers up with its call id", async () => {
+    const onAnswerQuestion = vi.fn();
+    render(
+      <SessionView
+        messages={[
+          conversation[0],
+          {
+            id: "m1",
+            role: "tool",
+            callId: "q1",
+            name: "ask_user_question",
+            args: {},
+            status: "running",
+            output: null,
+            lines: [],
+            hiddenLines: 0,
+            exitCode: null,
+            approval: null,
+            meta: null,
+            question: {
+              questions: [
+                { id: "go", question: "Go on?", header: null, options: [], multi_select: false },
+              ],
+              answers: null,
+              status: "pending",
+            },
+            todos: null,
+          },
+        ]}
+        running
+        error={null}
+        onAnswerQuestion={onAnswerQuestion}
+      />,
+    );
+    // The turn waits on the user, not the model.
+    expect(screen.queryByText(/thinking/i)).not.toBeInTheDocument();
+    await userEvent.type(screen.getByRole("textbox", { name: "Other answer" }), "yes");
+    await userEvent.click(screen.getByRole("button", { name: "Submit answers" }));
+    expect(onAnswerQuestion).toHaveBeenCalledWith("q1", [
+      { id: "go", selected: [], custom: "yes" },
+    ]);
   });
 
   it("shows notices such as an interrupted turn", () => {

@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import type { QuestionAnswer } from "@/api/types";
 import type { ToolItem } from "@/features/session/session-reducer";
 import ToolCallCard from "../../components/ToolCallCard";
 
@@ -17,6 +18,8 @@ function tool(overrides: Partial<ToolItem>): ToolItem {
     hiddenLines: 0,
     exitCode: null,
     approval: null,
+    question: null,
+    todos: null,
     meta: null,
     ...overrides,
   };
@@ -319,6 +322,126 @@ describe("ToolCallCard", () => {
       );
       expect(screen.queryByRole("region", { name: /approval needed/i })).not.toBeInTheDocument();
       expect(screen.getByText(/always allowed/i)).toBeInTheDocument();
+    });
+  });
+
+  describe("questions", () => {
+    const questions = [
+      {
+        id: "color",
+        question: "Which color do you prefer?",
+        header: "Pick one",
+        options: [
+          { label: "Blue", description: "Calm in long sessions." },
+          { label: "Green", description: null },
+        ],
+        multi_select: true,
+      },
+      {
+        id: "size",
+        question: "Which size?",
+        header: null,
+        options: [
+          { label: "Small", description: null },
+          { label: "Large", description: null },
+        ],
+        multi_select: false,
+      },
+    ];
+    const asked = (
+      status: "pending" | "answered" | "cancelled",
+      answers: QuestionAnswer[] | null = null,
+    ) =>
+      tool({
+        name: "ask_user_question",
+        args: { questions },
+        status: status === "pending" ? "running" : status === "answered" ? "done" : "error",
+        output: null,
+        question: { questions, answers, status },
+      });
+
+    it("asks each question with its options and sends the picked answers", async () => {
+      const onAnswerQuestion = vi.fn();
+      render(<ToolCallCard tool={asked("pending")} onAnswerQuestion={onAnswerQuestion} />);
+      expect(screen.getByText("Question")).toBeInTheDocument();
+      const color = screen.getByRole("group", { name: /Pick one Which color do you prefer\?/ });
+      expect(color).toHaveTextContent("Calm in long sessions.");
+      await userEvent.click(screen.getByRole("checkbox", { name: /Blue/ }));
+      await userEvent.click(screen.getByRole("checkbox", { name: /Green/ }));
+      await userEvent.click(screen.getByRole("radio", { name: "Small" }));
+      await userEvent.click(screen.getByRole("radio", { name: "Large" }));
+      await userEvent.type(
+        screen.getAllByRole("textbox", { name: "Other answer" })[0],
+        "Include accessibility notes",
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Submit answers" }));
+      expect(onAnswerQuestion).toHaveBeenCalledWith("t1", [
+        { id: "color", selected: ["Blue", "Green"], custom: "Include accessibility notes" },
+        { id: "size", selected: ["Large"] },
+      ]);
+    });
+
+    it("skips every question with empty answers", async () => {
+      const onAnswerQuestion = vi.fn();
+      render(<ToolCallCard tool={asked("pending")} onAnswerQuestion={onAnswerQuestion} />);
+      await userEvent.click(screen.getByRole("button", { name: "Skip" }));
+      expect(onAnswerQuestion).toHaveBeenCalledWith("t1", [
+        { id: "color", selected: [] },
+        { id: "size", selected: [] },
+      ]);
+    });
+
+    it("shows the questions and answers once answered", () => {
+      render(
+        <ToolCallCard
+          tool={asked("answered", [
+            { id: "color", selected: ["Blue"], custom: "Include accessibility notes" },
+            { id: "size", selected: [] },
+          ])}
+        />,
+      );
+      const qa = screen.getByRole("group", { name: "Questions and answers" });
+      expect(qa).toHaveTextContent("Pick one Which color do you prefer?");
+      expect(qa).toHaveTextContent("Blue, Include accessibility notes");
+      expect(qa).toHaveTextContent("Skipped");
+      expect(screen.queryByRole("button", { name: "Submit answers" })).not.toBeInTheDocument();
+    });
+
+    it("says when the question set was cancelled", () => {
+      render(<ToolCallCard tool={asked("cancelled")} />);
+      expect(
+        screen.getByText("This question set was cancelled before answers were submitted."),
+      ).toBeInTheDocument();
+      expect(screen.getAllByRole("listitem")).toHaveLength(2);
+      expect(screen.getByText("Which color do you prefer?")).toBeInTheDocument();
+      expect(screen.queryByText("Failed")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("plans", () => {
+    it("lists the plan a todo_write call wrote, with each status", () => {
+      render(
+        <ToolCallCard
+          tool={tool({
+            name: "todo_write",
+            args: {},
+            output: "Updated todo list: 1 pending, 1 in progress, 1 completed.",
+            todos: [
+              { content: "Read the code", status: "completed" },
+              { content: "Fix the bug", status: "in_progress" },
+              { content: "Run the tests", status: "pending" },
+            ],
+          })}
+        />,
+      );
+      expect(screen.getByText("Todo")).toBeInTheDocument();
+      const items = screen.getAllByRole("listitem");
+      expect(items.map((item) => item.textContent)).toEqual([
+        "Completed: Read the code",
+        "In progress: Fix the bug",
+        "Pending: Run the tests",
+      ]);
+      expect(screen.getByText("1 of 3 done")).toBeInTheDocument();
     });
   });
 });
