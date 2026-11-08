@@ -15,7 +15,9 @@ use agent::{
     tools::{ToolBox, BASH},
     Agent,
 };
-use api_types::{SessionEvent, TurnEndReason};
+use api_types::SessionEvent;
+#[cfg(target_os = "macos")]
+use api_types::TurnEndReason;
 use serde_json::json;
 use services::EventService;
 use tokio::sync::{mpsc, watch};
