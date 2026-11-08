@@ -58,6 +58,17 @@ describe("buildTrajectory", () => {
     ]);
   });
 
+  it("keeps a reply's id when older history is loaded before it", () => {
+    const events = session();
+    const secondTurn = events.slice(
+      events.findIndex((e) => e.type === "user_message" && e.text === "Thanks"),
+    );
+    const tail = buildTrajectory(secondTurn).records.find((r) => r.kind === "assistant");
+    const whole = buildTrajectory(events).records.filter((r) => r.kind === "assistant");
+    expect(tail?.id).toBe("reply:2.1");
+    expect(whole[2].id).toBe("reply:2.1");
+  });
+
   it("pairs a tool call with its result, its reply and its schema", () => {
     const { records } = buildTrajectory(session());
     const read = records.find((r) => r.kind === "tool" && r.callId === "t2");
@@ -175,7 +186,7 @@ describe("ledgerRows", () => {
       turns: false,
       calls: false,
       query: "",
-      flipped: new Set(["calls:reply:1", "turn:2"]),
+      flipped: new Set(["calls:reply:1.1", "turn:2"]),
     });
     expect(labels(rows)).toContain("calls: 2 tool calls · bash, read");
     expect(labels(rows)).toContain("turn: 1 step · 0 tool calls");
