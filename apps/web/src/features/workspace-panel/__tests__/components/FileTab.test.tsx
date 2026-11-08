@@ -87,6 +87,15 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+vi.mock("../../components/PdfBody", () => ({
+  default: ({ data }: { data: Uint8Array }) => (
+    <div data-testid="pdf-body">{data.length} bytes</div>
+  ),
+}));
+vi.mock("../../components/SheetBody", () => ({
+  default: ({ format }: { format: string }) => <div data-testid="sheet-body">{format}</div>,
+}));
+
 describe("a file opened from a link", () => {
   it("opens the panel on a tab named for the file, rendered as Markdown", async () => {
     const { control } = setup();
@@ -394,11 +403,25 @@ describe("the Workspace files page", () => {
 });
 
 describe("viewers for other kinds of file", () => {
-  const open = async (path: string, content = "") => {
-    fakeFetch({
+  const open = async (path: string, content = "", { officeStatus = 200 } = {}) => {
+    const mock = fakeFetch({
       "GET /api/projects/p1": { id: "p1", name: "p", path: "/work/p" },
       "GET /api/projects/p1/file": { path, content },
       "GET /api/projects/p1/file/applications": { applications: [] },
+    });
+    const routed = mock.getMockImplementation();
+    // These answer with bytes, which the JSON helper cannot.
+    mock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/file/raw")) return new Response(new Uint8Array([1, 2, 3, 4]));
+      if (url.includes("/file/office-pdf")) {
+        return officeStatus === 200
+          ? new Response(new Uint8Array([1]), {
+              headers: { "x-missing-fonts": encodeURIComponent('["Calibri"]') },
+            })
+          : new Response(JSON.stringify({ error: "cannot convert" }), { status: officeStatus });
+      }
+      return routed?.(input, init) as Promise<Response>;
     });
     const control: { current: WorkspacePanelControl | null } = { current: null };
     render(
@@ -418,40 +441,63 @@ describe("viewers for other kinds of file", () => {
 
   it("shows an image from its bytes, and does not offer plain text", async () => {
     await open("logo.png");
-    const image = await screen.findByRole("img", { name: "Preview of logo.png" });
+    const image = await screen.findByAltText("Preview of logo.png");
     expect(image.getAttribute("src")).toContain("/file/raw?path=logo.png");
     expect(screen.queryByRole("button", { name: "Open with" })).toBeNull();
   });
 
-  it("zooms an image", async () => {
+  it("zooms an image from the controls, and fits it again", async () => {
     await open("logo.png");
-    const image = await screen.findByRole("img", { name: "Preview of logo.png" });
+    const image = await screen.findByAltText("Preview of logo.png");
     Object.defineProperty(image, "naturalWidth", { value: 400 });
     fireEvent.load(image);
-    await userEvent.click(screen.getByRole("button", { name: "Zoom in" }));
-    expect(image.style.width).toBe("500px");
-    await userEvent.click(screen.getByRole("button", { name: "Fit width" }));
-    expect(image.style.width).toBe("");
+    const frame = image.closest("[data-document-zoom-frame]") as HTMLElement;
+    expect(frame).toHaveAttribute("data-document-zoom-mode", "fit-width");
+    fireEvent.click(await screen.findByRole("button", { name: "Zoom in" }));
+    expect(frame).toHaveAttribute("data-document-zoom-mode", "fixed");
+    // jsdom's pane has no width, so one step up lands on the smallest scale.
+    expect(frame.style.getPropertyValue("--document-zoom")).toBe("0.25");
   });
 
-  it("shows a PDF in a frame", async () => {
+  it("draws a PDF from its bytes", async () => {
     await open("a.pdf");
-    expect((await screen.findByTitle("PDF preview: a.pdf")).getAttribute("src")).toContain("a.pdf");
+    expect(await screen.findByTestId("pdf-body")).toHaveTextContent("4 bytes");
   });
 
-  it("draws HTML with scripts and the network shut off", async () => {
+  it("shows sheets and CSV in the spreadsheet", async () => {
+    await open("a.xlsx");
+    expect(await screen.findByTestId("sheet-body")).toHaveTextContent("xlsx");
+    expect(screen.queryByRole("button", { name: "Open with" })).toBeNull();
+  });
+
+  it("offers CSV as a spreadsheet or plain text", async () => {
+    await open("a.csv", "name,age");
+    expect(await screen.findByTestId("sheet-body")).toHaveTextContent("csv");
+    expect(screen.getByRole("button", { name: "Open with" })).toHaveTextContent("Spreadsheet");
+  });
+
+  it("converts an Office file and warns of its missing fonts", async () => {
+    await open("a.docx");
+    expect(await screen.findByTestId("pdf-body")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Missing fonts: 1. Click to view." }),
+    ).toBeInTheDocument();
+    expect(String(vi.mocked(fetch).mock.calls.map(([url]) => url))).toContain("/file/office-pdf");
+  });
+
+  it("explains an Office file it could not convert, with Retry", async () => {
+    await open("bad.ppt", "", { officeStatus: 422 });
+    expect(await screen.findByText("cannot convert")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("runs HTML in a sandbox, with no access to Forge", async () => {
+    URL.createObjectURL = vi.fn(() => "blob:page");
+    URL.revokeObjectURL = vi.fn();
     await open("a.html", "<!doctype html><p>hi</p>");
     const frame = await screen.findByTitle("HTML preview: a.html");
-    expect(frame).toHaveAttribute("sandbox", "");
-    const html = frame.getAttribute("srcdoc") ?? "";
-    expect(html.indexOf("Content-Security-Policy")).toBeLessThan(html.indexOf("<p>hi</p>"));
-    expect(html.match(/<!doctype/gi)).toHaveLength(1);
-  });
-
-  it("shows a CSV as a grid", async () => {
-    await open("a.csv", "name,age\nada,36\n");
-    expect(await screen.findByRole("columnheader", { name: "B" })).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "ada" })).toBeInTheDocument();
+    expect(frame).toHaveAttribute("sandbox", "allow-scripts");
+    expect(frame).toHaveAttribute("src", "blob:page");
   });
 
   it("offers the programs the system lists for a file", async () => {

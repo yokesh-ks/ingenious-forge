@@ -6,6 +6,10 @@ This product is licensed under the Apache License, Version 2.0. See LICENSE.
 This repository also contains third-party material that remains under its
 own license:
 
+- apps/web/src/features/workspace-panel/vendor/sheet/ is derived from
+  https://github.com/deepseek-ai/deepseek-harness, Copyright (c) 2026 DeepSeek, under the
+  MIT License. See apps/web/src/features/workspace-panel/vendor/sheet/LICENSE.
+
 - .agents/skills/adhd/ is derived from https://github.com/UditAkhourii/adhd,
   Copyright (c) 2026 ADHD contributors, under the MIT License. See
   .agents/skills/adhd/LICENSE.

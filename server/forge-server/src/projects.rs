@@ -19,7 +19,7 @@ use axum::{
 };
 use serde::Deserialize;
 use services::{
-    folders,
+    folders, office,
     projects::{self, ProjectError},
 };
 
@@ -43,6 +43,10 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/projects/{id}/files", get(project_files))
         .route("/projects/{id}/file", get(project_file))
         .route("/projects/{id}/file/raw", get(project_file_raw))
+        .route(
+            "/projects/{id}/file/office-pdf",
+            get(project_file_office_pdf),
+        )
         .route(
             "/projects/{id}/file/applications",
             get(project_file_applications),
@@ -425,6 +429,10 @@ fn raw_media_type(path: &str) -> Option<&'static str> {
         "ico" => "image/x-icon",
         "svg" => "image/svg+xml",
         "pdf" => "application/pdf",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "xls" => "application/vnd.ms-excel",
+        // Read as bytes for the grid; `text/plain` so a browser never runs them.
+        "csv" | "tsv" => "text/plain; charset=utf-8",
         _ => return None,
     })
 }
@@ -454,6 +462,56 @@ async fn project_file_raw(
             header::CONTENT_SECURITY_POLICY,
             HeaderValue::from_static("default-src 'none'; style-src 'unsafe-inline'; sandbox"),
         );
+    }
+    Ok(response)
+}
+
+/// A project's Word or PowerPoint file, converted to a PDF on this computer.
+async fn project_file_office_pdf(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Query(query): Query<FileQuery>,
+) -> Result<axum::response::Response, ApiFailure> {
+    let project = projects::get_project(&state.db, &id).await?;
+    let (_, full, meta) = viewed_path(&project.path, &query.path)?;
+    if meta.len() > office::MAX_INPUT_BYTES {
+        return Err(ApiFailure(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            office::OfficeError::TooLarge.to_string(),
+        ));
+    }
+    let converted = office::CONVERTER
+        .convert(full, meta)
+        .await
+        .map_err(|error| {
+            let status = match error {
+                office::OfficeError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+                office::OfficeError::Invalid => StatusCode::UNPROCESSABLE_ENTITY,
+                office::OfficeError::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+                office::OfficeError::Timeout => StatusCode::GATEWAY_TIMEOUT,
+                office::OfficeError::Failed => StatusCode::BAD_GATEWAY,
+            };
+            ApiFailure(status, error.to_string())
+        })?;
+    let fonts = serde_json::to_string(&converted.missing_fonts)
+        .map_err(|e| ApiFailure::internal(e.to_string()))?;
+    let encoded: String = fonts
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' => (b as char).to_string(),
+            other => format!("%{other:02X}"),
+        })
+        .collect();
+    let mut response =
+        axum::response::Response::new(axum::body::Body::from(converted.pdf.as_ref().clone()));
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/pdf"),
+    );
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    if let Ok(value) = HeaderValue::from_str(&encoded) {
+        headers.insert("x-missing-fonts", value);
     }
     Ok(response)
 }

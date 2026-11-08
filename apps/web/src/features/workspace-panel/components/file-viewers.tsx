@@ -1,5 +1,15 @@
-import { CheckIcon, CopyIcon, MinusIcon, PlusIcon } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { CheckIcon, CopyIcon } from "lucide-react";
+import {
+  Component,
+  type CSSProperties,
+  lazy,
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { api } from "@/api/client";
 import {
   IconButton,
   languageOf,
@@ -9,8 +19,13 @@ import {
 } from "@/components/markdown/code-tools";
 import Markdown from "@/components/markdown/Markdown";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { parseFileLink } from "@/lib/open-file";
 import { cn } from "@/lib/utils";
-import { columnName, parseDelimited } from "../model/delimited";
+import { useFileBytes } from "../hooks/use-file-bytes";
+import { excelFormat } from "../vendor/sheet/format";
+import DocumentLoading from "./DocumentLoading";
+import FileTypeIcon from "./FileTypeIcon";
+import ZoomViewport, { FIT_WIDTH, ZOOM_SURFACE, type ZoomPreference } from "./ZoomViewport";
 
 /** Beyond this the file shows without syntax colours, to stay responsive. */
 const MAX_HIGHLIGHTED = 200_000;
@@ -128,170 +143,351 @@ export function MarkdownViewer({ path, content }: { path: string; content: strin
   );
 }
 
-const ZOOMS = [25, 50, 75, 100, 125, 150, 200, 300, 400];
+/** Drag to pan an image larger than its pane. */
+function useImagePan(image: HTMLImageElement | null) {
+  useEffect(() => {
+    const port = image?.closest<HTMLElement>("[data-document-zoom-scrollport]");
+    if (!image || !port) return;
+    let pointer: { id: number; x: number; y: number; pan: boolean } | undefined;
+    const overflowing = () =>
+      port.scrollWidth > port.clientWidth || port.scrollHeight > port.clientHeight;
+    const measure = () => {
+      if (pointer) return;
+      image.dataset.pan = overflowing() ? "available" : "none";
+    };
+    const finish = () => {
+      const previous = pointer;
+      pointer = undefined;
+      if (previous && image.hasPointerCapture(previous.id))
+        image.releasePointerCapture(previous.id);
+      measure();
+    };
+    const down = (event: PointerEvent) => {
+      if (event.button !== 0 || event.pointerType !== "mouse") return;
+      measure();
+      const pan = overflowing();
+      pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, pan };
+      if (!pan) return;
+      event.preventDefault();
+      image.dataset.pan = "active";
+      image.setPointerCapture(event.pointerId);
+    };
+    const move = (event: PointerEvent) => {
+      if (!pointer?.pan || event.pointerId !== pointer.id) return;
+      if (event.buttons !== 1) {
+        finish();
+        return;
+      }
+      event.preventDefault();
+      port.scrollLeft += pointer.x - event.clientX;
+      port.scrollTop += pointer.y - event.clientY;
+      pointer.x = event.clientX;
+      pointer.y = event.clientY;
+    };
+    const up = (event: PointerEvent) => {
+      if (event.pointerId === pointer?.id) finish();
+    };
+    const observer =
+      typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
+    observer?.observe(image);
+    observer?.observe(port);
+    image.addEventListener("load", measure);
+    image.addEventListener("pointerenter", measure);
+    image.addEventListener("pointerdown", down);
+    image.addEventListener("pointermove", move);
+    image.addEventListener("pointerup", up);
+    image.addEventListener("pointercancel", up);
+    image.addEventListener("lostpointercapture", finish);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("blur", finish);
+    measure();
+    return () => {
+      observer?.disconnect();
+      image.removeEventListener("load", measure);
+      image.removeEventListener("pointerenter", measure);
+      image.removeEventListener("pointerdown", down);
+      image.removeEventListener("pointermove", move);
+      image.removeEventListener("pointerup", up);
+      image.removeEventListener("pointercancel", up);
+      image.removeEventListener("lostpointercapture", finish);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("blur", finish);
+      finish();
+    };
+  }, [image]);
+}
 
-/** An image at its own size, or shrunk to fit; drag to pan a large one. */
+/** An image at its own size or fitted to the pane. */
 export function ImageViewer({ src, name }: { src: string; name: string }) {
-  const [zoom, setZoom] = useState<number | "fit">("fit");
-  const [natural, setNatural] = useState<number | null>(null);
-  const [failed, setFailed] = useState(false);
-  const port = useRef<HTMLDivElement>(null);
-
-  if (failed) {
-    return (
-      <p role="alert" className="m-0 p-6 text-center text-[13px] text-muted-foreground">
-        This image could not be displayed.
-      </p>
-    );
-  }
-
-  const room = port.current?.clientWidth;
-  const fitted = natural && room ? Math.min(1, room / natural) : 1;
-  const percent = zoom === "fit" ? Math.round(fitted * 100) : zoom;
-  const stepped = (direction: 1 | -1) => {
-    const next =
-      direction === 1
-        ? ZOOMS.find((value) => value > percent)
-        : [...ZOOMS].reverse().find((value) => value < percent);
-    if (next) setZoom(next);
-  };
-
+  const [preference, setPreference] = useState<ZoomPreference>(FIT_WIDTH);
+  const [width, setWidth] = useState<number>();
+  const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
+  const [image, setImage] = useState<HTMLImageElement | null>(null);
+  useImagePan(image);
   return (
-    <div className="group/zoom relative h-full min-h-0 w-full min-w-0">
-      <div
-        ref={port}
-        data-scrollport=""
-        onPointerDown={(event) => {
-          const element = port.current;
-          if (event.button !== 0 || !element) return;
-          const start = {
-            x: event.clientX,
-            y: event.clientY,
-            left: element.scrollLeft,
-            top: element.scrollTop,
-          };
-          const onMove = (e: PointerEvent) => {
-            element.scrollLeft = start.left - (e.clientX - start.x);
-            element.scrollTop = start.top - (e.clientY - start.y);
-          };
-          const onUp = () => {
-            window.removeEventListener("pointermove", onMove);
-            window.removeEventListener("pointerup", onUp);
-          };
-          window.addEventListener("pointermove", onMove);
-          window.addEventListener("pointerup", onUp);
-        }}
-        className="flex h-full min-h-0 w-full overflow-auto"
-      >
-        <img
-          src={src}
-          alt={`Preview of ${name}`}
-          draggable={false}
-          onLoad={(event) => setNatural(event.currentTarget.naturalWidth)}
-          onError={() => setFailed(true)}
-          style={
-            zoom === "fit" || !natural
-              ? { maxWidth: "100%" }
-              : { width: natural * (zoom / 100), maxWidth: "none" }
-          }
-          className="m-auto block h-auto flex-none"
-        />
+    <ZoomViewport
+      preference={preference}
+      intrinsicWidth={width}
+      horizontalInset={24}
+      onPreference={setPreference}
+    >
+      <div data-image-preview="" className="box-border flex h-max min-h-full w-full min-w-full p-3">
+        {state === "loading" && (
+          <output className="m-auto text-[13px] text-muted-foreground">
+            Rendering document...
+          </output>
+        )}
+        {state === "failed" && (
+          <p role="alert" className="m-auto p-2.5 text-[13px] text-muted-foreground">
+            This image could not be displayed.
+          </p>
+        )}
+        <div
+          data-document-zoom-surface=""
+          hidden={state !== "ready"}
+          style={{ "--document-zoom-width": `${width ?? 0}px` } as CSSProperties}
+          className={cn("m-auto block flex-none", ZOOM_SURFACE)}
+        >
+          <img
+            ref={setImage}
+            src={src}
+            alt={`Preview of ${name}`}
+            decoding="async"
+            referrerPolicy="no-referrer"
+            onLoad={(event) => {
+              setWidth(event.currentTarget.naturalWidth);
+              setState("ready");
+            }}
+            onError={() => setState("failed")}
+            className="block h-auto w-full max-w-none rounded-lg select-none data-[pan=active]:cursor-grabbing data-[pan=available]:cursor-grab"
+          />
+        </div>
       </div>
-      <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-lg bg-popover p-0.5 opacity-0 shadow-lg ring-[0.5px] ring-border transition-opacity group-focus-within/zoom:opacity-100 group-hover/zoom:opacity-100">
-        <button
-          type="button"
-          aria-label="Zoom out"
-          onClick={() => stepped(-1)}
-          className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted"
-        >
-          <MinusIcon aria-hidden className="size-3.5" />
-        </button>
-        <button
-          type="button"
-          aria-label="Fit width"
-          title="Fit width"
-          onClick={() => setZoom("fit")}
-          className="h-7 min-w-12 rounded px-1 text-xs text-muted-foreground tabular-nums hover:bg-muted"
-        >
-          {percent}%
-        </button>
-        <button
-          type="button"
-          aria-label="Zoom in"
-          onClick={() => stepped(1)}
-          className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted"
-        >
-          <PlusIcon aria-hidden className="size-3.5" />
-        </button>
-      </div>
-    </div>
+    </ZoomViewport>
   );
 }
 
-/** A PDF in the browser's own viewer. */
-export function PdfViewer({ src, name }: { src: string; name: string }) {
-  return <iframe src={src} title={`PDF preview: ${name}`} className="block size-full border-0" />;
+const MAX_ASSET_BYTES = 4 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 32 * 1024 * 1024;
+const MAX_ASSETS = 64;
+const RELATIVE = /^(?:[a-z][a-z\d+.-]*:|[/\\#?])/iu;
+
+const bytesOf = (text: string) => new TextEncoder().encode(text).byteLength;
+
+const encodeText = (text: string) =>
+  btoa(Array.from(new TextEncoder().encode(text), (byte) => String.fromCharCode(byte)).join(""));
+
+interface HtmlAsset {
+  kind: "script" | "stylesheet";
+  reference: string;
+  text: string;
 }
 
-/** No scripts, network, forms or nested frames: the page only draws itself. */
-const HTML_POLICY =
-  "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src data:";
+/** Reads the page's relative scripts and stylesheets; the frame has no way
+ * to reach them itself. */
+export async function packHtml(
+  content: string,
+  read: (reference: string) => Promise<string>,
+): Promise<HtmlAsset[]> {
+  let total = bytesOf(content);
+  if (total > MAX_TOTAL_BYTES) throw new Error("HTML package exceeds its total byte limit");
+  const template = document.createElement("template");
+  template.innerHTML = content;
+  if (template.content.querySelector("base[href]")) return [];
+  const assets: HtmlAsset[] = [];
+  const seen = new Set<string>();
+  for (const element of template.content.querySelectorAll("script[src],link[href]")) {
+    const script = element.localName === "script";
+    const type = element.getAttribute("type")?.trim().toLowerCase() ?? "";
+    if (script && !["", "text/javascript", "application/javascript"].includes(type)) continue;
+    const rel = (element.getAttribute("rel") ?? "").toLowerCase().split(/\s+/u);
+    if (!script && !rel.includes("stylesheet")) continue;
+    const reference = element.getAttribute(script ? "src" : "href") as string;
+    const suffix = reference.search(/[?#]/u);
+    const path = suffix === -1 ? reference : reference.slice(0, suffix);
+    if (!reference || RELATIVE.test(reference) || reference.includes("\0")) continue;
+    if (!(script ? /\.js$/iu : /\.css$/iu).test(path)) continue;
+    const kind = script ? "script" : "stylesheet";
+    const key = `${kind}:${reference}`;
+    if (seen.has(key)) continue;
+    if (assets.length >= MAX_ASSETS) throw new Error("HTML package exceeds its asset count limit");
+    const text = await read(reference);
+    const size = bytesOf(text);
+    if (size > MAX_ASSET_BYTES) throw new Error("HTML asset exceeds its byte limit");
+    total += size;
+    if (total > MAX_TOTAL_BYTES) throw new Error("HTML package exceeds its total byte limit");
+    assets.push({ kind, reference, text });
+    seen.add(key);
+  }
+  return assets;
+}
 
-/** Prepends the policy, so the browser applies it before reading anything else. */
-export const staticHtml = (content: string) =>
-  `<!doctype html><meta http-equiv="Content-Security-Policy" content="${HTML_POLICY}">${content.replace(/^\s*<!doctype[^>]*>/i, "")}`;
+/** A page that rebuilds `content` inside the sandboxed frame, with its
+ * relative scripts and stylesheets swapped for local copies. */
+export function htmlDocument(content: string, assets: HtmlAsset[]): string {
+  const payload = encodeText(JSON.stringify({ html: content, assets }));
+  return `<!doctype html><meta charset="utf-8"><script>(()=>{
+const bytes=data=>Uint8Array.from(atob(data),character=>character.charCodeAt(0));
+const bundle=JSON.parse(new TextDecoder().decode(bytes("${payload}")));
+let html=bundle.html;
+if(bundle.assets.length){
+  const parsed=new DOMParser().parseFromString(html,'text/html');
+  for(const asset of bundle.assets){
+    const script=asset.kind==='script';
+    const url=URL.createObjectURL(new Blob([asset.text],{type:script?'application/javascript':'text/css'}));
+    const attribute=script?'src':'href';
+    for(const element of parsed.querySelectorAll(script?'script[src]':'link[rel~="stylesheet" i][href]')){
+      if(element.getAttribute(attribute)===asset.reference)element.setAttribute(attribute,url);
+    }
+  }
+  html='<!doctype html>'+parsed.documentElement.outerHTML;
+}
+document.open();document.write(html);document.close();
+})()</script>`;
+}
 
-export function HtmlViewer({ content, name }: { content: string; name: string }) {
+/** A page running in a sandbox with no access to Forge. */
+export function HtmlViewer({
+  projectId,
+  path,
+  content,
+  name,
+}: {
+  projectId: string;
+  path: string;
+  content: string;
+  name: string;
+}) {
+  const [frame, setFrame] = useState<{ content: string; url: string | null }>();
+  useEffect(() => {
+    let live = true;
+    let url: string | undefined;
+    const slash = path.lastIndexOf("/");
+    const base = slash === -1 ? "" : path.slice(0, slash + 1);
+    const read = async (reference: string) => {
+      const suffix = reference.search(/[?#]/u);
+      const relative = decodeURIComponent(suffix === -1 ? reference : reference.slice(0, suffix));
+      const target = parseFileLink(relative, base.replace(/\/$/, ""));
+      if (!target) throw new Error("HTML dependency must use a relative file path");
+      return (await api.projectFile(projectId, target.path)).content;
+    };
+    packHtml(content, read).then(
+      (assets) => {
+        if (!live) return;
+        url = URL.createObjectURL(new Blob([htmlDocument(content, assets)], { type: "text/html" }));
+        setFrame({ content, url });
+      },
+      () => live && setFrame({ content, url: null }),
+    );
+    return () => {
+      live = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [projectId, path, content]);
+  if (frame?.content !== content) {
+    return <DocumentLoading />;
+  }
+  if (frame.url === null) {
+    return (
+      <p role="alert" className="m-0 p-6 text-center text-[13px] text-muted-foreground">
+        This HTML page could not be displayed.
+      </p>
+    );
+  }
   return (
     <iframe
-      sandbox=""
-      srcDoc={staticHtml(content)}
+      key={frame.url}
+      src={frame.url}
+      sandbox="allow-scripts"
       title={`HTML preview: ${name}`}
+      data-html-preview=""
       className="block size-full border-0 bg-white"
     />
   );
 }
 
-/** CSV or TSV as a read-only grid; every field stays literal text. */
-export function TableViewer({ path, content }: { path: string; content: string }) {
-  const separator = path.toLowerCase().endsWith(".tsv") ? "\t" : ",";
-  const { rows, columns, truncated } = useMemo(
-    () => parseDelimited(content, separator),
-    [content, separator],
-  );
-  const headers = Array.from({ length: columns }, (_, index) => columnName(index));
-  const CELL = "border-r border-b border-border px-1.5 py-0.5 whitespace-pre";
-  const HEAD = "bg-muted text-center font-normal text-muted-foreground";
+const PdfBody = lazy(() => import("./PdfBody"));
+const SheetBody = lazy(() => import("./SheetBody"));
+
+const LOADING = <DocumentLoading />;
+
+/** Keeps a viewer's failure inside its tab. */
+class ViewerBoundary extends Component<
+  { onRetry: () => void; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div
+        role="alert"
+        className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-[13px] text-muted-foreground"
+      >
+        <p className="m-0">This file could not be displayed.</p>
+        <button
+          type="button"
+          onClick={this.props.onRetry}
+          className="rounded-md border-[0.5px] border-border px-3 py-1.5 text-foreground hover:bg-muted"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+}
+
+/** A document read from its bytes: a PDF, a sheet, or Office as a PDF. */
+export function BytesViewer({
+  viewer,
+  url,
+  path,
+  onFonts,
+  onRetry,
+}: {
+  viewer: "pdf" | "sheet" | "office";
+  url: string;
+  path: string;
+  onFonts: (fonts: string[]) => void;
+  onRetry: () => void;
+}) {
+  const state = useFileBytes(url);
+  const file = state.status === "ready" ? state.file : null;
+  useEffect(() => {
+    if (viewer !== "office" || !file) return;
+    const header = file.headers.get("x-missing-fonts");
+    onFonts(header ? JSON.parse(decodeURIComponent(header)) : []);
+  }, [viewer, file, onFonts]);
+  if (state.status === "loading") return LOADING;
+  if (state.status === "failed") {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center text-[13px] leading-[1.6] text-muted-foreground">
+        <FileTypeIcon path={path} className="size-9 opacity-60 grayscale" />
+        <p className="m-0">{state.message}</p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="rounded-md border-[0.5px] border-border px-3 py-1.5 text-[13px] text-foreground hover:bg-muted"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
   return (
-    <div data-scrollport="" className="h-full min-h-0 w-full min-w-0 overflow-auto text-xs">
-      <table className="border-separate border-spacing-0">
-        <thead className="sticky top-0 z-[1]">
-          <tr>
-            <th className={cn(CELL, HEAD, "sticky left-0 z-[2] min-w-10")} aria-label="Row" />
-            {headers.map((header) => (
-              <th key={header} className={cn(CELL, HEAD, "min-w-20")}>
-                {header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, r) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: position is the row's identity
-            <tr key={r}>
-              <th className={cn(CELL, HEAD, "sticky left-0")}>{r + 1}</th>
-              {headers.map((header, c) => (
-                <td key={header} className={CELL}>
-                  {row[c] ?? ""}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {truncated && (
-        <p className="m-0 p-2 text-muted-foreground">Too many cells, showing only some of them.</p>
-      )}
-    </div>
+    <ViewerBoundary key={url} onRetry={onRetry}>
+      <Suspense fallback={LOADING}>
+        {viewer === "sheet" ? (
+          <SheetBody data={state.file.data} format={excelFormat(path)} />
+        ) : (
+          <PdfBody data={state.file.data} />
+        )}
+      </Suspense>
+    </ViewerBoundary>
   );
 }

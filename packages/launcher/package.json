@@ -10,10 +10,13 @@
     "bin/"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=22.19.0"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/yokesh-ks/ingenious-forge.git"
+  },
+  "dependencies": {
+    "@deepseek-ai/libreoffice-kit": "0.1.5"
   }
 }

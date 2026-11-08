@@ -1,6 +1,7 @@
 pub mod file_apps;
 pub mod folders;
 pub mod log;
+pub mod office;
 pub mod projects;
 pub mod secrets;
 pub mod stats;

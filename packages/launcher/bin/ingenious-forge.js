@@ -97,7 +97,15 @@ function main() {
     ? serverArgs
     : ["--static-dir", staticDir, ...serverArgs];
 
-  const server = spawn(bin, args, { stdio: ["inherit", "inherit", "pipe"] });
+  // Word and PowerPoint previews convert through a Node helper in this package.
+  const server = spawn(bin, args, {
+    stdio: ["inherit", "inherit", "pipe"],
+    env: {
+      ...process.env,
+      FORGE_OFFICE_HELPER: path.join(__dirname, "office-to-pdf.mjs"),
+      FORGE_NODE: process.execPath,
+    },
+  });
 
   let browserOpened = false;
   let stderrBuf = "";
