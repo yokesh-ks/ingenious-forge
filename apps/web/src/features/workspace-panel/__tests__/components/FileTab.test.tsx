@@ -7,6 +7,7 @@ import WorkspacePanel, { type WorkspacePanelControl } from "../../components/Wor
 
 vi.mock("@/features/terminal/components/TerminalPanel", () => ({ default: () => null }));
 
+const NO_LOG = { events: [], hasOlder: false, loadingOlder: false, onLoadOlder: () => {} };
 const project = { id: "p1", name: "p", path: "/work/p" };
 
 type Files = Record<string, string | number>;
@@ -51,6 +52,7 @@ function setup(
     <WorkspacePanel
       projectId="p1"
       sessionId="s1"
+      log={NO_LOG}
       changedFiles={[]}
       onRevertAll={() => {}}
       busy={false}
@@ -294,6 +296,7 @@ describe("when the agent works on an open file", () => {
       <WorkspacePanel
         projectId="p1"
         sessionId="s1"
+        log={NO_LOG}
         changedFiles={diff === null ? [] : [{ path: "a.txt", diff, additions: 1, deletions: 0 }]}
         onRevertAll={() => {}}
         busy={busy}
@@ -402,6 +405,7 @@ describe("viewers for other kinds of file", () => {
       <WorkspacePanel
         projectId="p1"
         sessionId="s1"
+        log={NO_LOG}
         changedFiles={[]}
         onRevertAll={() => {}}
         busy={false}
@@ -467,6 +471,7 @@ describe("viewers for other kinds of file", () => {
       <WorkspacePanel
         projectId="p1"
         sessionId="s1"
+        log={NO_LOG}
         changedFiles={[]}
         onRevertAll={() => {}}
         busy={false}

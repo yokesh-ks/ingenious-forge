@@ -74,7 +74,11 @@ export default function ChatRow({
   const Chevron = open ? ChevronUpIcon : ChevronDownIcon;
 
   return (
-    <div data-variant={isTool ? item.name : item.role} data-state={failed ? "error" : "ok"}>
+    <div
+      data-variant={isTool ? item.name : item.role}
+      data-state={failed ? "error" : "ok"}
+      data-chat-call={isTool ? item.callId : undefined}
+    >
       {/* biome-ignore lint/a11y/useSemanticElements: the row holds a file link, and a button cannot contain one */}
       <div
         role="button"

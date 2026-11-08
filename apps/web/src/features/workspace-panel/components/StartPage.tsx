@@ -197,8 +197,7 @@ export default function StartPage({
         icon={BoxIcon}
         title="Session log"
         description="Analyze raw logs and grouped chat messages for the current session"
-        disabled
-        hint="The Session log is not available yet"
+        onPick={() => onOpen("log")}
       />
     </div>
   );

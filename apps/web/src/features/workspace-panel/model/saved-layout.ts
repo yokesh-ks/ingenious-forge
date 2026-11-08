@@ -8,7 +8,7 @@ const WIDTH_KEY = "forge.workspace-panel.width";
 
 const tab = z.object({
   id: z.string().min(1),
-  kind: z.enum(["start", "files", "changes", "terminal", "file"]),
+  kind: z.enum(["start", "files", "changes", "terminal", "file", "log"]),
   path: z.string().optional(),
   line: z.number().optional(),
   revision: z.number().optional(),

@@ -6,6 +6,7 @@ import { fakeFetch } from "@/test/fake-fetch";
 import WorkspacePanel from "../../components/WorkspacePanel";
 
 // xterm needs a real canvas; its mount and lifetime are what matter here.
+const NO_LOG = { events: [], hasOlder: false, loadingOlder: false, onLoadOlder: () => {} };
 const terminalMounts = vi.fn();
 const terminalUnmounts = vi.fn();
 vi.mock("@/features/terminal/components/TerminalPanel", async () => {
@@ -34,6 +35,7 @@ function setup(files: FileChange[] = []) {
     <WorkspacePanel
       projectId="p1"
       sessionId="s1"
+      log={NO_LOG}
       changedFiles={files}
       onRevertAll={onRevertAll}
       busy={false}
@@ -73,7 +75,7 @@ describe("WorkspacePanel", () => {
     expect(card(/^Workspace files/)).toHaveTextContent("Browse files in this session's workspace");
     expect(card(/^Code review and changes/)).toBeInTheDocument();
     expect(within(panel()).getByText("Run commands in the Session workspace")).toBeVisible();
-    expect(card(/^Session log/)).toBeDisabled();
+    expect(card(/^Session log/)).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Open right sidebar" })).not.toBeInTheDocument();
   });
 

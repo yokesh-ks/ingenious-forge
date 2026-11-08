@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeFetch } from "@/test/fake-fetch";
 import WorkspacePanel, { type WorkspacePanelControl } from "../../components/WorkspacePanel";
 
+const NO_LOG = { events: [], hasOlder: false, loadingOlder: false, onLoadOlder: () => {} };
 const mounted = vi.fn();
 vi.mock("@/features/terminal/components/TerminalPanel", () => ({
   default: ({ shell }: { shell?: string }) => {
@@ -23,6 +24,7 @@ function setup() {
     <WorkspacePanel
       projectId="p1"
       sessionId="s1"
+      log={NO_LOG}
       changedFiles={[]}
       onRevertAll={() => {}}
       busy={false}
@@ -386,6 +388,7 @@ describe("remembering the panel", () => {
       <WorkspacePanel
         projectId="p1"
         sessionId="s2"
+        log={NO_LOG}
         changedFiles={[]}
         onRevertAll={() => {}}
         busy={false}

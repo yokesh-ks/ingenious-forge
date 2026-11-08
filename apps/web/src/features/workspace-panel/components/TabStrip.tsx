@@ -1,4 +1,5 @@
 import {
+  BoxIcon,
   CompassIcon,
   FolderIcon,
   GitCompareArrowsIcon,
@@ -35,6 +36,7 @@ const ICONS: Record<Exclude<TabKind, "file">, LucideIcon> = {
   files: FolderIcon,
   changes: GitCompareArrowsIcon,
   terminal: SquareTerminalIcon,
+  log: BoxIcon,
 };
 
 export const STRIP_BUTTON =

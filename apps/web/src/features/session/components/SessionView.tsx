@@ -168,7 +168,7 @@ function Turn({
     ? undefined
     : [...turn.nodes].reverse().find((n) => n.kind === "reply")?.item;
   return (
-    <div className="flex flex-col gap-3">
+    <div data-chat-turn={turn.turn} className="flex flex-col gap-3">
       {!live && (
         <div className="mb-1">
           <TurnControl turn={turn} folded={folded} onToggle={() => onToggle(turn.turn)} />

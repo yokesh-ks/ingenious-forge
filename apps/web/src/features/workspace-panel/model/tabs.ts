@@ -1,7 +1,7 @@
 /** The panel's tabs. Start is a doorway: a page opened from it takes its
  * place, and New tab brings it back. */
 
-export type TabKind = "start" | "files" | "changes" | "terminal" | "file";
+export type TabKind = "start" | "files" | "changes" | "terminal" | "file" | "log";
 
 export interface PanelTab {
   id: string;
@@ -136,6 +136,7 @@ const TITLES: Record<TabKind, string> = {
   changes: "Changes",
   terminal: "Terminal",
   file: "File",
+  log: "Session log",
 };
 
 /** A tab's title: the name the user gave it, its file or its shell. Terminals

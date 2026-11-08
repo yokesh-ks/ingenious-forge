@@ -149,6 +149,7 @@ function SessionPane({
           onRevertAll={revertAll}
           busy={state.running}
           control={panel}
+          log={{ events, hasOlder, loadingOlder, onLoadOlder: loadOlder }}
         />
       </div>
     </OpenFileContext.Provider>

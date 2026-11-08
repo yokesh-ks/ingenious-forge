@@ -18,6 +18,7 @@ import {
   useState,
 } from "react";
 import { api } from "@/api/client";
+import type { SessionEnvelope } from "@/api/types";
 import ResizeHandle from "@/components/layout/ResizeHandle";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -65,6 +66,7 @@ import FilesPage from "./FilesPage";
 import FileTab from "./FileTab";
 import FileTypeIcon from "./FileTypeIcon";
 import { FloatHeader, FloatResizeCorner } from "./FloatFrame";
+import SessionLogTab from "./SessionLogTab";
 import StartPage from "./StartPage";
 import TabStrip, { STRIP_BUTTON, StripTip, TabIcon } from "./TabStrip";
 
@@ -83,6 +85,13 @@ const clampWidth = (width: number, parent: number) =>
       Math.max(WIDTH_MIN, Math.min(parent * WIDTH_MAX_RATIO, parent - CENTER_MIN)),
     ),
   );
+
+export interface SessionLogSource {
+  events: SessionEnvelope[];
+  hasOlder: boolean;
+  loadingOlder: boolean;
+  onLoadOlder: () => void;
+}
 
 /** Lets the page beside the panel open files in it. */
 export interface WorkspacePanelControl {
@@ -230,6 +239,7 @@ export default function WorkspacePanel({
   onRevertAll,
   busy,
   control,
+  log,
 }: {
   projectId: string;
   /** Whose panel this is; each session keeps its own. */
@@ -238,6 +248,8 @@ export default function WorkspacePanel({
   onRevertAll: () => void;
   busy: boolean;
   control?: RefObject<WorkspacePanelControl | null>;
+  /** The session's recorded events, for the Session log tab. */
+  log: SessionLogSource;
 }) {
   const [saved] = useState(() => readPanel(sessionId));
   const [open, setOpen] = useState(saved?.open ?? false);
@@ -506,6 +518,8 @@ export default function WorkspacePanel({
           />
         );
       }
+      case "log":
+        return <SessionLogTab {...log} />;
       case "changes":
         return <ChangedFilesPanel files={changedFiles} onRevertAll={onRevertAll} busy={busy} />;
       case "terminal":
