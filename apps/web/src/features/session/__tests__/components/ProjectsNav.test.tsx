@@ -275,7 +275,9 @@ describe("ProjectsNav", () => {
       await userEvent.click(await screen.findByRole("menuitem", { name: /open in/i }));
       await userEvent.click(await screen.findByRole("menuitem", { name: "VS Code" }));
       await waitFor(() =>
-        expect(bodies(fetch, "POST")).toEqual([JSON.stringify({ app: "vs_code", path: null })]),
+        expect(bodies(fetch, "POST")).toEqual([
+          JSON.stringify({ app: "vs_code", path: null, application: null }),
+        ]),
       );
     });
 

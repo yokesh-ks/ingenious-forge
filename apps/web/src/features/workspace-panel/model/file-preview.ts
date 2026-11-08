@@ -1,25 +1,39 @@
 import { languageOf } from "@/components/markdown/code-tools";
 
 /** The ways a file tab can show a file. */
-export type ViewerId = "markdown" | "code" | "text";
+export type ViewerId = "markdown" | "code" | "text" | "image" | "pdf" | "html" | "table";
 
 export interface Viewer {
   id: ViewerId;
   title: string;
   /** Whether the header offers line wrapping. */
   wrap: boolean;
+  /** Read from the file's bytes rather than its text. */
+  bytes?: boolean;
 }
 
 const MARKDOWN: Viewer = { id: "markdown", title: "Markdown", wrap: false };
 const CODE: Viewer = { id: "code", title: "Code", wrap: true };
 const TEXT: Viewer = { id: "text", title: "Plain text", wrap: true };
+const IMAGE: Viewer = { id: "image", title: "Image", wrap: false, bytes: true };
+const PDF: Viewer = { id: "pdf", title: "PDF", wrap: false, bytes: true };
+const HTML: Viewer = { id: "html", title: "HTML", wrap: false };
+const TABLE: Viewer = { id: "table", title: "Spreadsheet", wrap: false };
 
 const nameOf = (path: string) => (path.split("/").pop() ?? path).toLowerCase();
+
+const RASTER = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico"]);
 
 /** The viewers for a file, the default first. Plain text always applies. */
 export function viewersFor(path: string): Viewer[] {
   const name = nameOf(path);
+  const suffix = name.slice(name.lastIndexOf(".") + 1);
+  if (RASTER.has(suffix)) return [IMAGE];
+  if (suffix === "pdf") return [PDF];
   const out: Viewer[] = [];
+  if (suffix === "svg") out.push(IMAGE);
+  if (suffix === "html" || suffix === "htm") out.push(HTML);
+  if (suffix === "csv" || suffix === "tsv") out.push(TABLE);
   if (name.endsWith(".md") || name.endsWith(".markdown")) out.push(MARKDOWN);
   if (languageOf(name).lang) out.push(CODE);
   out.push(TEXT);
@@ -30,8 +44,9 @@ export function viewersFor(path: string): Viewer[] {
 const UNVIEWABLE = new Set(
   `mp4 mov avi mkv webm flv wmv m4v mp3 wav flac ogg m4a aac wma opus zip gz tgz bz2 xz zst 7z rar
    tar jar doc docx xls xlsx ppt pptx odt ods odp pages numbers exe dll so dylib bin o class pyc
-   wasm ttf otf woff woff2 eot dmg iso img sqlite db psd ai sketch tiff tif heic heif avif png jpg
-   jpeg gif webp bmp ico pdf`.split(/\s+/),
+   wasm ttf otf woff woff2 eot dmg iso img sqlite db psd ai sketch tiff tif heic heif avif`.split(
+    /\s+/,
+  ),
 );
 
 /** True for a file the panel does not try to read at all. */

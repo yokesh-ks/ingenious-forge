@@ -7,6 +7,7 @@ import type {
   DirectoryListing,
   FetchCustomModelsRequest,
   FetchModelsRequest,
+  FileApplications,
   FileChange,
   FileContent,
   FileList,
@@ -89,11 +90,25 @@ export const api = {
     request<Project>(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" }),
   /** Opens the project's folder, or one of its files, in a program on the
    * user's machine. */
-  openProjectIn: (id: string, app: OpenApp, path: string | null = null) =>
+  openProjectIn: (
+    id: string,
+    app: OpenApp,
+    path: string | null = null,
+    application: string | null = null,
+  ) =>
     post<Project>(`/api/projects/${encodeURIComponent(id)}/open-in`, {
       app,
       path,
+      application,
     } satisfies OpenInRequest),
+  /** The programs that can open a project file. */
+  fileApplications: (id: string, path: string) =>
+    request<FileApplications>(
+      `/api/projects/${encodeURIComponent(id)}/file/applications?path=${encodeURIComponent(path)}`,
+    ),
+  /** Where the panel's viewers read an image or PDF from. */
+  rawFileUrl: (id: string, path: string) =>
+    `/api/projects/${encodeURIComponent(id)}/file/raw?path=${encodeURIComponent(path)}`,
   /** Renames, pins or archives a session. */
   updateSession: (id: string, update: UpdateSessionRequest) =>
     post<Session>(`/api/sessions/${encodeURIComponent(id)}`, update, "PATCH"),

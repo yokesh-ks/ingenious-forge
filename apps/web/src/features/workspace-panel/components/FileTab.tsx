@@ -32,7 +32,15 @@ import {
 } from "../model/file-preview";
 import type { PanelTab } from "../model/tabs";
 import FileTypeIcon from "./FileTypeIcon";
-import { CodeViewer, MarkdownViewer, TextViewer } from "./file-viewers";
+import {
+  CodeViewer,
+  HtmlViewer,
+  ImageViewer,
+  MarkdownViewer,
+  PdfViewer,
+  TableViewer,
+  TextViewer,
+} from "./file-viewers";
 import OpenTarget from "./OpenTarget";
 import { PaneHeader, PathLabel, ToolButton } from "./pane-parts";
 import WorkspaceTree from "./WorkspaceTree";
@@ -127,6 +135,9 @@ function StatusIcon({ path }: { path: string }) {
   return <FileTypeIcon path={path} className="size-9 opacity-60 grayscale" />;
 }
 
+/** How often the tab on screen looks for a change to its file. */
+const AUTO_REFRESH_MS = 2000;
+
 const EMPTY =
   "flex h-full flex-col items-center justify-center gap-4 px-6 text-center text-[13px] leading-[1.6] text-muted-foreground after:shrink after:basis-[12%] after:content-['']";
 
@@ -152,10 +163,22 @@ export default function FileTab({
 }) {
   const path = tab.path ?? "";
   const unviewable = isUnviewable(path);
-  const { content, failure, loading, read } = useFileText(projectId, path, unviewable, changeKey);
   const viewers = viewersFor(path);
   const [choice, setChoice] = useState<{ path: string; id: ViewerId } | null>(null);
   const selected = viewers.find((v) => choice?.path === path && v.id === choice.id) ?? viewers[0];
+  const { content, failure, loading, read } = useFileText(
+    projectId,
+    path,
+    unviewable || selected.bytes === true,
+    changeKey,
+  );
+  const [revisit, setRevisit] = useState(0);
+  const rawUrl = `${api.rawFileUrl(projectId, path)}&v=${revisit}`;
+  const fileName = path.split("/").pop() ?? path;
+  const reload = () => {
+    setRevisit((value) => value + 1);
+    read();
+  };
   const [wrap, setWrap] = useState(true);
   const body = useRef<HTMLDivElement>(null);
   const toggleButton = useRef<HTMLButtonElement>(null);
@@ -164,6 +187,13 @@ export default function FileTab({
   const fullPath = path.startsWith("/") ? path : `${rootPath.replace(/\/+$/, "")}/${path}`;
 
   useLineReveal(body, tab, content !== null, selected.id);
+
+  const canAutoRefresh = !unviewable && selected.bytes !== true;
+  useEffect(() => {
+    if (!active || !canAutoRefresh) return;
+    const timer = window.setInterval(read, AUTO_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [active, canAutoRefresh, read]);
 
   const { shown, reveal, setShown } = tree;
   useEffect(() => {
@@ -217,10 +247,18 @@ export default function FileTab({
         <OpenTarget projectId={projectId} path={path} prominent />
       </div>
     );
+  } else if (selected.id === "image") {
+    main = <ImageViewer key={rawUrl} src={rawUrl} name={fileName} />;
+  } else if (selected.id === "pdf") {
+    main = <PdfViewer key={rawUrl} src={rawUrl} name={fileName} />;
   } else if (content !== null) {
     main =
       selected.id === "markdown" ? (
         <MarkdownViewer path={path} content={content} />
+      ) : selected.id === "html" ? (
+        <HtmlViewer content={content} name={fileName} />
+      ) : selected.id === "table" ? (
+        <TableViewer path={path} content={content} />
       ) : selected.id === "code" ? (
         <CodeViewer path={path} content={content} wrap={wrap} />
       ) : (
@@ -312,7 +350,7 @@ export default function FileTab({
           </ToolButton>
         )}
         {!unviewable && (
-          <ToolButton aria-label="Read the file again" title="Read the file again" onClick={read}>
+          <ToolButton aria-label="Read the file again" title="Read the file again" onClick={reload}>
             <RefreshCwIcon aria-hidden />
           </ToolButton>
         )}

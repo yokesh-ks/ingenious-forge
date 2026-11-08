@@ -78,7 +78,27 @@ export type OpenInRequest = { app: OpenApp,
  * A file in the project to open instead of the project's folder.
  * `FileManager` then shows the file in its folder.
  */
-path: string | null, };
+path: string | null, 
+/**
+ * An application from the file's list to open it with, by its path.
+ */
+application: string | null, };
+
+export type FileApplication = { 
+/**
+ * Where the program is installed; it names the program in requests.
+ */
+path: string, name: string, 
+/**
+ * True for the program the system opens this kind of file with.
+ */
+default: boolean, 
+/**
+ * The program's icon as base64 PNG.
+ */
+icon: string | null, };
+
+export type FileApplications = { applications: Array<FileApplication>, };
 
 export type PickedFolder = { path: string | null, };
 

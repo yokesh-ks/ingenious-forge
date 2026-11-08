@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -187,8 +187,8 @@ describe("the file's controls", () => {
     await user.click(screen.getByRole("menuitem", { name: "Show file location" }));
     await waitFor(() => expect(bodies()).toHaveLength(2));
     expect(bodies()).toEqual([
-      { app: "vs_code", path: "README.md" },
-      { app: "file_manager", path: "README.md" },
+      { app: "vs_code", path: "README.md", application: null },
+      { app: "file_manager", path: "README.md", application: null },
     ]);
   });
 });
@@ -387,5 +387,103 @@ describe("the Workspace files page", () => {
       "VS Code",
       "Terminal",
     ]);
+  });
+});
+
+describe("viewers for other kinds of file", () => {
+  const open = async (path: string, content = "") => {
+    fakeFetch({
+      "GET /api/projects/p1": { id: "p1", name: "p", path: "/work/p" },
+      "GET /api/projects/p1/file": { path, content },
+      "GET /api/projects/p1/file/applications": { applications: [] },
+    });
+    const control: { current: WorkspacePanelControl | null } = { current: null };
+    render(
+      <WorkspacePanel
+        projectId="p1"
+        sessionId="s1"
+        changedFiles={[]}
+        onRevertAll={() => {}}
+        busy={false}
+        control={control}
+      />,
+    );
+    await waitFor(() => expect(control.current).not.toBeNull());
+    act(() => control.current?.openFile({ path }));
+  };
+
+  it("shows an image from its bytes, and does not offer plain text", async () => {
+    await open("logo.png");
+    const image = await screen.findByRole("img", { name: "Preview of logo.png" });
+    expect(image.getAttribute("src")).toContain("/file/raw?path=logo.png");
+    expect(screen.queryByRole("button", { name: "Open with" })).toBeNull();
+  });
+
+  it("zooms an image", async () => {
+    await open("logo.png");
+    const image = await screen.findByRole("img", { name: "Preview of logo.png" });
+    Object.defineProperty(image, "naturalWidth", { value: 400 });
+    fireEvent.load(image);
+    await userEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    expect(image.style.width).toBe("500px");
+    await userEvent.click(screen.getByRole("button", { name: "Fit width" }));
+    expect(image.style.width).toBe("");
+  });
+
+  it("shows a PDF in a frame", async () => {
+    await open("a.pdf");
+    expect((await screen.findByTitle("PDF preview: a.pdf")).getAttribute("src")).toContain("a.pdf");
+  });
+
+  it("draws HTML with scripts and the network shut off", async () => {
+    await open("a.html", "<!doctype html><p>hi</p>");
+    const frame = await screen.findByTitle("HTML preview: a.html");
+    expect(frame).toHaveAttribute("sandbox", "");
+    const html = frame.getAttribute("srcdoc") ?? "";
+    expect(html.indexOf("Content-Security-Policy")).toBeLessThan(html.indexOf("<p>hi</p>"));
+    expect(html.match(/<!doctype/gi)).toHaveLength(1);
+  });
+
+  it("shows a CSV as a grid", async () => {
+    await open("a.csv", "name,age\nada,36\n");
+    expect(await screen.findByRole("columnheader", { name: "B" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "ada" })).toBeInTheDocument();
+  });
+
+  it("offers the programs the system lists for a file", async () => {
+    const fetch = fakeFetch({
+      "GET /api/projects/p1": { id: "p1", name: "p", path: "/work/p" },
+      "GET /api/projects/p1/file": { path: "a.txt", content: "x" },
+      "GET /api/projects/p1/file/applications": {
+        applications: [
+          { path: "/A.app", name: "Alpha", default: false, icon: null },
+          { path: "/B.app", name: "Beta", default: true, icon: "aGk=" },
+        ],
+      },
+      "POST /api/projects/p1/open-in": { id: "p1", name: "p", path: "/work/p" },
+    });
+    const control: { current: WorkspacePanelControl | null } = { current: null };
+    render(
+      <WorkspacePanel
+        projectId="p1"
+        sessionId="s1"
+        changedFiles={[]}
+        onRevertAll={() => {}}
+        busy={false}
+        control={control}
+      />,
+    );
+    await waitFor(() => expect(control.current).not.toBeNull());
+    act(() => control.current?.openFile({ path: "a.txt" }));
+    await screen.findByRole("button", { name: "Open in Beta" });
+    await userEvent.click(screen.getByRole("button", { name: "More ways to open" }));
+    expect(await screen.findByRole("menuitem", { name: "Beta (default)" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("menuitem", { name: "Alpha" }));
+    const sent = fetch.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(JSON.parse(String(sent?.[1]?.body))).toEqual({
+      app: "default_app",
+      path: "a.txt",
+      application: "/A.app",
+    });
   });
 });

@@ -1,3 +1,4 @@
+pub mod file_apps;
 pub mod folders;
 pub mod log;
 pub mod projects;
