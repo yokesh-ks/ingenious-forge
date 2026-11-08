@@ -1,12 +1,12 @@
-import { BrainIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { BrainIcon, ChevronDownIcon, ChevronUpIcon, FileInputIcon } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 import type { ApprovalDecision, QuestionAnswer } from "@/api/types";
 import Markdown from "@/components/markdown/Markdown";
-import ToolCallCard from "@/features/session/components/ToolCallCard";
-import type { ReasoningItem, ToolItem } from "@/features/session/session-reducer";
 import { cn } from "@/lib/utils";
+import type { ProcessItem } from "../model/build-chat";
 import { category, rowDetail, toolDisplayName } from "../model/build-chat";
 import { CATEGORY_ICONS } from "./category-icons";
+import ToolBody from "./ToolBody";
 
 export interface RowHandlers {
   /** Opens a file a row links to. */
@@ -35,7 +35,7 @@ export default function ChatRow({
   onOpenFile,
   onAnswerApproval,
   onAnswerQuestion,
-}: { item: ToolItem | ReasoningItem } & RowHandlers) {
+}: { item: ProcessItem } & RowHandlers) {
   const waiting =
     item.role === "tool" &&
     (item.approval?.status === "pending" || item.question?.status === "pending");
@@ -52,14 +52,26 @@ export default function ChatRow({
   };
 
   const isTool = item.role === "tool";
-  const Icon = isTool ? CATEGORY_ICONS[category(item.name)] : BrainIcon;
-  const name = isTool ? toolDisplayName(item.name) : "Think";
-  const detail = isTool ? rowDetail(item.args) : { text: firstLine(item.text), path: null };
+  const Icon = isTool
+    ? CATEGORY_ICONS[category(item.name)]
+    : item.role === "context"
+      ? FileInputIcon
+      : BrainIcon;
+  const name = isTool
+    ? toolDisplayName(item.name)
+    : item.role === "context"
+      ? "Context injection"
+      : "Think";
+  const detail = isTool
+    ? rowDetail(item.args)
+    : item.role === "context"
+      ? { text: item.summary, path: null }
+      : { text: firstLine(item.text), path: null };
   const failed = isTool && item.status === "error";
   const Chevron = open ? ChevronUpIcon : ChevronDownIcon;
 
   return (
-    <div data-variant={isTool ? item.name : "think"} data-state={failed ? "error" : "ok"}>
+    <div data-variant={isTool ? item.name : item.role} data-state={failed ? "error" : "ok"}>
       {/* biome-ignore lint/a11y/useSemanticElements: the row holds a file link, and a button cannot contain one */}
       <div
         role="button"
@@ -110,11 +122,15 @@ export default function ChatRow({
       {open && (
         <div className="mt-1 ml-5">
           {isTool ? (
-            <ToolCallCard
+            <ToolBody
               tool={item}
-              onAnswer={onAnswerApproval}
+              onAnswerApproval={onAnswerApproval}
               onAnswerQuestion={onAnswerQuestion}
             />
+          ) : item.role === "context" ? (
+            <pre className="max-h-56 overflow-auto rounded-2xl bg-muted/50 px-4 py-3 font-mono text-[11px] leading-4 whitespace-pre-wrap">
+              {item.text}
+            </pre>
           ) : (
             <div className="text-[13px] leading-5 text-muted-foreground">
               <Markdown text={item.text} />

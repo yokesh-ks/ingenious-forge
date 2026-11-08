@@ -12,6 +12,7 @@ import {
 } from "@/components/ai-elements/message-scroller";
 import Markdown from "@/components/markdown/Markdown";
 import { Button } from "@/components/ui/button";
+import FailureRow from "@/features/chat/components/FailureRow";
 import ProcessGroup from "@/features/chat/components/ProcessGroup";
 import TurnControl, { RunningStatus } from "@/features/chat/components/TurnControl";
 import {
@@ -165,6 +166,7 @@ function Turn({
         }
       })}
       {live && <RunningStatus startedAt={turn.startedAt} />}
+      {turn.failure && <FailureRow failure={turn.failure} />}
     </div>
   );
 }
@@ -263,7 +265,10 @@ export default function SessionView({
                 Forge is thinking…
               </p>
             )}
-            {error && <ErrorAlert message={error} />}
+            {/* A failed turn already says why in its own last row. */}
+            {error && error !== turns[turns.length - 1]?.failure?.message && (
+              <ErrorAlert message={error} />
+            )}
           </MessageScrollerContent>
         </MessageScrollerViewport>
         <MessageScrollerButton />

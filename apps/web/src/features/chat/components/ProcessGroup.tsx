@@ -1,4 +1,4 @@
-import { ChevronDownIcon, ChevronUpIcon, SparklesIcon } from "lucide-react";
+import { BrainIcon, ChevronDownIcon, ChevronUpIcon, FileInputIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { ChatGroup } from "../model/build-chat";
@@ -19,7 +19,12 @@ export default function ProcessGroup({
   const [toggled, setToggled] = useState<boolean | null>(null);
   const open = toggled ?? (group.running || group.waiting);
   const bodyId = useId();
-  const Icon = group.activity ? CATEGORY_ICONS[group.activity] : SparklesIcon;
+  // With no tool calls, the reasoning (or context) icon, as its rows use.
+  const Icon = group.activity
+    ? CATEGORY_ICONS[group.activity]
+    : group.items.every((i) => i.role === "context")
+      ? FileInputIcon
+      : BrainIcon;
   const Chevron = open ? ChevronUpIcon : ChevronDownIcon;
 
   if (live) {

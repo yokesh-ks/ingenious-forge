@@ -1,5 +1,6 @@
 import type { JsonValue } from "@/api/types";
 import type {
+  ContextItem,
   ReasoningItem,
   SessionItem,
   SessionMessage,
@@ -60,11 +61,14 @@ export function category(name: string): Category {
 }
 
 /** A run of reasoning and tool calls between replies. */
+/** An item a process group holds. */
+export type ProcessItem = ToolItem | ReasoningItem | ContextItem;
+
 export interface ChatGroup {
   kind: "group";
   /** The id of its first item, stable while the group grows. */
   id: string;
-  items: (ToolItem | ReasoningItem)[];
+  items: ProcessItem[];
   /** The top-ranked category, for the header icon; `null` with no calls. */
   activity: Category | null;
   title: string;
@@ -88,6 +92,8 @@ export interface ChatTurn {
   durationMs: number | null;
   /** Whether the turn can fold its process groups away. */
   collapsible: boolean;
+  /** Why it failed, when it did. */
+  failure: TurnRecord["failure"];
   nodes: TurnNode[];
 }
 
@@ -151,6 +157,7 @@ function buildTurn(record: TurnRecord, items: SessionItem[]): ChatTurn {
         ? Math.max(0, record.endedAt - record.startedAt)
         : null,
     collapsible: record.status === "completed" && firstGroup !== -1 && !steeredAfter,
+    failure: record.failure,
     nodes,
   };
 }
@@ -159,13 +166,13 @@ function buildTurn(record: TurnRecord, items: SessionItem[]): ChatTurn {
  * that replies, steering messages and notices close. */
 function walk(items: SessionItem[], running: boolean): TurnNode[] {
   const nodes: TurnNode[] = [];
-  let group: (ToolItem | ReasoningItem)[] | null = null;
+  let group: ProcessItem[] | null = null;
   const close = () => {
     if (group) nodes.push(makeGroup(group, false));
     group = null;
   };
   for (const item of items) {
-    if (item.role === "tool" || item.role === "reasoning") {
+    if (item.role === "tool" || item.role === "reasoning" || item.role === "context") {
       group ??= [];
       group.push(item);
     } else if (item.role === "assistant") {
@@ -185,7 +192,7 @@ function walk(items: SessionItem[], running: boolean): TurnNode[] {
   return nodes;
 }
 
-function makeGroup(items: (ToolItem | ReasoningItem)[], last: boolean): ChatGroup {
+function makeGroup(items: ProcessItem[], last: boolean): ChatGroup {
   const tools = items.filter((i): i is ToolItem => i.role === "tool");
   const categories = tools.map((t) => category(t.name));
   const runningTool = [...tools].reverse().find((t) => t.status === "running");
@@ -200,7 +207,9 @@ function makeGroup(items: (ToolItem | ReasoningItem)[], last: boolean): ChatGrou
       ? runningTool
         ? LABELS[category(runningTool.name)].running
         : "Analyzing the request"
-      : groupTitle(categories),
+      : items.every((i) => i.role === "context")
+        ? "Injected context"
+        : groupTitle(categories),
     running,
     waiting: tools.some(
       (t) => t.approval?.status === "pending" || t.question?.status === "pending",

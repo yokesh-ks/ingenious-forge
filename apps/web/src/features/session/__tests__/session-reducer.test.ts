@@ -63,6 +63,36 @@ describe("sessionReducer", () => {
     });
   });
 
+  it("shows the project instructions the model was given as context", () => {
+    const state = apply(sent("go"), {
+      type: "system_prompt",
+      session_id: S,
+      text: 'Follow them.\n\n<project_instructions path="AGENTS.md">\nBe brief.\n</project_instructions>',
+    });
+    expect(state.messages[1]).toMatchObject({
+      role: "context",
+      kind: "system-prompt",
+      summary: "AGENTS.md",
+    });
+  });
+
+  it("records a failed turn's code and message", () => {
+    const state = apply(
+      sent("go"),
+      { type: "turn_started", session_id: S, turn: 1 },
+      {
+        type: "turn_ended",
+        session_id: S,
+        turn: 1,
+        reason: { kind: "error", code: "PROVIDER_ERROR", message: "rate limited" },
+      },
+    );
+    expect(state.turns[0]).toMatchObject({
+      status: "failed",
+      failure: { code: "PROVIDER_ERROR", message: "rate limited" },
+    });
+  });
+
   it("records each turn's start, times and how it ended", () => {
     const at = (ts: number, event: SessionEvent) =>
       ({ ...event, seq: ts, ts }) as unknown as SessionEvent;
@@ -78,7 +108,14 @@ describe("sessionReducer", () => {
       }),
     );
     expect(state.turns).toEqual([
-      { turn: 1, start: 1, startedAt: 1_000, endedAt: 5_000, status: "stopped" },
+      {
+        turn: 1,
+        start: 1,
+        startedAt: 1_000,
+        endedAt: 5_000,
+        status: "stopped",
+        failure: null,
+      },
     ]);
   });
 

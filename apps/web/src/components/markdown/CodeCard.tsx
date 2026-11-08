@@ -1,8 +1,8 @@
 import { CheckIcon, CopyIcon, WrapTextIcon } from "lucide-react";
-import { useEffect, useState } from "react";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { type HighlightToken, highlight } from "@/lib/highlight";
+import { useState } from "react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { IconButton, TokenLine, useCopy, useHighlight } from "./code-tools";
 
 interface CodeCardProps {
   code: string;
@@ -12,69 +12,15 @@ interface CodeCardProps {
   defaultWrap?: boolean;
 }
 
-function IconButton({
-  label,
-  tooltip,
-  pressed,
-  onClick,
-  children,
-}: {
-  label: string;
-  tooltip: string;
-  pressed?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={label}
-          aria-pressed={pressed}
-          onClick={onClick}
-          className="inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&_svg]:size-3.5"
-        >
-          {children}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>{tooltip}</TooltipContent>
-    </Tooltip>
-  );
-}
-
 /**
  * A code card: language (or "Code block") in the header with wrap and copy
  * controls, and the code below, highlighted when Shiki knows the language.
  */
 export default function CodeCard({ code, lang, defaultWrap = true }: CodeCardProps) {
   const [wrap, setWrap] = useState(defaultWrap);
-  const [copied, setCopied] = useState(false);
-  const [tokens, setTokens] = useState<HighlightToken[][] | null>(null);
+  const { copied, copy } = useCopy(code);
+  const tokens = useHighlight(code, lang);
   const title = lang || "Code block";
-
-  useEffect(() => {
-    let live = true;
-    setTokens(null);
-    if (lang) {
-      void highlight(code, lang).then((result) => {
-        if (live) setTokens(result);
-      });
-    }
-    return () => {
-      live = false;
-    };
-  }, [code, lang]);
-
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(timer);
-  }, [copied]);
-
-  const copy = () => {
-    void navigator.clipboard?.writeText(code).then(() => setCopied(true));
-  };
 
   return (
     <TooltipProvider>
@@ -113,12 +59,7 @@ export default function CodeCard({ code, lang, defaultWrap = true }: CodeCardPro
               ? tokens.map((line, index) => (
                   // biome-ignore lint/suspicious/noArrayIndexKey: position is the line's identity
                   <span key={index}>
-                    {line.map((token, at) => (
-                      // biome-ignore lint/suspicious/noArrayIndexKey: position is the token's identity
-                      <span key={at} data-token="" className="shiki-token" style={token.style}>
-                        {token.content}
-                      </span>
-                    ))}
+                    <TokenLine tokens={line} />
                     {index < tokens.length - 1 ? "\n" : null}
                   </span>
                 ))

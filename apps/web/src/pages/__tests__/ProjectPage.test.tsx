@@ -175,9 +175,7 @@ describe("ProjectPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Completed" }));
     await userEvent.click(screen.getByRole("button", { name: "Edited files" }));
     await userEvent.click(screen.getByRole("button", { name: "Edit · a.md" }));
-    expect(screen.getByRole("article", { name: /edit tool call/i })).toHaveTextContent(
-      "Edited a.md",
-    );
+    expect(screen.getByTestId("tool-output")).toHaveTextContent("Edited a.md");
     expect(
       screen.getAllByRole("button", { name: /a\.md/ }).some((b) => b.textContent?.includes("+1−1")),
     ).toBe(true);
