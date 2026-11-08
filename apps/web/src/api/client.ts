@@ -106,7 +106,10 @@ export const api = {
     request<FileApplications>(
       `/api/projects/${encodeURIComponent(id)}/file/applications?path=${encodeURIComponent(path)}`,
     ),
-  /** Where the panel's viewers read an image or PDF from. */
+  /** Where the panel reads an Office file from, converted to a PDF. */
+  officePdfUrl: (id: string, path: string) =>
+    `/api/projects/${encodeURIComponent(id)}/file/office-pdf?path=${encodeURIComponent(path)}`,
+  /** Where the panel's viewers read an image, PDF or sheet from. */
   rawFileUrl: (id: string, path: string) =>
     `/api/projects/${encodeURIComponent(id)}/file/raw?path=${encodeURIComponent(path)}`,
   /** Renames, pins or archives a session. */

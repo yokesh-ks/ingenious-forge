@@ -2,7 +2,6 @@ import {
   ArrowRightToLineIcon,
   FolderIcon,
   FolderOpenIcon,
-  Loader2Icon,
   RefreshCwIcon,
   WrapTextIcon,
 } from "lucide-react";
@@ -31,14 +30,15 @@ import {
   viewersFor,
 } from "../model/file-preview";
 import type { PanelTab } from "../model/tabs";
+import DocumentLoading from "./DocumentLoading";
 import FileTypeIcon from "./FileTypeIcon";
+import FontNotice from "./FontNotice";
 import {
+  BytesViewer,
   CodeViewer,
   HtmlViewer,
   ImageViewer,
   MarkdownViewer,
-  PdfViewer,
-  TableViewer,
   TextViewer,
 } from "./file-viewers";
 import OpenTarget from "./OpenTarget";
@@ -174,6 +174,8 @@ export default function FileTab({
   );
   const [revisit, setRevisit] = useState(0);
   const rawUrl = `${api.rawFileUrl(projectId, path)}&v=${revisit}`;
+  const officeUrl = `${api.officePdfUrl(projectId, path)}&v=${revisit}`;
+  const [missingFonts, setMissingFonts] = useState<string[]>([]);
   const fileName = path.split("/").pop() ?? path;
   const reload = () => {
     setRevisit((value) => value + 1);
@@ -249,16 +251,23 @@ export default function FileTab({
     );
   } else if (selected.id === "image") {
     main = <ImageViewer key={rawUrl} src={rawUrl} name={fileName} />;
-  } else if (selected.id === "pdf") {
-    main = <PdfViewer key={rawUrl} src={rawUrl} name={fileName} />;
+  } else if (selected.id === "pdf" || selected.id === "sheet" || selected.id === "office") {
+    main = (
+      <BytesViewer
+        key={path}
+        viewer={selected.id}
+        url={selected.id === "office" ? officeUrl : rawUrl}
+        path={path}
+        onFonts={setMissingFonts}
+        onRetry={reload}
+      />
+    );
   } else if (content !== null) {
     main =
       selected.id === "markdown" ? (
         <MarkdownViewer path={path} content={content} />
       ) : selected.id === "html" ? (
-        <HtmlViewer content={content} name={fileName} />
-      ) : selected.id === "table" ? (
-        <TableViewer path={path} content={content} />
+        <HtmlViewer projectId={projectId} path={path} content={content} name={fileName} />
       ) : selected.id === "code" ? (
         <CodeViewer path={path} content={content} wrap={wrap} />
       ) : (
@@ -284,17 +293,7 @@ export default function FileTab({
       </div>
     );
   } else {
-    main = (
-      <output
-        className={cn(
-          "flex h-full flex-col items-center justify-center gap-2 text-[13px] text-muted-foreground",
-          !loading && "hidden",
-        )}
-      >
-        <Loader2Icon aria-hidden className="size-7 animate-spin" />
-        <span>Rendering document...</span>
-      </output>
-    );
+    main = loading ? <DocumentLoading /> : null;
   }
 
   return (
@@ -339,6 +338,7 @@ export default function FileTab({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+        {selected.id === "office" && <FontNotice fonts={missingFonts} />}
         {!unviewable && selected.wrap && (
           <ToolButton
             aria-label="Line wrap"

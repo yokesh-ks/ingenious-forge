@@ -24,3 +24,6 @@ server/sessions/
 # Web SPA build artifacts live in apps/web/.gitignore (app-local rules)
 
 .kilo/
+
+# The launcher's Office conversion engine, installed by npm
+packages/launcher/node_modules/

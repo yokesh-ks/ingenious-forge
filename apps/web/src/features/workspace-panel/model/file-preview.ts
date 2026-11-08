@@ -1,7 +1,7 @@
 import { languageOf } from "@/components/markdown/code-tools";
 
 /** The ways a file tab can show a file. */
-export type ViewerId = "markdown" | "code" | "text" | "image" | "pdf" | "html" | "table";
+export type ViewerId = "markdown" | "code" | "text" | "image" | "pdf" | "html" | "sheet" | "office";
 
 export interface Viewer {
   id: ViewerId;
@@ -18,10 +18,12 @@ const TEXT: Viewer = { id: "text", title: "Plain text", wrap: true };
 const IMAGE: Viewer = { id: "image", title: "Image", wrap: false, bytes: true };
 const PDF: Viewer = { id: "pdf", title: "PDF", wrap: false, bytes: true };
 const HTML: Viewer = { id: "html", title: "HTML", wrap: false };
-const TABLE: Viewer = { id: "table", title: "Spreadsheet", wrap: false };
+const SHEET: Viewer = { id: "sheet", title: "Spreadsheet", wrap: false, bytes: true };
+const OFFICE: Viewer = { id: "office", title: "Office document", wrap: false, bytes: true };
 
 const nameOf = (path: string) => (path.split("/").pop() ?? path).toLowerCase();
 
+const OFFICE_SUFFIXES = new Set(["doc", "docx", "ppt", "pptx"]);
 const RASTER = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico"]);
 
 /** The viewers for a file, the default first. Plain text always applies. */
@@ -30,10 +32,12 @@ export function viewersFor(path: string): Viewer[] {
   const suffix = name.slice(name.lastIndexOf(".") + 1);
   if (RASTER.has(suffix)) return [IMAGE];
   if (suffix === "pdf") return [PDF];
+  if (suffix === "xlsx" || suffix === "xls") return [SHEET];
+  if (OFFICE_SUFFIXES.has(suffix)) return [OFFICE];
   const out: Viewer[] = [];
   if (suffix === "svg") out.push(IMAGE);
   if (suffix === "html" || suffix === "htm") out.push(HTML);
-  if (suffix === "csv" || suffix === "tsv") out.push(TABLE);
+  if (suffix === "csv" || suffix === "tsv") out.push(SHEET);
   if (name.endsWith(".md") || name.endsWith(".markdown")) out.push(MARKDOWN);
   if (languageOf(name).lang) out.push(CODE);
   out.push(TEXT);
@@ -43,7 +47,7 @@ export function viewersFor(path: string): Viewer[] {
 /** Suffixes that cannot be read as text and have no viewer. */
 const UNVIEWABLE = new Set(
   `mp4 mov avi mkv webm flv wmv m4v mp3 wav flac ogg m4a aac wma opus zip gz tgz bz2 xz zst 7z rar
-   tar jar doc docx xls xlsx ppt pptx odt ods odp pages numbers exe dll so dylib bin o class pyc
+   tar jar odt ods odp pages numbers exe dll so dylib bin o class pyc
    wasm ttf otf woff woff2 eot dmg iso img sqlite db psd ai sketch tiff tif heic heif avif`.split(
     /\s+/,
   ),
