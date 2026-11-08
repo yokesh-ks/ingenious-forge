@@ -1,7 +1,5 @@
 import { DatabaseIcon, GaugeIcon } from "lucide-react";
-import { useEffect, useState } from "react";
-import { api } from "@/api/client";
-import type { SessionStats } from "@/api/types";
+import { useSessionStats } from "@/features/stats/hooks/use-session-stats";
 import {
   cacheHitPercent,
   contextPercent,
@@ -23,24 +21,7 @@ export default function SessionMetrics({
   sessionId: string;
   refreshKey: string;
 }) {
-  const [stats, setStats] = useState<SessionStats | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    // The key only says when to reload.
-    void refreshKey;
-    api
-      .sessionStats(sessionId)
-      .then((next) => {
-        if (live) setStats(next);
-      })
-      .catch(() => {
-        // The metrics are a convenience; leave the last reading in place.
-      });
-    return () => {
-      live = false;
-    };
-  }, [sessionId, refreshKey]);
+  const stats = useSessionStats(sessionId, refreshKey);
 
   if (!stats || stats.steps === 0) return null;
   const speed =

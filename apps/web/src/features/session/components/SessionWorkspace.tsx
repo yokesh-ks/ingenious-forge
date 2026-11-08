@@ -23,6 +23,9 @@ interface SessionWorkspaceProps {
   endControls?: ReactNode;
   /** A line under the composer, such as the session's metrics. */
   footer?: ReactNode;
+  /** Wraps the conversation, such as in the session's view tabs; it
+   * receives the chat view and returns what to show above the composer. */
+  frame?: (chat: ReactNode) => ReactNode;
 }
 
 /** One session: the conversation and the composer. */
@@ -40,6 +43,7 @@ export default function SessionWorkspace({
   startControls,
   endControls,
   footer,
+  frame = (chat) => chat,
 }: SessionWorkspaceProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -49,17 +53,19 @@ export default function SessionWorkspace({
         </p>
       )}
       <div className="flex min-h-0 flex-1">
-        <SessionView
-          messages={state.messages}
-          turns={state.turns}
-          running={state.running}
-          error={state.error}
-          onAnswerApproval={onAnswerApproval}
-          onAnswerQuestion={onAnswerQuestion}
-          hasOlder={hasOlder}
-          loadingOlder={loadingOlder}
-          onLoadOlder={onLoadOlder}
-        />
+        {frame(
+          <SessionView
+            messages={state.messages}
+            turns={state.turns}
+            running={state.running}
+            error={state.error}
+            onAnswerApproval={onAnswerApproval}
+            onAnswerQuestion={onAnswerQuestion}
+            hasOlder={hasOlder}
+            loadingOlder={loadingOlder}
+            onLoadOlder={onLoadOlder}
+          />,
+        )}
       </div>
       <div className="flex flex-col gap-2">
         {composerBar && <div className="mx-auto w-full max-w-3xl">{composerBar}</div>}

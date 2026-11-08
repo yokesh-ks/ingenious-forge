@@ -50,3 +50,21 @@ export function Link({ to, onClick, ...props }: LinkProps) {
   }
   return <a href={to} onClick={handleClick} {...props} />;
 }
+
+/**
+ * One query parameter of the current URL and a setter that replaces the
+ * history entry, keeping the path and other parameters; `null` removes it.
+ */
+export function useQueryParam(key: string): [string | null, (value: string | null) => void] {
+  const search = useSyncExternalStore(subscribe, () => window.location.search);
+  const value = new URLSearchParams(search).get(key);
+  const set = (next: string | null) => {
+    const params = new URLSearchParams(window.location.search);
+    if (next === null) params.delete(key);
+    else params.set(key, next);
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+    window.dispatchEvent(new Event(NAVIGATE));
+  };
+  return [value, set];
+}

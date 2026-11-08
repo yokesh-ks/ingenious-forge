@@ -202,6 +202,18 @@ describe("useSession", () => {
     expect(fetch.mock.calls.length).toBe(calls);
   });
 
+  it("exposes the events it holds, oldest first", async () => {
+    fakeFetch({
+      "GET /api/sessions/s1/events": [
+        { seq: 1, ts: 5, type: "output", session_id: "s1", chunk: "a" },
+      ],
+    });
+    const { result } = setupPaged(3);
+    await openSocket(FakeSocket.latest());
+    act(() => FakeSocket.latest().emit({ type: "output", session_id: "s1", chunk: "b" }, 2));
+    expect(result.current.events.map((e) => e.seq)).toEqual([1, 2]);
+  });
+
   it("does not page a session shorter than one page", async () => {
     fakeFetch({
       "GET /api/sessions/s1/events": [
