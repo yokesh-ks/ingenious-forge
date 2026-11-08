@@ -1,4 +1,5 @@
 import type {
+  FileChange as ApiFileChange,
   ApprovalDecision,
   ApprovalKind,
   JsonValue,
@@ -73,12 +74,7 @@ export interface SessionNotice {
 }
 
 /** A file the agent changed this session and its diff from before. */
-export interface FileChange {
-  path: string;
-  diff: string;
-  additions: number;
-  deletions: number;
-}
+export type FileChange = ApiFileChange;
 
 export type SessionItem = SessionMessage | ToolItem | SessionNotice;
 
@@ -98,6 +94,11 @@ export type SessionAction =
   | { kind: "event"; event: SessionEvent }
   /** Several events at once, such as a backlog loaded on connect. */
   | { kind: "events"; events: SessionEvent[] }
+  /** Rebuild the timeline from `events`, such as after loading an older
+   * page. The changed files are kept: older events cannot change them. */
+  | { kind: "reset"; events: SessionEvent[] }
+  /** The session's changed files as the server lists them. */
+  | { kind: "changes"; files: FileChange[] }
   | { kind: "local_error"; message: string };
 
 export const initialSessionState: SessionState = {
@@ -120,6 +121,13 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       return applyEvents(state, [action.event]);
     case "events":
       return applyEvents(state, action.events);
+    case "reset":
+      return {
+        ...applyEvents(initialSessionState, action.events),
+        changedFiles: state.changedFiles,
+      };
+    case "changes":
+      return { ...state, changedFiles: action.files };
   }
 }
 

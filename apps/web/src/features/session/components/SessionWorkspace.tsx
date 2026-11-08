@@ -11,6 +11,10 @@ interface SessionWorkspaceProps {
   onStop: () => void;
   onAnswerApproval: (callId: string, decision: ApprovalDecision) => void;
   onAnswerQuestion?: (callId: string, answers: QuestionAnswer[]) => void;
+  /** Whether older events exist that are not loaded yet. */
+  hasOlder?: boolean;
+  loadingOlder?: boolean;
+  onLoadOlder?: () => void;
   /** A row directly above the composer, as wide as it is. */
   composerBar?: ReactNode;
   /** Controls at the left of the composer's bottom row. */
@@ -27,6 +31,9 @@ export default function SessionWorkspace({
   onStop,
   onAnswerApproval,
   onAnswerQuestion,
+  hasOlder,
+  loadingOlder,
+  onLoadOlder,
   composerBar,
   startControls,
   endControls,
@@ -45,6 +52,9 @@ export default function SessionWorkspace({
           error={state.error}
           onAnswerApproval={onAnswerApproval}
           onAnswerQuestion={onAnswerQuestion}
+          hasOlder={hasOlder}
+          loadingOlder={loadingOlder}
+          onLoadOlder={onLoadOlder}
         />
       </div>
       <div className="flex flex-col gap-2">

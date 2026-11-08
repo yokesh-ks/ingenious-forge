@@ -6,6 +6,7 @@ import type {
   CommitResult,
   FetchCustomModelsRequest,
   FetchModelsRequest,
+  FileChange,
   FileContent,
   FileList,
   GitHubConnection,
@@ -181,6 +182,18 @@ export const api = {
     request<SessionEnvelope[]>(
       `/api/sessions/${encodeURIComponent(sessionId)}/events?${new URLSearchParams({ after: String(after) })}`,
     ),
+  /** A page of a session's latest logged events: at most `limit`, all
+   * before sequence number `before` when given. */
+  sessionEventsPage: (sessionId: string, { before, limit }: { before?: number; limit: number }) =>
+    request<SessionEnvelope[]>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/events?${new URLSearchParams({
+        ...(before === undefined ? {} : { before: String(before) }),
+        limit: String(limit),
+      })}`,
+    ),
+  /** The files the agent changed in a session, each with its latest diff. */
+  sessionChanges: (sessionId: string) =>
+    request<FileChange[]>(`/api/sessions/${encodeURIComponent(sessionId)}/changes`),
   /** Shows the OS folder dialog and resolves when the user has answered it. */
   pickFolder: () => post<PickedFolder>("/api/fs/pick-folder", {}),
 };
