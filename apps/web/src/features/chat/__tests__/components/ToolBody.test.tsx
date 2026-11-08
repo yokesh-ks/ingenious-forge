@@ -224,9 +224,12 @@ describe("ToolBody", () => {
     expect(screen.getByTestId("tool-output")).toHaveClass("text-destructive");
   });
 
-  it("offers Inspect, not yet available", () => {
+  it("opens the call in the Trajectory view on Inspect", async () => {
+    window.history.replaceState(null, "", "/projects/p/sessions/s");
     render(<ToolBody tool={read(2)} />);
-    expect(screen.getByRole("button", { name: "Inspect" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Inspect" }));
+    expect(window.location.search).toBe(`?view=trajectory&record=tool%3A${read(2).callId}`);
+    window.history.replaceState(null, "", "/");
   });
 
   describe("approval cards", () => {

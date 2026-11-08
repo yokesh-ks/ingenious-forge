@@ -43,7 +43,7 @@ export default function ToolBody({
       {!waiting && (
         <>
           <Card tool={tool} />
-          <InspectButton />
+          <InspectButton callId={tool.callId} />
         </>
       )}
     </div>

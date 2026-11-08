@@ -47,6 +47,9 @@ export function useSession(
   const [connected, setConnected] = useState(false);
   const [hasOlder, setHasOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  // Whether the latest page has arrived, so views can tell "loading" from
+  // "empty".
+  const [loaded, setLoaded] = useState(false);
   // The raw events, for views that need more than the chat keeps.
   const [events, setEvents] = useState<SessionEnvelope[]>([]);
   const socketRef = useRef<WebSocket | null>(null);
@@ -75,6 +78,7 @@ export function useSession(
   useEffect(() => {
     storeRef.current = emptyEventStore;
     setEvents([]);
+    setLoaded(false);
     markOlder(false);
     dispatch({ kind: "reset", events: [] });
     // Live frames held back while the backlog loads; null when not syncing.
@@ -91,6 +95,7 @@ export function useSession(
       const full = page.length >= pageSize;
       ingest(full ? startAtTurn(page) : page);
       markOlder(full);
+      setLoaded(true);
       if (full) {
         const files = await api.sessionChanges(sessionId);
         if (!closed) dispatch({ kind: "changes", files });
@@ -232,6 +237,7 @@ export function useSession(
     state,
     events,
     connected,
+    loaded,
     hasOlder,
     loadingOlder,
     loadOlder,

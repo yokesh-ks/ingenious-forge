@@ -18,6 +18,7 @@ import { useProjectSessions } from "@/features/session/hooks/use-project-session
 import { useSession } from "@/features/session/hooks/use-session";
 import type { TurnRecord } from "@/features/session/session-reducer";
 import StatisticsView from "@/features/stats/components/StatisticsView";
+import TrajectoryView from "@/features/trajectory/components/TrajectoryView";
 import { navigate } from "@/lib/router";
 
 /** Changes whenever a step settles or a turn starts or ends, so the
@@ -61,6 +62,7 @@ function SessionPane({
     state,
     events,
     connected,
+    loaded,
     hasOlder,
     loadingOlder,
     loadOlder,
@@ -90,9 +92,13 @@ function SessionPane({
             <SessionTabs
               chat={chat}
               trajectory={
-                <p className="m-auto text-sm text-muted-foreground">
-                  The Trajectory view is not built yet.
-                </p>
+                <TrajectoryView
+                  events={events}
+                  loaded={loaded}
+                  hasOlder={hasOlder}
+                  loadingOlder={loadingOlder}
+                  onLoadOlder={loadOlder}
+                />
               }
               statistics={
                 <StatisticsView
