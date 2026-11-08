@@ -4,7 +4,9 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use agent::tools::{ToolBox, ToolOutcome, BASH, EDIT, LIST_DIRECTORY, READ, WRITE};
+use agent::tools::{
+    html_to_text, ToolBox, ToolOutcome, BASH, EDIT, GLOB, GREP, READ, WEB_FETCH, WRITE,
+};
 use serde_json::json;
 
 /// A fresh project folder under the system temp dir, removed on drop.
@@ -61,7 +63,7 @@ fn text(outcome: &ToolOutcome) -> (String, bool) {
 fn specs_describe_the_file_tools_and_the_shell() {
     let project = Project::new();
     let names: Vec<_> = project.tools().specs().iter().map(|s| s.name).collect();
-    assert_eq!(names, [READ, WRITE, EDIT, LIST_DIRECTORY, BASH]);
+    assert_eq!(names, [READ, WRITE, EDIT, GLOB, GREP, WEB_FETCH, BASH]);
     for spec in project.tools().specs() {
         assert_eq!(spec.input_schema["type"], "object");
         assert!(!spec.description.is_empty());
@@ -357,34 +359,165 @@ fn a_change_can_be_previewed_without_writing() {
     );
 }
 
+/// Sets a file's modification time to `secs` after the epoch.
+fn touch(project: &Project, rel: &str, secs: u64) {
+    let file = fs::File::options()
+        .write(true)
+        .open(project.path().join(rel))
+        .unwrap();
+    file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs))
+        .unwrap();
+}
+
 #[test]
-fn list_directory_lists_sorted_entries_with_dirs_marked() {
+fn glob_finds_files_at_any_depth_newest_first_including_hidden_and_ignored() {
     let project = Project::new();
     project
-        .write("b.txt", "")
-        .write("a.txt", "")
-        .write("src/lib.rs", "");
-    fs::create_dir_all(project.path().join(".git")).unwrap();
-    let out = project.tools().run(LIST_DIRECTORY, &json!({}));
-    assert_eq!(text(&out), ok("a.txt\nb.txt\nsrc/"));
-    assert_eq!(out.meta.unwrap()["entries"], 3);
+        .write("a.ts", "")
+        .write("src/b.ts", "")
+        .write(".hidden/c.ts", "")
+        .write("dist/d.ts", "")
+        .write(".gitignore", "dist/\n")
+        .write("src/e.rs", "")
+        .write(".git/f.ts", "");
+    touch(&project, "a.ts", 100);
+    touch(&project, "src/b.ts", 300);
+    touch(&project, ".hidden/c.ts", 200);
+    touch(&project, "dist/d.ts", 400);
+
+    let out = project.tools().run(GLOB, &json!({ "pattern": "*.ts" }));
+
+    assert_eq!(text(&out), ok("dist/d.ts\nsrc/b.ts\n.hidden/c.ts\na.ts"));
+    let meta = out.meta.unwrap();
     assert_eq!(
-        text(
-            &project
-                .tools()
-                .run(LIST_DIRECTORY, &json!({ "path": "src" }))
-        ),
-        ok("lib.rs")
+        (meta["matches"].clone(), meta["truncated"].clone()),
+        (json!(4), json!(false))
     );
 }
 
 #[test]
-fn list_directory_reports_an_empty_directory() {
+fn glob_with_a_separator_anchors_the_depth_and_takes_a_path() {
     let project = Project::new();
+    project
+        .write("src/a.ts", "")
+        .write("src/deep/b.ts", "")
+        .write("web/c.ts", "");
+    let tools = project.tools();
     assert_eq!(
-        text(&project.tools().run(LIST_DIRECTORY, &json!({ "path": "." }))),
-        ok("(empty directory)")
+        text(&tools.run(GLOB, &json!({ "pattern": "src/*.ts" }))),
+        ok("src/a.ts")
     );
+    assert_eq!(
+        text(&tools.run(GLOB, &json!({ "pattern": "*.ts", "path": "web" }))),
+        ok("web/c.ts")
+    );
+    assert_eq!(
+        text(&tools.run(GLOB, &json!({ "pattern": "*.md" }))),
+        ok("No files found.")
+    );
+    assert!(tools.run(GLOB, &json!({ "pattern": "[" })).is_error);
+    assert!(
+        tools
+            .run(GLOB, &json!({ "pattern": "*", "path": "../" }))
+            .is_error
+    );
+}
+
+#[test]
+fn glob_keeps_the_first_hundred_and_says_how_many_more() {
+    let project = Project::new();
+    for i in 0..105 {
+        project.write(&format!("f{i}.txt"), "");
+    }
+    let out = project.tools().run(GLOB, &json!({ "pattern": "*.txt" }));
+    assert_eq!(out.output.lines().count(), 101);
+    assert!(out
+        .output
+        .ends_with("[5 more files not shown; narrow the pattern or path]"));
+    assert_eq!(out.meta.unwrap()["truncated"], true);
+}
+
+#[test]
+fn grep_groups_matching_lines_by_file_like_ripgrep() {
+    let project = Project::new();
+    project
+        .write("a.ts", "const x = 1;\nlet y = 2;\nconst z = 3;\n")
+        .write("b.rs", "const X: u8 = 1;\n")
+        .write(".hidden/c.ts", "const hidden = 1;\n")
+        .write("dist/d.ts", "const ignored = 1;\n")
+        .write(".gitignore", "dist/\n");
+    fs::write(project.path().join("bin.dat"), b"const\0binary").unwrap();
+
+    let out = project.tools().run(GREP, &json!({ "pattern": "^const" }));
+    let mut groups: Vec<&str> = out.output.split("\n\n").collect();
+    groups.sort();
+    assert_eq!(
+        groups,
+        [
+            "a.ts\n1: const x = 1;\n3: const z = 3;",
+            "b.rs\n1: const X: u8 = 1;"
+        ]
+    );
+    let meta = out.meta.unwrap();
+    assert_eq!(
+        (meta["files"].clone(), meta["matches"].clone()),
+        (json!(2), json!(3))
+    );
+}
+
+#[test]
+fn grep_filters_by_include_and_path() {
+    let project = Project::new();
+    project
+        .write("a.ts", "hit\n")
+        .write("b.js", "hit\n")
+        .write("web/c.ts", "hit\n");
+    let tools = project.tools();
+    let only_ts = tools.run(GREP, &json!({ "pattern": "hit", "include": "*.ts" }));
+    assert!(!only_ts.output.contains("b.js"), "{}", only_ts.output);
+    assert!(only_ts.output.contains("web/c.ts"), "{}", only_ts.output);
+    let in_web = tools.run(GREP, &json!({ "pattern": "hit", "path": "web" }));
+    assert_eq!(text(&in_web), ok("web/c.ts\n1: hit"));
+    let one_file = tools.run(GREP, &json!({ "pattern": "hit", "path": "b.js" }));
+    assert_eq!(text(&one_file), ok("b.js\n1: hit"));
+    assert_eq!(
+        text(&tools.run(GREP, &json!({ "pattern": "miss" }))),
+        ok("No matches.")
+    );
+    let bad = tools.run(GREP, &json!({ "pattern": "(" }));
+    assert!(bad.is_error);
+    assert!(
+        bad.output.contains("invalid regular expression"),
+        "{}",
+        bad.output
+    );
+}
+
+#[test]
+fn grep_stops_at_250_matches_and_says_so() {
+    let project = Project::new();
+    project.write("a.txt", &"hit\n".repeat(300));
+    let out = project.tools().run(GREP, &json!({ "pattern": "hit" }));
+    assert!(out
+        .output
+        .ends_with("[Stopped at 250 matches; narrow the pattern, path or include]"));
+    let meta = out.meta.unwrap();
+    assert_eq!(
+        (meta["matches"].clone(), meta["truncated"].clone()),
+        (json!(250), json!(true))
+    );
+}
+
+#[test]
+fn html_turns_into_readable_text() {
+    let html = "<html><head><style>p{}</style><script>var x = '<p>';</script></head>\
+                <body><h1>Title &amp; more</h1><!-- note --><p>One&nbsp;two</p>\
+                <ul><li>a</li><li>b &lt;c&gt;</li></ul><p>Unclosed <b";
+    assert_eq!(
+        html_to_text(html),
+        "Title & more\n\nOne two\n\na\nb <c>\n\nUnclosed"
+    );
+    assert_eq!(html_to_text("ünïcode <br> ok"), "ünïcode\nok");
 }
 
 #[test]

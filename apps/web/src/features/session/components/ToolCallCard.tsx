@@ -2,7 +2,9 @@ import {
   FilePlusIcon,
   FileTextIcon,
   FolderOpenIcon,
+  GlobeIcon,
   PencilIcon,
+  SearchIcon,
   SquareTerminalIcon,
   WrenchIcon,
 } from "lucide-react";
@@ -79,6 +81,8 @@ const TOOLS: Partial<Record<ToolKind, { label: string; icon: typeof FileTextIcon
   write: { label: "Write", icon: FilePlusIcon },
   edit: { label: "Edit", icon: PencilIcon },
   list: { label: "List", icon: FolderOpenIcon },
+  search: { label: "Search", icon: SearchIcon },
+  fetch: { label: "Fetch", icon: GlobeIcon },
   bash: { label: "Shell", icon: SquareTerminalIcon },
 };
 
@@ -246,7 +250,11 @@ export default function ToolCallCard({
   const path =
     kind === "bash"
       ? (stringArg(tool.args, "description") ?? stringArg(tool.args, "command"))
-      : (pathArg(tool.args) ?? (kind === "list" ? "." : null));
+      : kind === "search"
+        ? stringArg(tool.args, "pattern")
+        : kind === "fetch"
+          ? stringArg(tool.args, "url")
+          : (pathArg(tool.args) ?? (kind === "list" ? "." : null));
 
   return (
     <article

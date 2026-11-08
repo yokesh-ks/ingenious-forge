@@ -337,7 +337,7 @@ async fn a_message_during_tool_use_joins_the_tool_results() {
     let (agent, model, mut rx) = setup_in(
         FakeModel::replying(vec![
             vec![slow("Listing"), {
-                let (_, call) = tool_use("t1", "list_directory", json!({}));
+                let (_, call) = tool_use("t1", "glob", json!({ "pattern": "*" }));
                 (Duration::from_millis(200), call)
             }],
             vec![text("ok")],
@@ -357,7 +357,7 @@ async fn a_message_during_tool_use_joins_the_tool_results() {
         vec![
             ContentBlock::ToolResult {
                 tool_use_id: "t1".into(),
-                content: "(empty directory)".into(),
+                content: "No files found.".into(),
                 is_error: false,
             },
             ContentBlock::Text {
@@ -403,7 +403,7 @@ async fn interrupt_stops_a_streaming_reply_and_frees_the_session() {
 async fn interrupt_between_steps_leaves_every_tool_call_answered() {
     let (agent, model, mut rx) = setup_in(
         FakeModel::replying(vec![
-            vec![tool_use("t1", "list_directory", json!({}))],
+            vec![tool_use("t1", "glob", json!({ "pattern": "*" }))],
             vec![slow("never")],
             vec![text("fresh")],
         ]),
@@ -586,7 +586,10 @@ async fn every_request_offers_the_file_tools_and_the_shell() {
         .iter()
         .map(|t| t.name)
         .collect();
-    assert_eq!(names, ["read", "write", "edit", "list_directory", "bash"]);
+    assert_eq!(
+        names,
+        ["read", "write", "edit", "glob", "grep", "web_fetch", "bash"]
+    );
 }
 
 #[tokio::test]
@@ -599,7 +602,7 @@ async fn edit_and_list_tools_act_on_the_project() {
                 "edit",
                 json!({ "file_path": "a.txt", "old_string": "old", "new_string": "new" }),
             )],
-            vec![tool_use("l1", "list_directory", json!({}))],
+            vec![tool_use("l1", "glob", json!({ "pattern": "*" }))],
             vec![text("ok")],
         ]),
         root.clone(),
@@ -653,7 +656,13 @@ async fn a_failing_tool_is_reported_to_the_model_and_the_turn_continues() {
 #[tokio::test]
 async fn a_turn_that_never_stops_calling_tools_is_ended() {
     let replies = (0..60)
-        .map(|i| vec![tool_use(&format!("t{i}"), "list_directory", json!({}))])
+        .map(|i| {
+            vec![tool_use(
+                &format!("t{i}"),
+                "glob",
+                json!({ "pattern": "*" }),
+            )]
+        })
         .collect();
     let (agent, model, mut rx) = setup_in(FakeModel::replying(replies), project(&[]));
 
@@ -933,9 +942,9 @@ async fn sessions_that_were_not_opened_are_refused() {
 #[tokio::test]
 async fn each_session_works_in_its_own_project_folder() {
     let (agent, _, mut rx) = setup(FakeModel::replying(vec![
-        vec![tool_use("l1", "list_directory", json!({}))],
+        vec![tool_use("l1", "glob", json!({ "pattern": "*" }))],
         vec![text("ok")],
-        vec![tool_use("l2", "list_directory", json!({}))],
+        vec![tool_use("l2", "glob", json!({ "pattern": "*" }))],
         vec![text("ok")],
     ]));
     agent.open_session("a", ToolBox::new(project(&[("in-a.txt", "")])));
@@ -1219,7 +1228,7 @@ fn end_code(events: &[SessionEvent]) -> Option<String> {
 async fn turns_and_steps_are_numbered_and_bounded() {
     let (agent, _, mut rx) = setup_in(
         FakeModel::replying(vec![
-            vec![tool_use("t1", "list_directory", json!({}))],
+            vec![tool_use("t1", "glob", json!({ "pattern": "*" }))],
             vec![text("done")],
             vec![text("again")],
         ]),
@@ -1284,7 +1293,13 @@ async fn a_model_failure_ends_its_step_and_the_turn_with_a_provider_code() {
 #[tokio::test]
 async fn the_step_limit_ends_the_turn_with_its_own_code() {
     let replies = (0..60)
-        .map(|i| vec![tool_use(&format!("t{i}"), "list_directory", json!({}))])
+        .map(|i| {
+            vec![tool_use(
+                &format!("t{i}"),
+                "glob",
+                json!({ "pattern": "*" }),
+            )]
+        })
         .collect();
     let (agent, _, mut rx) = setup_in(FakeModel::replying(replies), project(&[]));
 

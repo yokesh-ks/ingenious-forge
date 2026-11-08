@@ -1113,6 +1113,11 @@ impl Agent {
                 .run_shell(session_id, tools, call_id, &input, cancelled, started_at)
                 .await;
         }
+        if name == tools::WEB_FETCH {
+            return self
+                .run_web_fetch(session_id, call_id, &input, started_at)
+                .await;
+        }
         // A changed file is diffed against the file as it was before the
         // agent's first change to it in this session.
         let edited =
@@ -1349,6 +1354,48 @@ impl Agent {
         })
     }
 
+    /// Fetches a web page as text, when the session's sandbox allows the
+    /// network (PRD §6.1 Sandbox, ADR 0014).
+    async fn run_web_fetch(
+        &self,
+        session_id: &str,
+        call_id: String,
+        input: &serde_json::Value,
+        started_at: u64,
+    ) -> ContentBlock {
+        let network = self.policy(session_id).is_some_and(|policy| policy.network);
+        let (outcome, meta) = match input["url"].as_str() {
+            None => (
+                tools::ToolOutcome::error("missing string argument: url"),
+                None,
+            ),
+            Some(_) if !network => (
+                tools::ToolOutcome::error(
+                    "Network access is off for this session, so the page was not fetched. \
+                     The user can allow network access in the session's sandbox settings.",
+                ),
+                None,
+            ),
+            Some(url) => fetch_text(url).await,
+        };
+        let ended_at = services::log::now_ms();
+        self.events.publish(SessionEvent::ToolResult {
+            session_id: session_id.to_string(),
+            call_id: call_id.clone(),
+            output: outcome.output.clone(),
+            is_error: outcome.is_error,
+            exit_code: None,
+            meta,
+            started_at,
+            ended_at,
+        });
+        ContentBlock::ToolResult {
+            tool_use_id: call_id,
+            content: outcome.output,
+            is_error: outcome.is_error,
+        }
+    }
+
     /// Runs a shell command, publishing each output line as it arrives.
     async fn run_shell(
         &self,
@@ -1413,6 +1460,110 @@ impl Agent {
     }
 }
 
+/// The most a fetched page may weigh, and the most text kept from it.
+const MAX_FETCH_BYTES: usize = 5_000_000;
+const MAX_FETCH_CHARS: usize = 100_000;
+
+/// Fetches `url` and returns its text and details, or why it failed.
+async fn fetch_text(url: &str) -> (tools::ToolOutcome, Option<serde_json::Value>) {
+    let parsed = match reqwest::Url::parse(url) {
+        Ok(parsed) if matches!(parsed.scheme(), "http" | "https") => parsed,
+        Ok(_) => {
+            return (
+                tools::ToolOutcome::error("only http and https URLs can be fetched"),
+                None,
+            )
+        }
+        Err(err) => {
+            return (
+                tools::ToolOutcome::error(format!("invalid URL: {err}")),
+                None,
+            )
+        }
+    };
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .user_agent("ingenious-forge")
+        .build()
+    {
+        Ok(client) => client,
+        Err(err) => {
+            return (
+                tools::ToolOutcome::error(format!("cannot fetch: {err}")),
+                None,
+            )
+        }
+    };
+    let mut response = match client.get(parsed.clone()).send().await {
+        Ok(response) => response,
+        Err(err) => {
+            return (
+                tools::ToolOutcome::error(format!("cannot fetch {url}: {err}")),
+                None,
+            )
+        }
+    };
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let mut body = Vec::new();
+    let mut cut = false;
+    loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) => {
+                body.extend_from_slice(&chunk);
+                if body.len() > MAX_FETCH_BYTES {
+                    body.truncate(MAX_FETCH_BYTES);
+                    cut = true;
+                    break;
+                }
+            }
+            Ok(None) => break,
+            Err(err) => {
+                return (
+                    tools::ToolOutcome::error(format!("cannot read {url}: {err}")),
+                    None,
+                )
+            }
+        }
+    }
+    let raw = String::from_utf8_lossy(&body);
+    let mut text = if content_type.contains("html") || raw.trim_start().starts_with('<') {
+        tools::html_to_text(&raw)
+    } else {
+        raw.into_owned()
+    };
+    if text.chars().count() > MAX_FETCH_CHARS {
+        text = text.chars().take(MAX_FETCH_CHARS).collect();
+        cut = true;
+    }
+    if cut {
+        text.push_str("\n\n[The page was longer; this is its beginning.]");
+    }
+    let meta = serde_json::json!({
+        "url": parsed.as_str(),
+        "status": status.as_u16(),
+        "bytes": body.len(),
+        "content_type": content_type,
+    });
+    if !status.is_success() {
+        let outcome = tools::ToolOutcome::error(format!("HTTP {status}\n\n{text}"));
+        return (outcome, Some(meta));
+    }
+    (
+        tools::ToolOutcome {
+            output: text,
+            is_error: false,
+            meta: Some(meta.clone()),
+        },
+        Some(meta),
+    )
+}
+
 /// The path a tool call works on, and whether it is a folder, for tools
 /// whose folder's instructions apply.
 fn instruction_scope(name: &str, input: &serde_json::Value) -> Option<(String, bool)> {
@@ -1420,7 +1571,9 @@ fn instruction_scope(name: &str, input: &serde_json::Value) -> Option<(String, b
         tools::READ | tools::EDIT | tools::WRITE => {
             input["file_path"].as_str().map(|p| (p.to_string(), false))
         }
-        tools::LIST_DIRECTORY => Some((input["path"].as_str().unwrap_or(".").to_string(), true)),
+        tools::GLOB | tools::GREP => {
+            Some((input["path"].as_str().unwrap_or(".").to_string(), true))
+        }
         _ => None,
     }
 }
