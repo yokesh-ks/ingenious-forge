@@ -519,6 +519,9 @@ impl ToolBox {
             "created": plan.original.is_none(),
             "additions": change.additions,
             "deletions": change.deletions,
+            // This call's own change, for its card; `FileChanged` carries
+            // the change since the session's first edit.
+            "diff": change.diff,
         });
         Ok((
             format!(
