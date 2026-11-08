@@ -76,6 +76,47 @@ describe("sessionReducer", () => {
     });
   });
 
+  it("counts a turn's steps and adds up their usage", () => {
+    const step = (usage: Extract<SessionEvent, { type: "step_ended" }>["usage"]) =>
+      ({
+        type: "step_ended",
+        session_id: S,
+        turn: 1,
+        step: 1,
+        usage,
+        first_token_ms: null,
+        generation_ms: null,
+      }) as SessionEvent;
+    const state = apply(
+      sent("go"),
+      { type: "turn_started", session_id: S, turn: 1 },
+      step({ input: 10, output: 5, cache_read: 100, cache_write: 0 }),
+      step(null),
+      step({ input: 1, output: 2, cache_read: 3, cache_write: 4 }),
+    );
+    expect(state.turns[0]).toMatchObject({
+      steps: 3,
+      usage: { input: 11, output: 7, cache_read: 103, cache_write: 4 },
+    });
+  });
+
+  it("keeps the time a user message was logged", () => {
+    const state = apply(initialSessionState, {
+      type: "user_message",
+      session_id: S,
+      text: "hi",
+      source: "human",
+      seq: 1,
+      ts: 1_700_000_000_000,
+    } as unknown as SessionEvent);
+    expect(state.messages[0]).toEqual({
+      id: "m0",
+      role: "user",
+      text: "hi",
+      at: 1_700_000_000_000,
+    });
+  });
+
   it("records a failed turn's code and message", () => {
     const state = apply(
       sent("go"),
@@ -115,6 +156,8 @@ describe("sessionReducer", () => {
         endedAt: 5_000,
         status: "stopped",
         failure: null,
+        steps: 0,
+        usage: null,
       },
     ]);
   });

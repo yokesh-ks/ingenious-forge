@@ -1,3 +1,4 @@
+import { CheckIcon, CopyIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ApprovalDecision, QuestionAnswer } from "@/api/types";
 import { Bubble, BubbleContent } from "@/components/ai-elements/bubble";
@@ -10,10 +11,12 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ai-elements/message-scroller";
+import { useCopy } from "@/components/markdown/code-tools";
 import Markdown from "@/components/markdown/Markdown";
 import { Button } from "@/components/ui/button";
 import FailureRow from "@/features/chat/components/FailureRow";
 import ProcessGroup from "@/features/chat/components/ProcessGroup";
+import ReplyFooter from "@/features/chat/components/ReplyFooter";
 import TurnControl, { RunningStatus } from "@/features/chat/components/TurnControl";
 import {
   buildChat,
@@ -21,6 +24,7 @@ import {
   type ChatNode,
   type ChatTurn,
 } from "@/features/chat/model/build-chat";
+import { formatClock } from "@/features/chat/model/format";
 import type {
   SessionItem,
   SessionMessage,
@@ -86,17 +90,32 @@ interface Handlers {
   onAnswerQuestion?: (callId: string, answers: QuestionAnswer[]) => void;
 }
 
+/** A user message: its bubble, then its time and Copy under it. */
 function UserMessage({ item }: { item: SessionMessage }) {
+  const { copied, copy } = useCopy(item.text);
   return (
-    <Message align="end">
-      <MessageContent>
-        <Bubble align="end" variant="muted">
-          <BubbleContent className="whitespace-pre-wrap" data-testid="message-text">
-            {item.text}
-          </BubbleContent>
-        </Bubble>
-      </MessageContent>
-    </Message>
+    <div className="flex flex-col items-end gap-1">
+      <Message align="end">
+        <MessageContent>
+          <Bubble align="end" variant="muted">
+            <BubbleContent className="whitespace-pre-wrap" data-testid="message-text">
+              {item.text}
+            </BubbleContent>
+          </Bubble>
+        </MessageContent>
+      </Message>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        {item.at !== undefined && <span className="tabular-nums">{formatClock(item.at)}</span>}
+        <button
+          type="button"
+          aria-label={copied ? "Copied" : "Copy message"}
+          onClick={copy}
+          className="inline-flex size-6 items-center justify-center rounded-lg hover:bg-muted hover:text-foreground"
+        >
+          {copied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -144,6 +163,10 @@ function Turn({
   ...handlers
 }: { turn: ChatTurn; folded: boolean; onToggle: (turn: number) => void } & Handlers) {
   const live = turn.status === "running";
+  // The last reply of a finished turn carries the turn's footer.
+  const lastReply = live
+    ? undefined
+    : [...turn.nodes].reverse().find((n) => n.kind === "reply")?.item;
   return (
     <div className="flex flex-col gap-3">
       {!live && (
@@ -156,7 +179,14 @@ function Turn({
           case "group":
             return folded ? null : <Group key={node.id} group={node} live={live} {...handlers} />;
           case "reply":
-            return <Reply key={node.item.id} item={node.item} />;
+            return node.item === lastReply ? (
+              <div key={node.item.id} className="flex flex-col gap-1">
+                <Reply item={node.item} />
+                <ReplyFooter text={node.item.text} usage={turn.usage} at={turn.endedAt} />
+              </div>
+            ) : (
+              <Reply key={node.item.id} item={node.item} />
+            );
           case "steer":
             return <UserMessage key={node.item.id} item={node.item} />;
           case "notice":

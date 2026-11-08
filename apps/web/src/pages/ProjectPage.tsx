@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { ApprovalMode, SessionModel } from "@/api/types";
+import SessionMetrics from "@/features/chat/components/SessionMetrics";
 import GitBadge from "@/features/git/components/GitBadge";
 import { useGitStatus } from "@/features/git/hooks/use-git-status";
 import ApprovalModePicker from "@/features/sandbox/components/ApprovalModePicker";
@@ -14,7 +15,15 @@ import SessionRightSidebar from "@/features/session/components/SessionRightSideb
 import SessionWorkspace from "@/features/session/components/SessionWorkspace";
 import { useProjectSessions } from "@/features/session/hooks/use-project-sessions";
 import { useSession } from "@/features/session/hooks/use-session";
+import type { TurnRecord } from "@/features/session/session-reducer";
 import { navigate } from "@/lib/router";
+
+/** Changes whenever a step settles or a turn starts or ends, so the
+ * metrics reload then and not on every streamed chunk. */
+function metricsKey(turns: TurnRecord[]): string {
+  const last = turns[turns.length - 1];
+  return last ? `${turns.length}:${last.status}:${last.steps}` : "0";
+}
 
 interface ProjectPageProps {
   projectId: string;
@@ -73,6 +82,7 @@ function SessionPane({
           hasOlder={hasOlder}
           loadingOlder={loadingOlder}
           onLoadOlder={loadOlder}
+          footer={<SessionMetrics sessionId={sessionId} refreshKey={metricsKey(state.turns)} />}
           composerBar={
             <div className="flex items-center justify-between gap-2">
               <ProjectPicker projectId={projectId} />

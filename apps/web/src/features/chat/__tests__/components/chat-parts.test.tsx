@@ -44,6 +44,8 @@ function turn(overrides: Partial<ChatTurn>): ChatTurn {
     collapsible: true,
     nodes: [],
     failure: null,
+    endedAt: null,
+    usage: null,
     ...overrides,
   };
 }
