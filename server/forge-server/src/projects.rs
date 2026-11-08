@@ -57,6 +57,7 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route("/sessions/{id}/events", get(session_events))
         .route("/sessions/{id}/changes", get(session_changes))
+        .route("/sessions/{id}/stats", get(session_stats))
         .route("/sessions/{id}/approval-mode", put(set_approval_mode))
         .route("/sessions/{id}/model", put(set_session_model))
         .route("/sessions/{id}/sandbox", get(session_sandbox))
@@ -604,14 +605,9 @@ async fn session_events(
     Ok(Json(events))
 }
 
-/// The files the agent changed in a session, each with its latest diff,
-/// folded from the whole log, so a browser that loaded only the session's
-/// tail still lists every change.
-async fn session_changes(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<String>,
-) -> ApiResult<Vec<api_types::FileChange>> {
-    let known = db::get_session(&state.db, &id)
+/// Every event a known session has logged, oldest first.
+async fn whole_log(state: &AppState, id: &str) -> Result<Vec<SessionEnvelope>, ApiFailure> {
+    let known = db::get_session(&state.db, id)
         .await
         .map_err(ProjectError::from)?
         .is_some();
@@ -622,12 +618,33 @@ async fn session_changes(
         ));
     }
     let Some(log) = state.events.log().cloned() else {
-        return Ok(Json(Vec::new()));
+        return Ok(Vec::new());
     };
-    let events = tokio::task::spawn_blocking(move || log.events_after(&id, 0))
+    let id = id.to_string();
+    tokio::task::spawn_blocking(move || log.events_after(&id, 0))
         .await
         .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+/// A session's totals for the composer metrics and Statistics view,
+/// folded from its whole log, so paging the browser's view changes none.
+async fn session_stats(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<api_types::SessionStats> {
+    let events = whole_log(&state, &id).await?;
+    Ok(Json(services::stats::fold(events.iter().map(|e| &e.event))))
+}
+
+/// The files the agent changed in a session, each with its latest diff,
+/// folded from the whole log, so a browser that loaded only the session's
+/// tail still lists every change.
+async fn session_changes(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<Vec<api_types::FileChange>> {
+    let events = whole_log(&state, &id).await?;
     let mut files: Vec<api_types::FileChange> = Vec::new();
     for envelope in events {
         match envelope.event {
@@ -849,6 +866,7 @@ mod tests {
                     } else {
                         ReasoningEffort::ALL.to_vec()
                     },
+                    context_window: None,
                 })
                 .collect()
         }
@@ -1949,6 +1967,42 @@ mod tests {
             json!([{ "path": "a.txt", "diff": "+two", "additions": 1, "deletions": 0 }])
         );
         let res = reqwest::get(format!("{api}/sessions/nope/changes"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn stats_total_the_whole_log() {
+        let (api, state) = start().await;
+        let (_, sessions) = project_with_sessions(&api, 1).await;
+        let id = sessions[0]["id"].as_str().unwrap();
+        state.events.publish(SessionEvent::TurnStarted {
+            session_id: id.into(),
+            turn: 1,
+        });
+        state.events.publish(SessionEvent::StepEnded {
+            session_id: id.into(),
+            turn: 1,
+            step: 1,
+            usage: Some(api_types::Usage {
+                input: 10,
+                output: 20,
+                cache_read: 30,
+                cache_write: 0,
+            }),
+            first_token_ms: Some(100),
+            generation_ms: Some(400),
+        });
+
+        let (status, stats) = get_json(&format!("{api}/sessions/{id}/stats")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(stats["turns"], 1);
+        assert_eq!(stats["steps"], 1);
+        assert_eq!(stats["usage"]["cache_read"], 30);
+        assert_eq!(stats["decode_tokens"], 20);
+        assert_eq!(stats["last_context_tokens"], 40);
+        let res = reqwest::get(format!("{api}/sessions/nope/stats"))
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::NOT_FOUND);

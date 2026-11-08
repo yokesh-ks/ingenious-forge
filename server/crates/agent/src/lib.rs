@@ -275,6 +275,17 @@ impl Agent {
         }
     }
 
+    /// How many tokens `model` of `provider` holds in its context, when its
+    /// provider says.
+    fn context_window(&self, provider: &str, model: &str) -> Option<u64> {
+        self.providers
+            .get(provider)?
+            .models()
+            .into_iter()
+            .find(|m| m.id == model)?
+            .context_window
+    }
+
     pub fn providers(&self) -> &Providers {
         &self.providers
     }
@@ -535,8 +546,7 @@ impl Agent {
                     session_id: session_id.to_string(),
                     provider: shape.provider.clone(),
                     model: shape.model.clone(),
-                    // The model catalog does not know context windows yet.
-                    context_window: None,
+                    context_window: self.context_window(&shape.provider, &shape.model),
                 });
                 session.logged_header = Some(shape);
             }

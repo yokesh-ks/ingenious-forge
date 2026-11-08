@@ -56,6 +56,8 @@ impl ModelProvider for EchoProvider {
                 id: m.to_string(),
                 name: m.to_uppercase(),
                 efforts: api_types::ReasoningEffort::ALL.to_vec(),
+                // Model "x" says how long its context is; the others don't.
+                context_window: (*m == "x").then_some(128_000),
             })
             .collect()
     }
@@ -468,7 +470,7 @@ async fn request_headers_are_logged_first_and_after_a_model_change_only() {
         .unwrap();
     assert!(matches!(
         &first[at + 1],
-        SessionEvent::RequestContext { provider, model, context_window: None, .. }
+        SessionEvent::RequestContext { provider, model, context_window: Some(128_000), .. }
             if provider == "a" && model == "x"
     ));
     assert!(headers(&second).is_empty());

@@ -333,6 +333,7 @@ fn picks() -> Vec<api_types::ProviderModel> {
     vec![api_types::ProviderModel {
         id: "gw-1".into(),
         name: "Gateway 1".into(),
+        context_window: None,
     }]
 }
 
@@ -452,8 +453,8 @@ async fn a_fetched_model_id_drops_the_models_prefix() {
         "/v1/models",
         axum::routing::get(|| async {
             axum::Json(serde_json::json!({"data": [
-                {"id": "models/gemini-x", "display_name": "Gemini X"},
-                {"id": "models/gemini-y"},
+                {"id": "models/gemini-x", "display_name": "Gemini X", "inputTokenLimit": 1048576},
+                {"id": "models/gemini-y", "context_length": 131072},
                 {"id": "vendor/models/z"},
             ]}))
         }),
@@ -481,4 +482,7 @@ async fn a_fetched_model_id_drops_the_models_prefix() {
             ("vendor/models/z", "vendor/models/z"),
         ]
     );
+    // The context window, when the list says it.
+    let windows: Vec<_> = models.iter().map(|m| m.context_window).collect();
+    assert_eq!(windows, [Some(1_048_576), Some(131_072), None]);
 }

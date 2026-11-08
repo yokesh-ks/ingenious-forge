@@ -32,6 +32,8 @@ pub struct ModelInfo {
     pub name: String,
     /// The efforts this model accepts; empty when it has no effort setting.
     pub efforts: Vec<ReasoningEffort>,
+    /// How many tokens its context holds; `None` when unknown.
+    pub context_window: Option<u64>,
 }
 
 impl ModelInfo {
@@ -117,6 +119,12 @@ pub fn fit_models(known: &[ModelInfo], picks: &[ProviderModel]) -> Vec<ModelInfo
                 .find(|m| m.id == pick.id)
                 .map(|m| m.efforts.clone())
                 .unwrap_or_default(),
+            context_window: pick.context_window.or_else(|| {
+                known
+                    .iter()
+                    .find(|m| m.id == pick.id)
+                    .and_then(|m| m.context_window)
+            }),
         })
         .collect()
 }
@@ -160,9 +168,14 @@ pub async fn fetch_models(request: ModelListRequest) -> Result<Vec<ProviderModel
                 .as_str()
                 .or(model["name"].as_str())
                 .unwrap_or(id);
+            // Lists name the context length differently.
+            let context_window = ["context_length", "context_window", "inputTokenLimit"]
+                .iter()
+                .find_map(|key| model[*key].as_u64());
             Some(ProviderModel {
                 id: id.to_string(),
                 name: name.to_string(),
+                context_window,
             })
         })
         .collect())
@@ -347,6 +360,7 @@ impl ModelProvider for FixedProvider {
             id: "default".into(),
             name: "Default".into(),
             efforts: ReasoningEffort::ALL.to_vec(),
+            context_window: None,
         }]
     }
     fn client(&self, _: &str) -> Arc<dyn ModelClient> {
