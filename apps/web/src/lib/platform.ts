@@ -12,3 +12,8 @@ export function shortcutLabel(modifier: "alt" | "shift", key: string) {
   if (isMac()) return `${modifier === "alt" ? "⌥" : "⇧"}⌘${key}`;
   return `Ctrl+${modifier === "alt" ? "Alt" : "Shift"}+${key}`;
 }
+
+/** A Control-key shortcut, written the way this platform writes it. */
+export function ctrlShortcutLabel(key: string) {
+  return isMac() ? `⌃${key}` : `Ctrl+${key}`;
+}

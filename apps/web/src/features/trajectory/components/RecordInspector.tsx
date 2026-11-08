@@ -1,6 +1,7 @@
 import { ChevronRightIcon, XIcon } from "lucide-react";
-import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type { JsonValue, ToolSchema, Usage } from "@/api/types";
+import ResizeHandle from "@/components/layout/ResizeHandle";
 import Markdown from "@/components/markdown/Markdown";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatMs } from "@/features/stats/model/build-stats";
@@ -442,7 +443,6 @@ function heading(selection: Selection): { badge: ReactNode; subtitle: string } {
 const WIDTH_MIN = 320;
 const WIDTH_MAX = 720;
 const LEDGER_MIN = 280;
-const WIDTH_STEP = 16;
 
 const clampWidth = (width: number, split: number) =>
   Math.round(
@@ -451,71 +451,6 @@ const clampWidth = (width: number, split: number) =>
       Math.max(WIDTH_MIN, Math.min(WIDTH_MAX, split - LEDGER_MIN)),
     ),
   );
-
-/** The inspector's left edge: drag or use the arrow keys to resize,
- * double-click to reset. */
-function ResizeHandle({
-  width,
-  onWidth,
-}: {
-  width: number | null;
-  onWidth: (width: number | null) => void;
-}) {
-  const drag = useRef<{ startX: number; startWidth: number; split: number } | null>(null);
-  const handle = useRef<HTMLDivElement>(null);
-  // The width it reports: the set one, or what the default layout came to.
-  const [current, setCurrent] = useState(WIDTH_MIN);
-  useLayoutEffect(() => {
-    setCurrent(width ?? Math.round(handle.current?.parentElement?.offsetWidth ?? WIDTH_MIN));
-  }, [width]);
-  const measure = (handle: HTMLElement) => {
-    const details = handle.parentElement;
-    return {
-      width: details?.getBoundingClientRect().width ?? 0,
-      split: details?.parentElement?.getBoundingClientRect().width ?? 0,
-    };
-  };
-  return (
-    // biome-ignore lint/a11y/useSemanticElements: a focusable splitter, which <hr> cannot be
-    <div
-      role="separator"
-      aria-label="Resize event details"
-      aria-orientation="vertical"
-      aria-valuenow={current}
-      aria-valuemin={WIDTH_MIN}
-      aria-valuemax={WIDTH_MAX}
-      ref={handle}
-      tabIndex={0}
-      title="Drag to resize. Double-click to reset."
-      onDoubleClick={() => onWidth(null)}
-      onPointerDown={(e) => {
-        if (e.button !== 0) return;
-        const { width, split } = measure(e.currentTarget);
-        drag.current = { startX: e.clientX, startWidth: width, split };
-        e.currentTarget.setPointerCapture(e.pointerId);
-        e.preventDefault();
-      }}
-      onPointerMove={(e) => {
-        if (!drag.current) return;
-        const { startX, startWidth, split } = drag.current;
-        onWidth(clampWidth(startWidth + startX - e.clientX, split));
-      }}
-      onPointerUp={() => {
-        drag.current = null;
-      }}
-      onPointerCancel={() => {
-        drag.current = null;
-      }}
-      onKeyDown={(e) => {
-        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-        e.preventDefault();
-        const { width, split } = measure(e.currentTarget);
-        onWidth(clampWidth(width + (e.key === "ArrowLeft" ? WIDTH_STEP : -WIDTH_STEP), split));
-      }}
-      className="absolute inset-y-0 -left-1 z-[6] w-2 cursor-col-resize touch-none select-none"
-    />
-  );
-}
 
 /**
  * The record inspector beside the ledger: a heading, then tabs that depend
@@ -550,7 +485,14 @@ export default function RecordInspector({
       style={width === null ? undefined : { width }}
       className="relative flex min-h-0 w-[clamp(320px,38%,440px)] max-w-[calc(100%-280px)] shrink-0 flex-col border-l bg-background"
     >
-      <ResizeHandle width={width} onWidth={onWidth} />
+      <ResizeHandle
+        label="Resize event details"
+        width={width}
+        min={WIDTH_MIN}
+        max={WIDTH_MAX}
+        clamp={clampWidth}
+        onWidth={onWidth}
+      />
       <div className="flex items-center gap-2 px-3 pt-2">
         {badge}
         <span className="truncate text-xs text-muted-foreground">{subtitle}</span>

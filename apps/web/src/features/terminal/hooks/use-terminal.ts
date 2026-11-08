@@ -5,6 +5,8 @@ export type TerminalStatus = "connecting" | "open" | "exited" | "closed";
 
 interface Options {
   createSocket?: (url: string) => WebSocket;
+  /** A workspace panel tab with its own shell; none means the project's. */
+  tab?: string;
 }
 
 const defaultCreateSocket = (url: string) => new WebSocket(url);
@@ -13,9 +15,11 @@ const defaultCreateSocket = (url: string) => new WebSocket(url);
 export function terminalSocketUrl(
   location: Pick<Location, "protocol" | "host">,
   projectId: string,
+  tab?: string,
 ): string {
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${scheme}//${location.host}/api/projects/${encodeURIComponent(projectId)}/terminal`;
+  const query = tab ? `?tab=${encodeURIComponent(tab)}` : "";
+  return `${scheme}//${location.host}/api/projects/${encodeURIComponent(projectId)}/terminal${query}`;
 }
 
 /**
@@ -25,7 +29,7 @@ export function terminalSocketUrl(
 export function useTerminal(
   projectId: string,
   onOutput: (bytes: Uint8Array) => void,
-  { createSocket = defaultCreateSocket }: Options = {},
+  { createSocket = defaultCreateSocket, tab }: Options = {},
 ) {
   const [status, setStatus] = useState<TerminalStatus>("connecting");
   const [generation, setGeneration] = useState(0);
@@ -36,7 +40,7 @@ export function useTerminal(
   // biome-ignore lint/correctness/useExhaustiveDependencies: `generation` reconnects on restart
   useEffect(() => {
     setStatus("connecting");
-    const socket = createSocket(terminalSocketUrl(window.location, projectId));
+    const socket = createSocket(terminalSocketUrl(window.location, projectId, tab));
     socket.binaryType = "arraybuffer";
     socketRef.current = socket;
     let exited = false;
@@ -62,7 +66,7 @@ export function useTerminal(
       socket.close();
       socketRef.current = null;
     };
-  }, [projectId, createSocket, generation]);
+  }, [projectId, tab, createSocket, generation]);
 
   const post = useCallback((message: TerminalInput) => {
     const socket = socketRef.current;

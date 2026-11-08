@@ -74,7 +74,8 @@ impl Drop for Terminal {
     }
 }
 
-/// The terminals of every project, by project id.
+/// The terminals of every project, by project id, or `project:tab` for a
+/// workspace panel tab with its own shell.
 #[derive(Clone)]
 pub struct Terminals {
     shell: String,
@@ -123,6 +124,16 @@ impl Terminals {
     /// is attached.
     pub fn close(&self, key: &str) {
         self.open.lock().unwrap().remove(key);
+    }
+
+    /// Forgets every terminal of a project: its own and its panel tabs',
+    /// which are keyed `project:tab`.
+    pub fn close_project(&self, project: &str) {
+        let tabs = format!("{project}:");
+        self.open
+            .lock()
+            .unwrap()
+            .retain(|key, _| key != project && !key.starts_with(&tabs));
     }
 
     fn spawn(&self, cwd: &Path) -> Result<Arc<Terminal>, String> {

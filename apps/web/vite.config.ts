@@ -13,7 +13,8 @@ export default defineConfig({
   server: {
     // The Rust server owns the API and the session WebSocket in development.
     proxy: {
-      "/api": "http://127.0.0.1:3000",
+      // `ws` carries the project terminal's socket, which lives under /api.
+      "/api": { target: "http://127.0.0.1:3000", ws: true },
       "/ws": { target: "ws://127.0.0.1:3000", ws: true },
     },
   },

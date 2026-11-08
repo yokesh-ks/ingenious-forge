@@ -59,6 +59,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       response.status,
     );
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -105,6 +106,11 @@ export const api = {
     post<Session>(
       `/api/projects/${encodeURIComponent(projectId)}/sessions`,
       model ? { model } : {},
+    ),
+  closeTerminal: (projectId: string, tab: string) =>
+    request<void>(
+      `/api/projects/${encodeURIComponent(projectId)}/terminal?${new URLSearchParams({ tab })}`,
+      { method: "DELETE" },
     ),
   projectFiles: (projectId: string) =>
     request<FileList>(`/api/projects/${encodeURIComponent(projectId)}/files`),

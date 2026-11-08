@@ -11,7 +11,7 @@ import ProjectPage from "../ProjectPage";
 beforeEach(() => {
   FakeSocket.reset();
   vi.stubGlobal("WebSocket", FakeSocket);
-  // A wide screen, where the workspace panel starts open.
+  // A wide screen.
   vi.spyOn(window, "matchMedia").mockReturnValue({ matches: true } as MediaQueryList);
   window.history.replaceState(null, "", "/projects/p1");
 });
@@ -176,6 +176,8 @@ describe("ProjectPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Edited files" }));
     await userEvent.click(screen.getByRole("button", { name: "Edit · a.md" }));
     expect(screen.getByTestId("tool-output")).toHaveTextContent("Edited a.md");
+    await userEvent.click(screen.getByRole("button", { name: "Open right sidebar" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Code review and changes/ }));
     expect(
       screen.getAllByRole("button", { name: /a\.md/ }).some((b) => b.textContent?.includes("+1−1")),
     ).toBe(true);
