@@ -465,6 +465,16 @@ pub enum ClientMessage {
     },
 }
 
+/// A file the agent changed in a session and its diff from before the
+/// first change (`GET /api/sessions/{id}/changes`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FileChange {
+    pub path: String,
+    pub diff: String,
+    pub additions: u32,
+    pub deletions: u32,
+}
+
 /// One question the agent asks with `ask_user_question`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct Question {
@@ -997,6 +1007,7 @@ pub fn typescript_bindings() -> String {
         HeaderReason::decl(&cfg),
         ModelRef::decl(&cfg),
         TitleSource::decl(&cfg),
+        FileChange::decl(&cfg),
         Question::decl(&cfg),
         QuestionOption::decl(&cfg),
         QuestionAnswer::decl(&cfg),

@@ -56,6 +56,7 @@ pub fn router() -> Router<Arc<AppState>> {
             get(list_sessions).post(create_session),
         )
         .route("/sessions/{id}/events", get(session_events))
+        .route("/sessions/{id}/changes", get(session_changes))
         .route("/sessions/{id}/approval-mode", put(set_approval_mode))
         .route("/sessions/{id}/model", put(set_session_model))
         .route("/sessions/{id}/sandbox", get(session_sandbox))
@@ -601,6 +602,65 @@ async fn session_events(
     .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(events))
+}
+
+/// The files the agent changed in a session, each with its latest diff,
+/// folded from the whole log, so a browser that loaded only the session's
+/// tail still lists every change.
+async fn session_changes(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<Vec<api_types::FileChange>> {
+    let known = db::get_session(&state.db, &id)
+        .await
+        .map_err(ProjectError::from)?
+        .is_some();
+    if !known {
+        return Err(ApiFailure(
+            StatusCode::NOT_FOUND,
+            "session not found".into(),
+        ));
+    }
+    let Some(log) = state.events.log().cloned() else {
+        return Ok(Json(Vec::new()));
+    };
+    let events = tokio::task::spawn_blocking(move || log.events_after(&id, 0))
+        .await
+        .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| ApiFailure(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let mut files: Vec<api_types::FileChange> = Vec::new();
+    for envelope in events {
+        match envelope.event {
+            SessionEvent::FileChanged {
+                path,
+                diff,
+                additions,
+                deletions,
+                ..
+            } => {
+                let at = files.iter().position(|f| f.path == path);
+                if diff.is_empty() {
+                    if let Some(at) = at {
+                        files.remove(at);
+                    }
+                    continue;
+                }
+                let change = api_types::FileChange {
+                    path,
+                    diff,
+                    additions,
+                    deletions,
+                };
+                match at {
+                    Some(at) => files[at] = change,
+                    None => files.push(change),
+                }
+            }
+            SessionEvent::ChangesReverted { .. } => files.clear(),
+            _ => {}
+        }
+    }
+    Ok(Json(files))
 }
 
 /// Shows the operating system's folder dialog on the user's machine and
@@ -1857,6 +1917,41 @@ mod tests {
         assert_eq!(seqs(&older), [3, 4]);
         let (_, oldest) = get_json(&format!("{api}/sessions/{id}/events?before=2&limit=2")).await;
         assert_eq!(seqs(&oldest), [1]);
+    }
+
+    #[tokio::test]
+    async fn changes_list_each_changed_file_as_it_now_stands() {
+        let (api, state) = start().await;
+        let (_, sessions) = project_with_sessions(&api, 1).await;
+        let id = sessions[0]["id"].as_str().unwrap();
+        let changed = |path: &str, diff: &str| SessionEvent::FileChanged {
+            session_id: id.into(),
+            path: path.into(),
+            diff: diff.into(),
+            additions: 1,
+            deletions: 0,
+        };
+        state.events.publish(changed("old.txt", "+gone"));
+        state.events.publish(SessionEvent::ChangesReverted {
+            session_id: id.into(),
+            paths: vec!["old.txt".into()],
+        });
+        state.events.publish(changed("a.txt", "+one"));
+        state.events.publish(changed("b.txt", "+b"));
+        state.events.publish(changed("a.txt", "+two"));
+        // An edit back to the original leaves nothing to review.
+        state.events.publish(changed("b.txt", ""));
+
+        let (status, files) = get_json(&format!("{api}/sessions/{id}/changes")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            files,
+            json!([{ "path": "a.txt", "diff": "+two", "additions": 1, "deletions": 0 }])
+        );
+        let res = reqwest::get(format!("{api}/sessions/nope/changes"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

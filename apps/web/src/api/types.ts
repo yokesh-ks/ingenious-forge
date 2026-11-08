@@ -250,6 +250,8 @@ export type ModelRef = { provider: string, model: string, };
 
 export type TitleSource = "first_message" | "user";
 
+export type FileChange = { path: string, diff: string, additions: number, deletions: number, };
+
 export type Question = { 
 /**
  * Stable id, echoed in the answer.
