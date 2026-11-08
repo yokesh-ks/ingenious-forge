@@ -180,7 +180,7 @@ Approval requests appear as cards in the session with the exact command or edit,
 #### Workspace panel — P0
 A panel next to the chat, opened and closed from the session header. It starts collapsed. Opened, it shows a Start page with entries for Workspace files, Code review and changes, New terminal and Session log. Choosing an entry opens it as a tab in the Start page's place, each tab has its own close button, a new-tab button brings the Start page back, and closing the last tab returns to it. The panel can be split into side-by-side panes, made fullscreen, or collapsed.
 - **File tab:** the file's full path, with a choice of how to show it (rendered Markdown, code with line numbers, or plain text), a reload button, an action to open it in the user's editor or another installed app or show it in the file manager, and a toggle for the project file tree beside it. Opening a file that already has a tab selects that tab.
-- **Workspace files:** the project file tree with search; choosing a file opens its file tab.
+- **Workspace files:** the project's folder and its file tree, listed one folder at a time; choosing a file opens its file tab.
 - **Changes:** the changed files and their diffs (see below).
 - **Terminal:** an interactive terminal in the project folder, choosing among the installed shells.
 - **Session log:** the session's recorded events, as a raw list or grouped by message.

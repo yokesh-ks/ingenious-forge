@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { ApprovalMode, SessionModel } from "@/api/types";
 import SessionMetrics from "@/features/chat/components/SessionMetrics";
@@ -18,7 +18,10 @@ import { useSession } from "@/features/session/hooks/use-session";
 import type { TurnRecord } from "@/features/session/session-reducer";
 import StatisticsView from "@/features/stats/components/StatisticsView";
 import TrajectoryView from "@/features/trajectory/components/TrajectoryView";
-import WorkspacePanel from "@/features/workspace-panel/components/WorkspacePanel";
+import WorkspacePanel, {
+  type WorkspacePanelControl,
+} from "@/features/workspace-panel/components/WorkspacePanel";
+import { type FileTarget, OpenFileContext } from "@/lib/open-file";
 import { navigate } from "@/lib/router";
 
 /** Changes whenever a step settles or a turn starts or ends, so the
@@ -72,76 +75,81 @@ function SessionPane({
     answerApproval,
     answerQuestion,
   } = useSession(sessionId);
+  const panel = useRef<WorkspacePanelControl>(null);
+  const openFile = useCallback((target: FileTarget) => panel.current?.openFile(target), []);
 
   return (
-    <div className="flex min-h-0 flex-1 gap-4">
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
-        <SandboxBadge sandbox={sandbox} />
-        <SessionWorkspace
-          state={state}
-          connected={connected}
-          onSend={send}
-          onStop={stop}
-          onAnswerApproval={answerApproval}
-          onAnswerQuestion={answerQuestion}
-          hasOlder={hasOlder}
-          loadingOlder={loadingOlder}
-          onLoadOlder={loadOlder}
-          footer={<SessionMetrics sessionId={sessionId} refreshKey={metricsKey(state.turns)} />}
-          frame={(chat) => (
-            <SessionTabs
-              chat={chat}
-              trajectory={
-                <TrajectoryView
-                  events={events}
-                  loaded={loaded}
-                  hasOlder={hasOlder}
-                  loadingOlder={loadingOlder}
-                  onLoadOlder={loadOlder}
-                />
-              }
-              statistics={
-                <StatisticsView
-                  sessionId={sessionId}
-                  refreshKey={metricsKey(state.turns)}
-                  events={events}
-                  hasOlder={hasOlder}
-                  loadingOlder={loadingOlder}
-                  onLoadOlder={loadOlder}
-                />
-              }
-            />
-          )}
-          composerBar={
-            <div className="flex items-center justify-between gap-2">
-              <ProjectPicker projectId={projectId} />
-              <GitBadge status={git.status} />
-            </div>
-          }
-          startControls={
-            <ApprovalModePicker
-              mode={approvalMode}
-              onChange={onApprovalModeChange}
-              saving={savingMode}
-            />
-          }
-          endControls={
-            <ModelPicker
-              model={model}
-              catalog={catalog}
-              onChange={onModelChange}
-              disabled={savingModel || state.running}
-            />
-          }
+    <OpenFileContext.Provider value={openFile}>
+      <div className="flex min-h-0 flex-1 gap-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
+          <SandboxBadge sandbox={sandbox} />
+          <SessionWorkspace
+            state={state}
+            connected={connected}
+            onSend={send}
+            onStop={stop}
+            onAnswerApproval={answerApproval}
+            onAnswerQuestion={answerQuestion}
+            hasOlder={hasOlder}
+            loadingOlder={loadingOlder}
+            onLoadOlder={loadOlder}
+            footer={<SessionMetrics sessionId={sessionId} refreshKey={metricsKey(state.turns)} />}
+            frame={(chat) => (
+              <SessionTabs
+                chat={chat}
+                trajectory={
+                  <TrajectoryView
+                    events={events}
+                    loaded={loaded}
+                    hasOlder={hasOlder}
+                    loadingOlder={loadingOlder}
+                    onLoadOlder={loadOlder}
+                  />
+                }
+                statistics={
+                  <StatisticsView
+                    sessionId={sessionId}
+                    refreshKey={metricsKey(state.turns)}
+                    events={events}
+                    hasOlder={hasOlder}
+                    loadingOlder={loadingOlder}
+                    onLoadOlder={loadOlder}
+                  />
+                }
+              />
+            )}
+            composerBar={
+              <div className="flex items-center justify-between gap-2">
+                <ProjectPicker projectId={projectId} />
+                <GitBadge status={git.status} />
+              </div>
+            }
+            startControls={
+              <ApprovalModePicker
+                mode={approvalMode}
+                onChange={onApprovalModeChange}
+                saving={savingMode}
+              />
+            }
+            endControls={
+              <ModelPicker
+                model={model}
+                catalog={catalog}
+                onChange={onModelChange}
+                disabled={savingModel || state.running}
+              />
+            }
+          />
+        </div>
+        <WorkspacePanel
+          projectId={projectId}
+          changedFiles={state.changedFiles}
+          onRevertAll={revertAll}
+          busy={state.running}
+          control={panel}
         />
       </div>
-      <WorkspacePanel
-        projectId={projectId}
-        changedFiles={state.changedFiles}
-        onRevertAll={revertAll}
-        busy={state.running}
-      />
-    </div>
+    </OpenFileContext.Provider>
   );
 }
 

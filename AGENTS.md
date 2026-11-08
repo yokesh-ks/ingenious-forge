@@ -123,7 +123,7 @@ working.
   `components/markdown/` (the shared Markdown renderer and code card; ADR
   [0013](docs/decisions/0013-render-markdown-with-react-markdown-and-shiki.md)),
   `hooks/` (`use-theme`, `use-mobile`), `lib/` (utils, router, platform,
-  approval-modes, slash-commands, file-tree, models, highlight), `api/` (typed client, generated
+  approval-modes, slash-commands, open-file, models, highlight), `api/` (typed client, generated
   types), `pages/` (route-level composition) and `test/` (test helpers).
   Tests live in a sibling `__tests__/` folder next to the code they
   cover, mirroring its subfolders (for example

@@ -7,6 +7,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use api_types::EntryKind;
 use services::workspace;
 
 fn folder(files: &[&str]) -> PathBuf {
@@ -82,4 +83,42 @@ fn a_long_list_is_cut_and_says_so() {
     let list = workspace::list_files(&dir, 3);
     assert_eq!(list.files, ["a", "b", "c"]);
     assert!(list.truncated);
+}
+
+#[test]
+fn a_folder_lists_its_direct_entries_with_their_kinds() {
+    let dir = folder(&[".hidden", "a.txt", "sub/inner.txt"]);
+
+    let listing = workspace::list_directory(&dir, 10).unwrap();
+    let seen: Vec<_> = listing
+        .entries
+        .iter()
+        .map(|e| (e.name.as_str(), e.kind))
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            (".hidden", EntryKind::File),
+            ("a.txt", EntryKind::File),
+            ("sub", EntryKind::Directory),
+        ]
+    );
+    assert!(!listing.truncated);
+}
+
+#[test]
+fn a_folder_with_too_many_entries_says_it_was_cut() {
+    let dir = folder(&["a", "b", "c"]);
+    let listing = workspace::list_directory(&dir, 2).unwrap();
+    assert_eq!(listing.entries.len(), 2);
+    assert!(listing.truncated);
+}
+
+#[test]
+fn a_missing_folder_or_a_file_is_an_error() {
+    let dir = folder(&["a.txt"]);
+    let missing = workspace::list_directory(&dir.join("nope"), 2).unwrap_err();
+    assert_eq!(missing.kind(), std::io::ErrorKind::NotFound);
+    let file = workspace::list_directory(&dir.join("a.txt"), 2).unwrap_err();
+    assert_eq!(file.kind(), std::io::ErrorKind::NotADirectory);
 }

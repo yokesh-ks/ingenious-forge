@@ -193,12 +193,18 @@ pub enum OpenApp {
     FileManager,
     VsCode,
     Terminal,
+    /// The program the system opens this kind of file with.
+    DefaultApp,
 }
 
 /// Body of `POST /api/projects/{id}/open-in`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct OpenInRequest {
     pub app: OpenApp,
+    /// A file in the project to open instead of the project's folder.
+    /// `FileManager` then shows the file in its folder.
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 /// Body of `POST /api/projects`.
@@ -227,6 +233,32 @@ pub struct FileList {
     /// `/`-separated paths relative to the project folder, sorted.
     pub files: Vec<String>,
     /// True when the project has more files than were listed.
+    pub truncated: bool,
+}
+
+/// What an entry in a project folder is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum EntryKind {
+    File,
+    Directory,
+    /// A symbolic link, socket or the like: listed, but not opened.
+    Other,
+}
+
+/// One entry of a project folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct DirectoryEntry {
+    pub name: String,
+    pub kind: EntryKind,
+}
+
+/// Body of `GET /api/projects/{id}/directory?path=`: one folder's direct
+/// entries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct DirectoryListing {
+    pub entries: Vec<DirectoryEntry>,
+    /// True when the folder has more entries than were listed.
     pub truncated: bool,
 }
 
@@ -1012,6 +1044,9 @@ pub fn typescript_bindings() -> String {
         OpenInRequest::decl(&cfg),
         PickedFolder::decl(&cfg),
         FileList::decl(&cfg),
+        EntryKind::decl(&cfg),
+        DirectoryEntry::decl(&cfg),
+        DirectoryListing::decl(&cfg),
         FileContent::decl(&cfg),
         KeySource::decl(&cfg),
         ProviderKeyStatus::decl(&cfg),

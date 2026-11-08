@@ -4,6 +4,7 @@ import type {
   ApprovalMode,
   CommitMessageDraft,
   CommitResult,
+  DirectoryListing,
   FetchCustomModelsRequest,
   FetchModelsRequest,
   FileChange,
@@ -85,10 +86,12 @@ export const api = {
   /** Removes the project from Forge; its folder on disk stays. */
   deleteProject: (id: string) =>
     request<Project>(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  /** Opens the project's folder in a program on the user's machine. */
-  openProjectIn: (id: string, app: OpenApp) =>
+  /** Opens the project's folder, or one of its files, in a program on the
+   * user's machine. */
+  openProjectIn: (id: string, app: OpenApp, path: string | null = null) =>
     post<Project>(`/api/projects/${encodeURIComponent(id)}/open-in`, {
       app,
+      path,
     } satisfies OpenInRequest),
   /** Renames, pins or archives a session. */
   updateSession: (id: string, update: UpdateSessionRequest) =>
@@ -111,6 +114,11 @@ export const api = {
     request<void>(
       `/api/projects/${encodeURIComponent(projectId)}/terminal?${new URLSearchParams({ tab })}`,
       { method: "DELETE" },
+    ),
+  /** One folder's direct entries; an empty path is the project's top. */
+  projectDirectory: (id: string, path: string) =>
+    request<DirectoryListing>(
+      `/api/projects/${encodeURIComponent(id)}/directory?path=${encodeURIComponent(path)}`,
     ),
   projectFiles: (projectId: string) =>
     request<FileList>(`/api/projects/${encodeURIComponent(projectId)}/files`),

@@ -71,9 +71,14 @@ export type RenameProjectRequest = { name: string, };
 
 export type UpdateSessionRequest = { title?: string, pinned?: boolean, archived?: boolean, };
 
-export type OpenApp = "file_manager" | "vs_code" | "terminal";
+export type OpenApp = "file_manager" | "vs_code" | "terminal" | "default_app";
 
-export type OpenInRequest = { app: OpenApp, };
+export type OpenInRequest = { app: OpenApp, 
+/**
+ * A file in the project to open instead of the project's folder.
+ * `FileManager` then shows the file in its folder.
+ */
+path: string | null, };
 
 export type PickedFolder = { path: string | null, };
 
@@ -84,6 +89,16 @@ export type FileList = {
 files: Array<string>, 
 /**
  * True when the project has more files than were listed.
+ */
+truncated: boolean, };
+
+export type EntryKind = "file" | "directory" | "other";
+
+export type DirectoryEntry = { name: string, kind: EntryKind, };
+
+export type DirectoryListing = { entries: Array<DirectoryEntry>, 
+/**
+ * True when the folder has more entries than were listed.
  */
 truncated: boolean, };
 

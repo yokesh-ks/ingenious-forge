@@ -4,7 +4,8 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use services::folders::{inspect_folder, FolderError};
+use api_types::OpenApp;
+use services::folders::{inspect_folder, open_file_in, FolderError};
 
 struct Dir(PathBuf);
 
@@ -189,4 +190,21 @@ mod folder_dialog {
         let error = pick_folder_with(dialogs, None).unwrap_err();
         assert!(error.contains("zenity"), "{error}");
     }
+}
+
+#[test]
+fn opening_a_file_that_is_gone_says_so_without_starting_anything() {
+    let dir = Dir::new();
+    let missing = dir.0.join("gone.txt");
+    let err = open_file_in(OpenApp::VsCode, &dir.0, &missing).unwrap_err();
+    assert!(err.contains("no longer exists"), "{err}");
+}
+
+#[test]
+fn a_file_cannot_be_opened_in_a_terminal() {
+    let dir = Dir::new();
+    let file = dir.0.join("a.txt");
+    fs::write(&file, "a").unwrap();
+    let err = open_file_in(OpenApp::Terminal, &dir.0, &file).unwrap_err();
+    assert!(err.contains("terminal"), "{err}");
 }

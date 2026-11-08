@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { OpenFileContext } from "@/lib/open-file";
 import Markdown from "../Markdown";
 
 afterEach(() => vi.restoreAllMocks());
@@ -104,5 +105,39 @@ describe("Markdown", () => {
   it("styles inline code", () => {
     render(<Markdown text={"run `pnpm dev` now"} />);
     expect(screen.getByText("pnpm dev").tagName).toBe("CODE");
+  });
+
+  it("opens a project file link in the workspace panel", () => {
+    const open = vi.fn();
+    render(
+      <OpenFileContext.Provider value={open}>
+        <Markdown
+          text="See [the guide](guide/intro.md#L4) and [web](https://x.y)."
+          baseDir="docs"
+        />
+      </OpenFileContext.Provider>,
+    );
+    fireEvent.click(screen.getByRole("link", { name: "the guide" }));
+    expect(open).toHaveBeenCalledWith({ path: "docs/guide/intro.md", line: 4 });
+    expect(screen.getByRole("link", { name: "web" })).toHaveAttribute("target", "_blank");
+  });
+
+  it("keeps a link naming a line, but still drops unsafe schemes", () => {
+    const open = vi.fn();
+    render(
+      <OpenFileContext.Provider value={open}>
+        <Markdown text="[line](src/a.ts:12) [bad](javascript:alert.x:1) [mail](mailto:a@b.c)" />
+      </OpenFileContext.Provider>,
+    );
+    fireEvent.click(screen.getByRole("link", { name: "line" }));
+    expect(open).toHaveBeenCalledWith({ path: "src/a.ts", line: 12 });
+    expect(screen.queryByRole("link", { name: "bad" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "mail" })).toBeNull();
+  });
+
+  it("leaves a file link as text where there is no panel", () => {
+    render(<Markdown text="See [the guide](guide/intro.md)." />);
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.getByText("the guide")).toBeInTheDocument();
   });
 });

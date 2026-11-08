@@ -1,11 +1,17 @@
 /** The panel's tabs. Start is a doorway: a page opened from it takes its
  * place, and New tab brings it back. */
 
-export type TabKind = "start" | "files" | "changes" | "terminal";
+export type TabKind = "start" | "files" | "changes" | "terminal" | "file";
 
 export interface PanelTab {
   id: string;
   kind: TabKind;
+  /** A file tab's path, relative to the project. */
+  path?: string;
+  /** The line a file tab was last asked to show. */
+  line?: number;
+  /** Counts the times a file tab was asked to show something. */
+  revision?: number;
 }
 
 export interface PanelTabs {
@@ -29,7 +35,7 @@ const isStart = (tab: PanelTab | undefined) => tab?.kind === "start";
 const activeTab = (state: PanelTabs) => state.tabs.find((t) => t.id === state.active);
 
 /** Files and Changes open once; a terminal opens as often as asked. */
-export function openTab(state: PanelTabs, kind: Exclude<TabKind, "start">): PanelTabs {
+export function openTab(state: PanelTabs, kind: Exclude<TabKind, "start" | "file">): PanelTabs {
   const current = activeTab(state);
   const existing = kind === "terminal" ? undefined : state.tabs.find((t) => t.kind === kind);
   if (existing) {
@@ -52,6 +58,45 @@ export function openTab(state: PanelTabs, kind: Exclude<TabKind, "start">): Pane
 
 function appendTab(state: PanelTabs, kind: TabKind): PanelTabs {
   const [tab, next] = make(state, kind);
+  return { tabs: [...state.tabs, tab], active: tab.id, next };
+}
+
+export interface OpenFileOptions {
+  line?: number;
+  /** Show the file in the active file tab's place. */
+  replace?: boolean;
+}
+
+/** One tab per file: a file already open is selected. Otherwise the file
+ * takes the place of Start, or of the active file when `replace` is set,
+ * and is added at the end if neither applies. */
+export function openFile(state: PanelTabs, path: string, options: OpenFileOptions = {}): PanelTabs {
+  const { line, replace = false } = options;
+  const current = activeTab(state);
+  const existing = state.tabs.find((t) => t.kind === "file" && t.path === path);
+  if (existing) {
+    const shown = { ...existing, line, revision: (existing.revision ?? 0) + 1 };
+    return {
+      ...state,
+      tabs: state.tabs
+        .filter((t) => !(isStart(current) && t.id === current?.id))
+        .map((t) => (t.id === existing.id ? shown : t)),
+      active: existing.id,
+    };
+  }
+  if (replace && current?.kind === "file") {
+    const shown = { ...current, path, line, revision: (current.revision ?? 0) + 1 };
+    return { ...state, tabs: state.tabs.map((t) => (t.id === current.id ? shown : t)) };
+  }
+  const [made, next] = make(state, "file");
+  const tab = { ...made, path, line, revision: 1 };
+  if (isStart(current) && current) {
+    return {
+      tabs: state.tabs.map((t) => (t.id === current.id ? tab : t)),
+      active: tab.id,
+      next,
+    };
+  }
   return { tabs: [...state.tabs, tab], active: tab.id, next };
 }
 
@@ -81,10 +126,12 @@ const TITLES: Record<TabKind, string> = {
   files: "Files",
   changes: "Changes",
   terminal: "Terminal",
+  file: "File",
 };
 
 /** A tab's title; later terminals are numbered in the order they opened. */
 export function titleOf(state: PanelTabs, tab: PanelTab): string {
+  if (tab.kind === "file" && tab.path) return tab.path.split("/").pop() ?? tab.path;
   if (tab.kind !== "terminal") return TITLES[tab.kind];
   const position = state.tabs.filter((t) => t.kind === "terminal").indexOf(tab);
   return position === 0 ? "Terminal" : `Terminal ${position + 1}`;

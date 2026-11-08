@@ -48,7 +48,12 @@ beforeEach(() => {
   terminalMounts.mockClear();
   terminalUnmounts.mockClear();
   Element.prototype.setPointerCapture = vi.fn();
-  fakeFetch({ "GET /api/projects/p1/files": { files: ["README.md"], truncated: false } });
+  fakeFetch({
+    "GET /api/projects/p1/directory": {
+      entries: [{ name: "README.md", kind: "file" }],
+      truncated: false,
+    },
+  });
 });
 
 describe("WorkspacePanel", () => {
@@ -118,9 +123,8 @@ describe("WorkspacePanel", () => {
     await userEvent.click(card(/^New terminal/));
     await userEvent.click(screen.getByRole("button", { name: "Close Terminal" }));
     expect(tabs()).toEqual(["Start"]);
-    const [url, init] = fetch.mock.calls[0];
-    expect(String(url)).toMatch(/\/api\/projects\/p1\/terminal\?tab=terminal-\d+$/);
-    expect(init?.method).toBe("DELETE");
+    const closed = fetch.mock.calls.find(([, init]) => init?.method === "DELETE");
+    expect(String(closed?.[0])).toMatch(/\/api\/projects\/p1\/terminal\?tab=terminal-\d+$/);
   });
 
   it("goes fullscreen and back", async () => {
