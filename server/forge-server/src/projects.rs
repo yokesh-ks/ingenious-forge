@@ -5,14 +5,14 @@ use std::sync::Arc;
 use agent::{model::ModelError, tools::ToolBox};
 use api_types::{
     ApiError, CommitMessageDraft, CommitRequest, CommitResult, CreateBranchRequest,
-    CreateSessionRequest, DirectoryListing, FileContent, FileList, GitStatus, ModelCatalog,
-    OpenInRequest, OpenProjectRequest, PickedFolder, Project, PushResult, RenameProjectRequest,
-    SandboxInfo, Session, SessionEnvelope, SessionEvent, SetApprovalModeRequest,
-    SetSessionModelRequest, TitleSource, UpdateSessionRequest,
+    CreateSessionRequest, DirectoryListing, FileApplications, FileContent, FileList, GitStatus,
+    ModelCatalog, OpenInRequest, OpenProjectRequest, PickedFolder, Project, PushResult,
+    RenameProjectRequest, SandboxInfo, Session, SessionEnvelope, SessionEvent,
+    SetApprovalModeRequest, SetSessionModelRequest, TitleSource, UpdateSessionRequest,
 };
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post, put},
     Json, Router,
@@ -42,6 +42,11 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/sessions/{id}/fork", post(fork_session))
         .route("/projects/{id}/files", get(project_files))
         .route("/projects/{id}/file", get(project_file))
+        .route("/projects/{id}/file/raw", get(project_file_raw))
+        .route(
+            "/projects/{id}/file/applications",
+            get(project_file_applications),
+        )
         .route("/projects/{id}/directory", get(project_directory))
         .route("/projects/{id}/git/status", get(git_status))
         .route("/projects/{id}/git/branch", post(create_branch))
@@ -174,9 +179,13 @@ async fn open_project_in(
         .map(|rel| ToolBox::new(&project.path).project_path(&rel))
         .transpose()
         .map_err(|message| ApiFailure(StatusCode::BAD_REQUEST, message))?;
-    tokio::task::spawn_blocking(move || match file {
-        Some(rel) => folders::open_file_in(body.app, &root, &root.join(rel)),
-        None => folders::open_folder_in(body.app, &root),
+    let application = body.application;
+    tokio::task::spawn_blocking(move || match (file, application) {
+        (Some(rel), Some(application)) => {
+            services::file_apps::open_with_application(&root.join(rel), &application)
+        }
+        (Some(rel), None) => folders::open_file_in(body.app, &root, &root.join(rel)),
+        (None, _) => folders::open_folder_in(body.app, &root),
     })
     .await
     .map_err(|e| ApiFailure::internal(e.to_string()))?
@@ -363,6 +372,8 @@ async fn draft_commit_message(
 
 /// Largest file the viewer shows.
 const MAX_VIEWED_BYTES: usize = 2_000_000;
+/// Images and PDFs are larger than text but still read whole.
+const MAX_RAW_BYTES: u64 = 64_000_000;
 
 #[derive(Deserialize)]
 struct FileQuery {
@@ -384,7 +395,98 @@ async fn project_file(
         .map(Json)
 }
 
-fn read_viewed_file(root: &str, requested: &str) -> Result<FileContent, ApiFailure> {
+/// The programs that can open a project file.
+async fn project_file_applications(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Query(query): Query<FileQuery>,
+) -> ApiResult<FileApplications> {
+    let project = projects::get_project(&state.db, &id).await?;
+    let relative = ToolBox::new(&project.path)
+        .project_path(&query.path)
+        .map_err(|message| ApiFailure(StatusCode::BAD_REQUEST, message))?;
+    let file = std::path::PathBuf::from(&project.path).join(relative);
+    let applications =
+        tokio::task::spawn_blocking(move || services::file_apps::applications_for(&file))
+            .await
+            .map_err(|e| ApiFailure::internal(e.to_string()))?;
+    Ok(Json(FileApplications { applications }))
+}
+
+/// The media type of a file the panel shows from its bytes.
+fn raw_media_type(path: &str) -> Option<&'static str> {
+    let extension = path.rsplit('.').next()?.to_ascii_lowercase();
+    Some(match extension.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "svg" => "image/svg+xml",
+        "pdf" => "application/pdf",
+        _ => return None,
+    })
+}
+
+/// A project image or PDF, as bytes for the panel's viewers.
+async fn project_file_raw(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Query(query): Query<FileQuery>,
+) -> Result<axum::response::Response, ApiFailure> {
+    let project = projects::get_project(&state.db, &id).await?;
+    let (bytes, media) =
+        tokio::task::spawn_blocking(move || read_raw_file(&project.path, &query.path))
+            .await
+            .map_err(|e| ApiFailure::internal(e.to_string()))??;
+    let mut response = axum::response::Response::new(axum::body::Body::from(bytes));
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(media));
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    if media == "image/svg+xml" {
+        // Opened directly, a project's SVG must not run in Forge's origin.
+        headers.insert(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static("default-src 'none'; style-src 'unsafe-inline'; sandbox"),
+        );
+    }
+    Ok(response)
+}
+
+fn read_raw_file(root: &str, requested: &str) -> Result<(Vec<u8>, &'static str), ApiFailure> {
+    let (path, full, meta) = viewed_path(root, requested)?;
+    let media = raw_media_type(&path).ok_or_else(|| {
+        ApiFailure(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            format!("{path} has no viewer"),
+        )
+    })?;
+    if meta.len() > MAX_RAW_BYTES {
+        return Err(ApiFailure(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!("{path} is too large to show ({} bytes)", meta.len()),
+        ));
+    }
+    let bytes = std::fs::read(&full).map_err(|err| {
+        ApiFailure(
+            StatusCode::BAD_REQUEST,
+            format!("cannot read {path}: {err}"),
+        )
+    })?;
+    Ok((bytes, media))
+}
+
+/// A requested project file's relative path, full path and metadata; it
+/// must exist and be a regular file.
+fn viewed_path(
+    root: &str,
+    requested: &str,
+) -> Result<(String, std::path::PathBuf, std::fs::Metadata), ApiFailure> {
     let path = ToolBox::new(root)
         .project_path(requested)
         .map_err(|message| ApiFailure(StatusCode::BAD_REQUEST, message))?;
@@ -410,6 +512,11 @@ fn read_viewed_file(root: &str, requested: &str) -> Result<FileContent, ApiFailu
             format!("{path} is not a regular file"),
         ));
     }
+    Ok((path, full, meta))
+}
+
+fn read_viewed_file(root: &str, requested: &str) -> Result<FileContent, ApiFailure> {
+    let (path, full, meta) = viewed_path(root, requested)?;
     if meta.len() > MAX_VIEWED_BYTES as u64 {
         return Err(ApiFailure(
             StatusCode::PAYLOAD_TOO_LARGE,
@@ -860,6 +967,33 @@ mod tests {
     async fn get_json(url: &str) -> (StatusCode, Value) {
         let res = reqwest::get(url).await.unwrap();
         (res.status(), res.json().await.unwrap())
+    }
+
+    #[tokio::test]
+    async fn raw_files_are_served_only_for_their_viewers() {
+        let (api, _) = start().await;
+        let repo = folders().join("repo");
+        fs::write(repo.join("a.png"), [137, 80, 78, 71]).unwrap();
+        fs::write(repo.join("b.svg"), "<svg/>").unwrap();
+        fs::write(repo.join("c.txt"), "text").unwrap();
+        let (_, project) = post_json(&format!("{api}/projects"), json!({ "path": repo })).await;
+        let id = project["id"].as_str().unwrap();
+        let raw = |name: &str| format!("{api}/projects/{id}/file/raw?path={name}");
+
+        let png = reqwest::get(raw("a.png")).await.unwrap();
+        assert_eq!(png.status(), StatusCode::OK);
+        assert_eq!(png.headers()["content-type"], "image/png");
+        assert_eq!(png.headers()["x-content-type-options"], "nosniff");
+        assert_eq!(png.bytes().await.unwrap().as_ref(), [137, 80, 78, 71]);
+
+        let svg = reqwest::get(raw("b.svg")).await.unwrap();
+        let policy = svg.headers()["content-security-policy"].to_str().unwrap();
+        assert!(policy.contains("sandbox"));
+
+        let text = reqwest::get(raw("c.txt")).await.unwrap();
+        assert_eq!(text.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        let outside = reqwest::get(raw("../secret.png")).await.unwrap();
+        assert_eq!(outside.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

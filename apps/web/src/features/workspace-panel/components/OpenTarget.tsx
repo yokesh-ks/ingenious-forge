@@ -1,8 +1,8 @@
 import { ArrowUpRightIcon, ChevronDownIcon, FolderOpenIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import type { OpenApp } from "@/api/types";
+import type { FileApplication, OpenApp } from "@/api/types";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,13 +33,25 @@ export default function OpenTarget({
   const manager = fileManagerName();
   const isFile = path !== null;
   const primaryApp: OpenApp = isFile ? "vs_code" : "file_manager";
+  const [applications, setApplications] = useState<FileApplication[]>([]);
 
-  const open = (app: OpenApp) => {
+  const loadApplications = useCallback(() => {
+    if (path === null) return;
+    api.fileApplications(projectId, path).then(
+      (found) => setApplications(found?.applications ?? []),
+      () => setApplications([]),
+    );
+  }, [projectId, path]);
+  useEffect(loadApplications, [loadApplications]);
+
+  const preferred = applications.find((a) => a.default) ?? applications[0];
+
+  const open = (app: OpenApp, application: string | null = null) => {
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
     api
-      .openProjectIn(projectId, app, path)
+      .openProjectIn(projectId, app, path, application)
       .catch((err: Error) => {
         const reveal = isFile && app === "file_manager";
         toast.error(
@@ -55,11 +67,26 @@ export default function OpenTarget({
       });
   };
 
-  const primaryLabel = isFile ? "Open in VS Code" : `Open in ${manager}`;
+  const primaryLabel = preferred
+    ? `Open in ${preferred.name}`
+    : isFile
+      ? "Open in VS Code"
+      : `Open in ${manager}`;
+  const runPrimary = () => {
+    if (!preferred) open(primaryApp);
+    else if (preferred.default) open("default_app");
+    else open("default_app", preferred.path);
+  };
   const size = prominent ? "size-[18px]" : "size-[13px]";
 
   return (
-    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+    <DropdownMenu
+      open={menuOpen}
+      onOpenChange={(next) => {
+        setMenuOpen(next);
+        if (next) loadApplications();
+      }}
+    >
       <div
         className={cn(
           "inline-flex flex-none items-stretch self-center overflow-hidden border-[0.5px] border-border",
@@ -71,13 +98,21 @@ export default function OpenTarget({
           disabled={busy}
           title={primaryLabel}
           aria-label={prominent ? undefined : primaryLabel}
-          onClick={() => open(primaryApp)}
+          onClick={runPrimary}
           className={cn(
             "inline-flex items-center justify-center hover:bg-muted disabled:cursor-default",
             prominent ? "gap-1.5 px-3.5 py-1.5 text-sm" : "gap-1 px-[5px] py-[3px] text-[11px]",
           )}
         >
-          <ArrowUpRightIcon aria-hidden className={size} />
+          {preferred?.icon ? (
+            <img
+              alt=""
+              src={`data:image/png;base64,${preferred.icon}`}
+              className={cn(size, "flex-none")}
+            />
+          ) : (
+            <ArrowUpRightIcon aria-hidden className={size} />
+          )}
           {prominent && "Open"}
         </button>
         <DropdownMenuTrigger asChild>
@@ -95,7 +130,30 @@ export default function OpenTarget({
         </DropdownMenuTrigger>
       </div>
       <DropdownMenuContent align="end" className="min-w-[180px] [&_[role=menuitem]]:py-[5px]">
-        {isFile ? (
+        {isFile && applications.length > 0 ? (
+          <>
+            {applications.map((application) => (
+              <DropdownMenuItem
+                key={application.path}
+                onSelect={() => open("default_app", application.path)}
+              >
+                {application.icon && (
+                  <img
+                    alt=""
+                    src={`data:image/png;base64,${application.icon}`}
+                    className="size-4 flex-none"
+                  />
+                )}
+                {application === preferred ? `${application.name} (default)` : application.name}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => open("file_manager")}>
+              <FolderOpenIcon aria-hidden />
+              Show file location
+            </DropdownMenuItem>
+          </>
+        ) : isFile ? (
           <>
             <DropdownMenuItem onSelect={() => open("vs_code")}>VS Code (default)</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => open("default_app")}>

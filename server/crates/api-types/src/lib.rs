@@ -205,6 +205,27 @@ pub struct OpenInRequest {
     /// `FileManager` then shows the file in its folder.
     #[serde(default)]
     pub path: Option<String>,
+    /// An application from the file's list to open it with, by its path.
+    #[serde(default)]
+    pub application: Option<String>,
+}
+
+/// A program that can open a file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FileApplication {
+    /// Where the program is installed; it names the program in requests.
+    pub path: String,
+    pub name: String,
+    /// True for the program the system opens this kind of file with.
+    pub default: bool,
+    /// The program's icon as base64 PNG.
+    pub icon: Option<String>,
+}
+
+/// The reply to `GET /api/projects/{id}/file/applications`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FileApplications {
+    pub applications: Vec<FileApplication>,
 }
 
 /// Body of `POST /api/projects`.
@@ -1057,6 +1078,8 @@ pub fn typescript_bindings() -> String {
         UpdateSessionRequest::decl(&cfg),
         OpenApp::decl(&cfg),
         OpenInRequest::decl(&cfg),
+        FileApplication::decl(&cfg),
+        FileApplications::decl(&cfg),
         PickedFolder::decl(&cfg),
         FileList::decl(&cfg),
         EntryKind::decl(&cfg),
