@@ -13,6 +13,11 @@ export function shortcutLabel(modifier: "alt" | "shift", key: string) {
   return `Ctrl+${modifier === "alt" ? "Alt" : "Shift"}+${key}`;
 }
 
+/** A shortcut on the platform's main modifier alone. */
+export function primaryShortcutLabel(key: string) {
+  return isMac() ? `⌘${key}` : `Ctrl+${key}`;
+}
+
 /** A Control-key shortcut, written the way this platform writes it. */
 export function ctrlShortcutLabel(key: string) {
   return isMac() ? `⌃${key}` : `Ctrl+${key}`;

@@ -6,7 +6,9 @@ import {
   PanelRightIcon,
 } from "lucide-react";
 import {
+  type CSSProperties,
   type ReactNode,
+  type PointerEvent as ReactPointerEvent,
   type RefObject,
   useCallback,
   useEffect,
@@ -17,38 +19,52 @@ import {
 import { api } from "@/api/client";
 import ResizeHandle from "@/components/layout/ResizeHandle";
 import { Button } from "@/components/ui/button";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import ChangedFilesPanel from "@/features/git/components/ChangedFilesPanel";
 import { useProject } from "@/features/session/hooks/use-project";
 import type { FileChange } from "@/features/session/session-reducer";
 import TerminalPanel from "@/features/terminal/components/TerminalPanel";
 import { type FileTarget, toProjectPath } from "@/lib/open-file";
+import { shortcutLabel } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { type DropTarget, useTabDrag } from "../hooks/use-tab-drag";
 import { useWorkspaceTree } from "../hooks/use-workspace-tree";
+import { legalRect, resistedRect, resizedRect } from "../model/float-geometry";
 import {
   activateTab,
   activePaneOf,
   addStartTab,
   canCloseTab,
+  closeFloat,
   closePaneTab,
   dropToSplit,
+  type FloatPanel,
+  floatRectAt,
+  floatTab,
   focusPane,
   initialLayout,
+  isSoleDocked,
+  menuTabs,
   moveTab,
   openFileTab,
   openPage,
   type Pane,
+  placeFloat,
+  raiseFloat,
   renameTab,
   resolveShells,
   setRatio,
   split,
+  unfloat,
 } from "../model/panes";
 import { pickShell } from "../model/shell-choice";
 import { type PanelTab, type TabKind, type TabShell, titleOf } from "../model/tabs";
 import FilesPage from "./FilesPage";
 import FileTab from "./FileTab";
+import FileTypeIcon from "./FileTypeIcon";
+import { FloatHeader, FloatResizeCorner } from "./FloatFrame";
 import StartPage from "./StartPage";
-import TabStrip, { STRIP_BUTTON } from "./TabStrip";
+import TabStrip, { STRIP_BUTTON, StripTip, TabIcon } from "./TabStrip";
 
 const WIDTH_MIN = 300;
 const WIDTH_MAX_RATIO = 0.7;
@@ -116,6 +132,53 @@ function PaneDivider({
     />
   );
 }
+
+/** Gives a floating tab a file tree of its own. */
+function OwnTree({
+  projectId,
+  children,
+}: {
+  projectId: string;
+  children: (tree: ReturnType<typeof useWorkspaceTree>) => ReactNode;
+}) {
+  return children(useWorkspaceTree(projectId));
+}
+
+/** The collapsed panel: out of view at its usual size, with no transform,
+ * which would pin the floating panels inside it. */
+const offStage = (width: number): CSSProperties => ({
+  position: "fixed",
+  top: 0,
+  left: "100vw",
+  height: "100vh",
+  width,
+  margin: 0,
+  visibility: "hidden",
+});
+
+const viewport = () => ({ width: window.innerWidth, height: window.innerHeight });
+
+/** Where `position: fixed` measures from: the page, unless an ancestor has
+ * layout containment or a transform. Floating panels work in page
+ * coordinates, so they draw offset by this. */
+function fixedOrigin(element: HTMLElement | null) {
+  for (let at = element?.parentElement; at; at = at.parentElement) {
+    const { contain, transform } = getComputedStyle(at);
+    if ((contain && contain !== "none") || (transform && transform !== "none")) {
+      const { left, top } = at.getBoundingClientRect();
+      return { x: left, y: top };
+    }
+  }
+  return { x: 0, y: 0 };
+}
+
+/** A resting panel stays in the viewport however the window changes. */
+const restingStyle = (rect: FloatPanel["rect"], origin: { x: number; y: number }) => ({
+  left: `calc(max(0px, min(${rect.x}px, 100vw - ${rect.width}px)) - ${origin.x}px)`,
+  top: `calc(max(0px, min(${rect.y}px, 100dvh - ${rect.height}px)) - ${origin.y}px)`,
+  width: `min(${rect.width}px, 100vw)`,
+  height: `min(${rect.height}px, 100dvh)`,
+});
 
 /** Where releasing the tab will put it. */
 function DropOverlay({ target }: { target: DropTarget }) {
@@ -196,12 +259,75 @@ export default function WorkspacePanel({
     root: grid,
     paneCount: () => latest.current.layout.panes.length,
     canDropToSplit: () => roomIn(latest.current.layout.panes[0]?.id ?? ""),
+    onFloat: (tabId, x, y) => setLayout((l) => floatTab(l, tabId, floatRectAt(x, y))),
     onDrop: (tabId, target) =>
       setLayout((l) => {
         if (target.kind === "split") return dropToSplit(l, tabId, target.side);
         return moveTab(l, tabId, target.pane, target.kind === "strip" ? target.index : undefined);
       }),
   });
+
+  const [lifted, setLifted] = useState<{ id: string; rect: FloatPanel["rect"] } | null>(null);
+  const [settling, setSettling] = useState<string | null>(null);
+
+  /** Moves or resizes a floating panel; the result is recorded on release. */
+  const gripFloat = (mode: "move" | "resize", float: FloatPanel, event: ReactPointerEvent) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const origin = { x: event.clientX, y: event.clientY };
+    const start = float.rect;
+    let moved = false;
+    setSettling(null);
+    const desired = (e: PointerEvent) => {
+      const dx = e.clientX - origin.x;
+      const dy = e.clientY - origin.y;
+      return mode === "move"
+        ? { ...start, x: start.x + dx, y: start.y + dy }
+        : resizedRect(start, dx, dy, viewport());
+    };
+    const onMove = (e: PointerEvent) => {
+      moved = true;
+      const rect = desired(e);
+      setLifted({ id: float.id, rect: mode === "move" ? resistedRect(rect, viewport()) : rect });
+    };
+    const finish = (e?: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", cancel);
+      setLifted(null);
+      if (e && moved) {
+        setSettling(float.id);
+        setLayout((l) => placeFloat(l, float.id, legalRect(desired(e), viewport())));
+      }
+    };
+    const cancel = () => finish();
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", cancel);
+  };
+
+  const endTerminal = (tab: PanelTab) => {
+    if (tab.kind !== "terminal") return;
+    api.closeTerminal(projectId, tab.id).catch((err: Error) => {
+      console.warn("Could not close the terminal", err);
+    });
+  };
+
+  /** Closing the panel's only tab closes the panel; it reopens on Start. */
+  const closeTabIn = (paneId: string, tab: PanelTab) => {
+    if (isSoleDocked(latest.current.layout, tab.id)) {
+      setOpen(false);
+      setFullscreen(false);
+    }
+    setLayout((l) => closePaneTab(l, paneId, tab.id));
+    endTerminal(tab);
+  };
+
+  const closeFloating = (float: FloatPanel) => {
+    setLayout((l) => closeFloat(l, float.id));
+    endTerminal(float.tab);
+  };
 
   const openPageIn = (
     kind: Exclude<TabKind, "start" | "file">,
@@ -254,7 +380,24 @@ export default function WorkspacePanel({
     if (!used.includes("1")) setSecondShown(false);
   }, [usedSlots, setFirstShown, setSecondShown]);
 
+  const closeRef = useRef<(tabId: string) => void>(() => {});
+  closeRef.current = (tabId) => {
+    const float = layout.floats.find((f) => f.tab.id === tabId);
+    if (float) {
+      closeFloating(float);
+      return;
+    }
+    const pane = layout.panes.find((p) => p.tabs.tabs.some((t) => t.id === tabId));
+    const tab = pane?.tabs.tabs.find((t) => t.id === tabId);
+    if (!pane || !tab || !canCloseTab(layout, pane, tab)) return;
+    closeTabIn(pane.id, tab);
+    requestAnimationFrame(() =>
+      aside.current?.querySelector<HTMLElement>("[data-tab-cell]:not([hidden])")?.focus(),
+    );
+  };
+
   useEffect(() => {
+    const inFloat = () => document.activeElement?.closest("[data-float-panel]") != null;
     const onKey = (e: KeyboardEvent) => {
       const primary = e.metaKey || e.ctrlKey;
       const { layout: current } = latest.current;
@@ -288,18 +431,34 @@ export default function WorkspacePanel({
         setFullscreen((v) => !v);
       } else if (e.code === "Backslash" && primary && !e.altKey && !e.shiftKey && focused) {
         e.preventDefault();
-        if (rooms.current[pane.id] !== false) setLayout((l) => split(l, pane.id));
+        if (!inFloat() && rooms.current[pane.id] !== false) setLayout((l) => split(l, pane.id));
+      } else if (e.code === "KeyW" && primary && e.altKey && !e.shiftKey) {
+        const cell = document.activeElement?.closest<HTMLElement>("[data-tab-cell]");
+        if (!cell || !aside.current?.contains(cell)) return;
+        e.preventDefault();
+        closeRef.current(cell.dataset.tabCell ?? "");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [setFirstShown, setSecondShown]);
 
-  const body = (tab: PanelTab, pane: Pane): ReactNode => {
-    const tree = trees[pane.slot];
+  /** A tab's content; `pane` is absent while the tab floats. */
+  const body = (tab: PanelTab, pane: Pane | null): ReactNode => {
+    if (!pane && (tab.kind === "files" || tab.kind === "file")) {
+      return <OwnTree projectId={projectId}>{(own) => content(tab, null, own)}</OwnTree>;
+    }
+    return content(tab, pane, pane ? trees[pane.slot] : firstTree);
+  };
+
+  const content = (
+    tab: PanelTab,
+    pane: Pane | null,
+    tree: ReturnType<typeof useWorkspaceTree>,
+  ): ReactNode => {
     switch (tab.kind) {
       case "start":
-        return <StartPage onOpen={(kind, shell) => openPageIn(kind, pane.id, shell)} />;
+        return <StartPage onOpen={(kind, shell) => openPageIn(kind, pane?.id, shell)} />;
       case "files":
         return (
           <FilesPage
@@ -317,7 +476,7 @@ export default function WorkspacePanel({
             rootPath={rootPath}
             tab={tab}
             tree={tree}
-            active={tab.id === pane.tabs.active}
+            active={pane ? tab.id === pane.tabs.active : true}
             changeKey={`${busy}:${change?.diff ?? ""}`}
             onOpenInPlace={(path) => openFile({ path }, true)}
           />
@@ -333,15 +492,19 @@ export default function WorkspacePanel({
   };
 
   const two = layout.panes.length === 2;
+  const origin = fixedOrigin(aside.current);
   // Kept in a fixed order, so moving a tab between panes never moves its DOM.
-  const cells = layout.panes
-    .flatMap((pane, index) => pane.tabs.tabs.map((tab) => ({ tab, pane, column: index + 1 })))
-    .sort((a, b) => a.tab.id.localeCompare(b.tab.id));
+  const cells = [
+    ...layout.panes.flatMap((pane, index) =>
+      pane.tabs.tabs.map((tab) => ({ tab, pane, column: index + 1, float: null })),
+    ),
+    ...layout.floats.map((float) => ({ tab: float.tab, pane: null, column: 1, float })),
+  ].sort((a, b) => a.tab.id.localeCompare(b.tab.id));
   const lastPane = layout.panes[layout.panes.length - 1];
   const target = drag.target;
 
   return (
-    <>
+    <TooltipProvider>
       {!open && (
         <Button
           type="button"
@@ -355,19 +518,20 @@ export default function WorkspacePanel({
           <PanelRightIcon />
         </Button>
       )}
-      {/* Hidden rather than unmounted, so collapsing keeps the terminals. */}
+      {/* Off stage rather than unmounted: collapsing keeps the terminals, and
+          floating panels stay on screen. */}
       <aside
         ref={aside}
         aria-label="Workspace panel"
-        hidden={!open}
-        style={fullscreen ? undefined : { width: shownWidth }}
+        aria-hidden={!open && layout.floats.length === 0 ? true : undefined}
+        style={!open ? offStage(shownWidth) : fullscreen ? undefined : { width: shownWidth }}
         className={cn(
           "relative -my-6 -mr-4 min-h-0 min-w-[300px] shrink-0 flex-col border-l bg-background",
           "max-w-[min(70%,calc(100%-400px))]",
           "max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-10 max-lg:my-0 max-lg:mr-0 max-lg:w-full! max-lg:max-w-[480px]",
           "max-md:fixed max-md:inset-0 max-md:z-40 max-md:max-w-none",
-          fullscreen && "fixed inset-0 z-40 m-0 w-full max-w-none",
-          open && "flex",
+          fullscreen && open && "fixed inset-0 z-40 m-0 w-full max-w-none",
+          "flex",
         )}
       >
         {!fullscreen && (
@@ -399,16 +563,13 @@ export default function WorkspacePanel({
               paneCount={layout.panes.length}
               draggingId={drag.dragging}
               closable={(tab) => canCloseTab(layout, pane, tab)}
+              menuOf={(tab) => menuTabs(layout, pane.id, tab.id)}
               onActivate={(tab) => {
                 if (!drag.consumeDrag()) setLayout((l) => activateTab(l, pane.id, tab.id));
               }}
-              onClose={(tab) => {
-                setLayout((l) => closePaneTab(l, pane.id, tab.id));
-                if (tab.kind === "terminal") {
-                  api.closeTerminal(projectId, tab.id).catch((err: Error) => {
-                    console.warn("Could not close the terminal", err);
-                  });
-                }
+              onClose={(tab) => closeTabIn(pane.id, tab)}
+              onCloseMany={(tabs) => {
+                for (const tab of tabs) closeTabIn(pane.id, tab);
               }}
               onRename={(tab, title) => setLayout((l) => renameTab(l, tab.id, title))}
               onDragStart={(event, tab) => drag.begin(event, tab.id)}
@@ -420,57 +581,121 @@ export default function WorkspacePanel({
             >
               {pane === lastPane && (
                 <>
-                  <button
-                    type="button"
-                    aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-                    title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-                    className={STRIP_BUTTON}
-                    onClick={() => setFullscreen((v) => !v)}
+                  <StripTip
+                    label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+                    keys={shortcutLabel("alt", "↩")}
                   >
-                    {fullscreen ? (
-                      <Minimize2Icon aria-hidden className="size-4" />
-                    ) : (
-                      <Maximize2Icon aria-hidden className="size-4" />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Collapse right sidebar"
-                    title="Collapse sidebar"
-                    className={STRIP_BUTTON}
-                    onClick={() => {
-                      setFullscreen(false);
-                      setOpen(false);
-                    }}
-                  >
-                    <PanelRightIcon aria-hidden className="size-4" />
-                  </button>
+                    <button
+                      type="button"
+                      aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+                      className={STRIP_BUTTON}
+                      onClick={() => setFullscreen((v) => !v)}
+                    >
+                      {fullscreen ? (
+                        <Minimize2Icon aria-hidden className="size-4" />
+                      ) : (
+                        <Maximize2Icon aria-hidden className="size-4" />
+                      )}
+                    </button>
+                  </StripTip>
+                  <StripTip label="Collapse sidebar" keys={shortcutLabel("shift", "B")}>
+                    <button
+                      type="button"
+                      aria-label="Collapse right sidebar"
+                      className={STRIP_BUTTON}
+                      onClick={() => {
+                        setFullscreen(false);
+                        setOpen(false);
+                      }}
+                    >
+                      <PanelRightIcon aria-hidden className="size-4" />
+                    </button>
+                  </StripTip>
                 </>
               )}
             </TabStrip>
           ))}
-          {cells.map(({ tab, pane, column }) => {
-            const shown = tab.id === pane.tabs.active;
+          {cells.map(({ tab, pane, column, float }) => {
+            const shown = pane ? tab.id === pane.tabs.active : true;
+            const title = pane
+              ? titleOf(pane.tabs, tab)
+              : titleOf({ tabs: [tab], active: tab.id, next: 0 }, tab);
+            const rect = float && lifted?.id === float.id ? lifted.rect : null;
+            const depth = float ? layout.floats.indexOf(float) + 1 : 0;
             return (
               <div
                 key={tab.id}
                 role="tabpanel"
-                aria-label={titleOf(pane.tabs, tab)}
-                data-tab-pane={pane.id}
+                aria-label={title}
+                tabIndex={-1}
+                data-tab-cell={tab.id}
+                data-tab-pane={pane?.id}
+                data-float-panel={float?.id}
                 hidden={!shown}
-                style={{ gridColumn: column, gridRow: 2 }}
-                onPointerDownCapture={() => setLayout((l) => focusPane(l, pane.id))}
+                style={
+                  float
+                    ? {
+                        visibility: "visible",
+                        zIndex: rect ? 60 + layout.floats.length + 1 : 60 + depth,
+                        ...(rect
+                          ? {
+                              left: rect.x - origin.x,
+                              top: rect.y - origin.y,
+                              width: rect.width,
+                              height: rect.height,
+                            }
+                          : restingStyle(float.rect, origin)),
+                      }
+                    : { gridColumn: column, gridRow: 2 }
+                }
+                onPointerDownCapture={() =>
+                  setLayout((l) => (float ? raiseFloat(l, float.id) : focusPane(l, pane?.id ?? "")))
+                }
+                onTransitionEnd={float ? () => setSettling(null) : undefined}
                 className={cn(
-                  "min-h-0 min-w-0 flex-col",
+                  "min-h-0 min-w-0 flex-col outline-none",
                   shown && "flex",
-                  tab.kind === "file" || tab.kind === "files"
-                    ? "overflow-hidden"
-                    : "overflow-y-auto",
-                  tab.kind === "changes" && "p-3",
-                  tab.kind === "terminal" && "mt-2 overflow-hidden p-2",
+                  float &&
+                    "group/float fixed overflow-hidden rounded-[28px] bg-background shadow-[0_0_0_0.5px_rgba(0,0,0,0.1),0_3px_8px_rgba(0,0,0,0.04),0_0_20px_rgba(0,0,0,0.05)]",
+                  float?.id === settling &&
+                    "transition-[left,top] duration-300 ease-[cubic-bezier(0.2,1.25,0.4,1)] motion-reduce:transition-none",
                 )}
               >
-                {body(tab, pane)}
+                {float && (
+                  <FloatHeader
+                    title={title}
+                    icon={
+                      tab.kind === "file" ? (
+                        <FileTypeIcon path={tab.path ?? ""} />
+                      ) : (
+                        <TabIcon kind={tab.kind} />
+                      )
+                    }
+                    closable
+                    onGrip={(event) => gripFloat("move", float, event)}
+                    onDock={() => {
+                      setOpen(true);
+                      setLayout((l) => unfloat(l, float.id));
+                    }}
+                    onClose={() => closeFloating(float)}
+                  />
+                )}
+                <div
+                  data-tab-body=""
+                  className={cn(
+                    "flex min-h-0 min-w-0 flex-1 flex-col",
+                    tab.kind === "file" || tab.kind === "files"
+                      ? "overflow-hidden"
+                      : "overflow-y-auto",
+                    tab.kind === "changes" && "p-3",
+                    tab.kind === "terminal" && "mt-2 overflow-hidden p-2",
+                  )}
+                >
+                  {body(tab, pane)}
+                </div>
+                {float && (
+                  <FloatResizeCorner onGrip={(event) => gripFloat("resize", float, event)} />
+                )}
               </div>
             );
           })}
@@ -510,6 +735,6 @@ export default function WorkspacePanel({
           )}
         </div>
       </aside>
-    </>
+    </TooltipProvider>
   );
 }

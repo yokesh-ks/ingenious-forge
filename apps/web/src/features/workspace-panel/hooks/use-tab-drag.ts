@@ -13,7 +13,8 @@ const inside = (rect: DOMRect, x: number, y: number) =>
 
 /**
  * Dragging a tab: along a strip to reorder it, to the other pane's strip or
- * body to move it, or to one side of a lone pane to split it. The result is
+ * body to move it, to one side of a lone pane to split it, or clear of the
+ * panel to float it. The result is
  * reported once, on release. `canDropToSplit` says whether a lone pane has
  * room for two.
  */
@@ -22,11 +23,14 @@ export function useTabDrag({
   paneCount,
   canDropToSplit,
   onDrop,
+  onFloat,
 }: {
   root: RefObject<HTMLElement | null>;
   paneCount: () => number;
   canDropToSplit: () => boolean;
   onDrop: (tabId: string, target: DropTarget) => void;
+  /** The tab was released clear of the panel. */
+  onFloat: (tabId: string, x: number, y: number) => void;
 }) {
   const [dragging, setDragging] = useState<string | null>(null);
   const [target, setTarget] = useState<DropTarget | null>(null);
@@ -83,16 +87,21 @@ export function useTabDrag({
       latest = locate(e.clientX, e.clientY, tabId);
       setTarget(latest);
     };
-    const finish = (commit: boolean) => {
+    const finish = (end?: PointerEvent) => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
       setDragging(null);
       setTarget(null);
-      if (commit && active && latest) onDrop(tabId, latest);
+      if (!end || !active) return;
+      const box = root.current?.getBoundingClientRect();
+      if (latest) onDrop(tabId, latest);
+      else if (box && !inside(box, end.clientX, end.clientY)) {
+        onFloat(tabId, end.clientX, end.clientY);
+      }
     };
-    const onUp = () => finish(true);
-    const onCancel = () => finish(false);
+    const onUp = (e: PointerEvent) => finish(e);
+    const onCancel = () => finish();
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
