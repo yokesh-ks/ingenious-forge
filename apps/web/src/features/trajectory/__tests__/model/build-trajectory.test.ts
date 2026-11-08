@@ -182,6 +182,16 @@ describe("ledgerRows", () => {
     expect(labels(rows)).toContain("assistant #2: There are two files.");
   });
 
+  it("narrows to the records a timeline range covers, as a flat list", () => {
+    const rows = ledgerRows(buildTrajectory(session()).records, {
+      turns: true,
+      calls: true,
+      query: "",
+      focus: new Set(["tool:t1", "tool:t2"]),
+    });
+    expect(rows.map((r) => r.key)).toEqual(["tool:t1", "tool:t2"]);
+  });
+
   it("keeps rows that match the search and the reply of a matching call", () => {
     const rows = ledgerRows(buildTrajectory(session()).records, {
       turns: false,

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import {
   type AssistantRecord,
   type Block,
+  replyDuration,
   sessionUsageUpTo,
   type ToolRecord,
   type TrajectoryRecord,
@@ -128,8 +129,7 @@ function Rendered({ record }: { record: ToolRecord }) {
 }
 
 function RequestTiming({ reply }: { reply: AssistantRecord }) {
-  const total =
-    reply.startedAt !== null && reply.endedAt !== null ? reply.endedAt - reply.startedAt : null;
+  const total = replyDuration(reply);
   const tps =
     reply.usage && reply.generationMs ? reply.usage.output / (reply.generationMs / 1000) : null;
   return (
