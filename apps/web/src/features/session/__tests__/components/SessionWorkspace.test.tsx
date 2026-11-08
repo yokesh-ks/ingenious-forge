@@ -80,6 +80,8 @@ describe("SessionWorkspace", () => {
           exitCode: null,
           approval: { kind: "command", command: "ls", path: null, diff: null, status: "pending" },
           meta: null,
+          question: null,
+          todos: null,
         },
       ],
     });

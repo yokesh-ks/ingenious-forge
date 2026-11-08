@@ -455,6 +455,65 @@ pub enum ClientMessage {
         call_id: String,
         decision: ApprovalDecision,
     },
+    /// Answer the question card for tool call `call_id`, one answer per
+    /// question. An answer with nothing selected and no custom text skips
+    /// that question.
+    AnswerQuestion {
+        session_id: String,
+        call_id: String,
+        answers: Vec<QuestionAnswer>,
+    },
+}
+
+/// One question the agent asks with `ask_user_question`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Question {
+    /// Stable id, echoed in the answer.
+    pub id: String,
+    pub question: String,
+    /// A short heading such as "Confirm".
+    #[serde(default)]
+    pub header: Option<String>,
+    #[serde(default)]
+    pub options: Vec<QuestionOption>,
+    /// Whether the user may pick more than one option.
+    #[serde(default)]
+    pub multi_select: bool,
+}
+
+/// A choice offered for a question.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct QuestionOption {
+    pub label: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+/// The user's answer to one question: the option labels picked and any
+/// text typed instead.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct QuestionAnswer {
+    pub id: String,
+    #[serde(default)]
+    pub selected: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub custom: Option<String>,
+}
+
+/// One entry of the agent's plan (`todo_write`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct TodoItem {
+    pub content: String,
+    pub status: TodoStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum TodoStatus {
+    Pending,
+    InProgress,
+    Completed,
 }
 
 /// What an approval card asks about.
@@ -726,6 +785,26 @@ pub enum SessionEvent {
         session_id: String,
         sandbox: SandboxInfo,
     },
+    /// The agent replaced its plan with `todos` (tool call `call_id`).
+    TodosUpdated {
+        session_id: String,
+        call_id: String,
+        todos: Vec<TodoItem>,
+    },
+    /// The agent waits for the user to answer `questions` (tool call
+    /// `call_id`).
+    QuestionAsked {
+        session_id: String,
+        call_id: String,
+        questions: Vec<Question>,
+    },
+    /// The question card for `call_id` was answered; `None` when it was
+    /// cancelled because the turn stopped.
+    QuestionAnswered {
+        session_id: String,
+        call_id: String,
+        answers: Option<Vec<QuestionAnswer>>,
+    },
 }
 
 /// Tokens one model request used, normalized across providers: `input`
@@ -851,7 +930,10 @@ impl SessionEvent {
             | Self::ApprovalModeChanged { session_id, .. }
             | Self::ApprovalRequested { session_id, .. }
             | Self::ApprovalResolved { session_id, .. }
-            | Self::SandboxChanged { session_id, .. } => session_id,
+            | Self::SandboxChanged { session_id, .. }
+            | Self::TodosUpdated { session_id, .. }
+            | Self::QuestionAsked { session_id, .. }
+            | Self::QuestionAnswered { session_id, .. } => session_id,
         }
     }
 }
@@ -915,6 +997,11 @@ pub fn typescript_bindings() -> String {
         HeaderReason::decl(&cfg),
         ModelRef::decl(&cfg),
         TitleSource::decl(&cfg),
+        Question::decl(&cfg),
+        QuestionOption::decl(&cfg),
+        QuestionAnswer::decl(&cfg),
+        TodoItem::decl(&cfg),
+        TodoStatus::decl(&cfg),
         SessionEvent::decl(&cfg),
         SessionEnvelope::decl(&cfg),
     ];

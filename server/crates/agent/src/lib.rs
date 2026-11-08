@@ -21,7 +21,7 @@ use std::{
 
 use api_types::{
     ApprovalDecision, ApprovalKind, ApprovalMode, HeaderReason, MessageSource, ModelRef,
-    SessionEvent, ToolSchema, TurnEndReason,
+    QuestionAnswer, SessionEvent, TodoItem, TodoStatus, ToolSchema, TurnEndReason,
 };
 use services::{log::LogRecord, EventService};
 use tokio::sync::watch;
@@ -93,6 +93,22 @@ struct SessionState {
     logged_header: Option<RequestShape>,
     /// The last logged system prompt.
     logged_system: Option<String>,
+    /// The plan the agent last wrote with `todo_write` this turn.
+    todos: Vec<TodoItem>,
+    /// Question cards waiting for an answer, by tool call id, with the
+    /// ids of the questions they ask.
+    questions: HashMap<String, PendingQuestion>,
+}
+
+/// The `ask_user_question` result the model reads.
+#[derive(serde::Serialize)]
+struct Answers<'a> {
+    answers: &'a [QuestionAnswer],
+}
+
+struct PendingQuestion {
+    ids: Vec<String>,
+    answer: tokio::sync::oneshot::Sender<Vec<QuestionAnswer>>,
 }
 
 /// The parts of a model request a `RequestHeader` records.
@@ -530,6 +546,44 @@ impl Agent {
         }
     }
 
+    /// The plan the agent last wrote this turn with `todo_write`.
+    pub fn todos(&self, session_id: &str) -> Vec<TodoItem> {
+        let sessions = self.sessions.lock().unwrap();
+        sessions
+            .get(session_id)
+            .map(|s| s.todos.clone())
+            .unwrap_or_default()
+    }
+
+    /// Answers the question card for `call_id`, one answer per question
+    /// asked. False when no card for it is waiting or the answers do not
+    /// match its questions.
+    pub fn answer_question(
+        &self,
+        session_id: &str,
+        call_id: &str,
+        answers: Vec<QuestionAnswer>,
+    ) -> bool {
+        let waiting = {
+            let mut sessions = self.sessions.lock().unwrap();
+            let Some(session) = sessions.get_mut(session_id) else {
+                return false;
+            };
+            let Some(pending) = session.questions.get(call_id) else {
+                return false;
+            };
+            let mut given: Vec<&str> = answers.iter().map(|a| a.id.as_str()).collect();
+            let mut asked: Vec<&str> = pending.ids.iter().map(String::as_str).collect();
+            given.sort_unstable();
+            asked.sort_unstable();
+            if given != asked {
+                return false;
+            }
+            session.questions.remove(call_id)
+        };
+        waiting.is_some_and(|pending| pending.answer.send(answers).is_ok())
+    }
+
     /// Answers the approval card for `call_id`. False when no card for it
     /// is waiting.
     pub fn answer_approval(
@@ -769,6 +823,8 @@ impl Agent {
         session.running = true;
         session.cancel = Some(cancel);
         session.turns += 1;
+        // A plan belongs to the turn that wrote it.
+        session.todos.clear();
         let turn = session.turns;
         let agent = self.clone();
         tokio::spawn(async move {
@@ -1118,6 +1174,16 @@ impl Agent {
                 .run_web_fetch(session_id, call_id, &input, started_at)
                 .await;
         }
+        if name == tools::TODO_WRITE {
+            let outcome = self.write_todos(session_id, &call_id, &input);
+            return self.finish_tool(session_id, call_id, outcome, started_at);
+        }
+        if name == tools::ASK_USER_QUESTION {
+            let outcome = self
+                .ask_questions(session_id, &call_id, &input, cancelled)
+                .await;
+            return self.finish_tool(session_id, call_id, outcome, started_at);
+        }
         // A changed file is diffed against the file as it was before the
         // agent's first change to it in this session.
         let edited =
@@ -1352,6 +1418,137 @@ impl Agent {
             content: output,
             is_error: true,
         })
+    }
+
+    /// Publishes a tool's result and returns it for the model.
+    fn finish_tool(
+        &self,
+        session_id: &str,
+        call_id: String,
+        outcome: tools::ToolOutcome,
+        started_at: u64,
+    ) -> ContentBlock {
+        self.events.publish(SessionEvent::ToolResult {
+            session_id: session_id.to_string(),
+            call_id: call_id.clone(),
+            output: outcome.output.clone(),
+            is_error: outcome.is_error,
+            exit_code: None,
+            meta: outcome.meta,
+            started_at,
+            ended_at: services::log::now_ms(),
+        });
+        ContentBlock::ToolResult {
+            tool_use_id: call_id,
+            content: outcome.output,
+            is_error: outcome.is_error,
+        }
+    }
+
+    /// Replaces the session's plan (`todo_write`).
+    fn write_todos(
+        &self,
+        session_id: &str,
+        call_id: &str,
+        input: &serde_json::Value,
+    ) -> tools::ToolOutcome {
+        let todos = match ToolBox::parse_todos(input) {
+            Ok(todos) => todos,
+            Err(err) => return tools::ToolOutcome::error(err),
+        };
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            sessions.entry(session_id.to_string()).or_default().todos = todos.clone();
+        }
+        self.events.publish(SessionEvent::TodosUpdated {
+            session_id: session_id.to_string(),
+            call_id: call_id.to_string(),
+            todos: todos.clone(),
+        });
+        let count = |status| todos.iter().filter(|t| t.status == status).count();
+        let (pending, in_progress, completed) = (
+            count(TodoStatus::Pending),
+            count(TodoStatus::InProgress),
+            count(TodoStatus::Completed),
+        );
+        tools::ToolOutcome {
+            output: format!(
+                "Updated todo list: {pending} pending, {in_progress} in progress, {completed} completed."
+            ),
+            is_error: false,
+            meta: Some(serde_json::json!({
+                "todos": todos,
+                "counts": {
+                    "pending": pending,
+                    "in_progress": in_progress,
+                    "completed": completed,
+                },
+            })),
+        }
+    }
+
+    /// Shows a question card and waits for the user's answer
+    /// (`ask_user_question`); a stopped turn cancels it.
+    async fn ask_questions(
+        &self,
+        session_id: &str,
+        call_id: &str,
+        input: &serde_json::Value,
+        mut cancelled: watch::Receiver<bool>,
+    ) -> tools::ToolOutcome {
+        let questions = match ToolBox::parse_questions(input) {
+            Ok(questions) => questions,
+            Err(err) => return tools::ToolOutcome::error(err),
+        };
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            sessions
+                .entry(session_id.to_string())
+                .or_default()
+                .questions
+                .insert(
+                    call_id.to_string(),
+                    PendingQuestion {
+                        ids: questions.iter().map(|q| q.id.clone()).collect(),
+                        answer: tx,
+                    },
+                );
+        }
+        self.events.publish(SessionEvent::QuestionAsked {
+            session_id: session_id.to_string(),
+            call_id: call_id.to_string(),
+            questions: questions.clone(),
+        });
+        let answers = tokio::select! {
+            answer = rx => answer.ok(),
+            _ = cancelled.wait_for(|stop| *stop) => None,
+        };
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            if let Some(session) = sessions.get_mut(session_id) {
+                session.questions.remove(call_id);
+            }
+        }
+        self.events.publish(SessionEvent::QuestionAnswered {
+            session_id: session_id.to_string(),
+            call_id: call_id.to_string(),
+            answers: answers.clone(),
+        });
+        match answers {
+            Some(answers) => tools::ToolOutcome {
+                // Through a struct, so each answer keeps its field order.
+                output: serde_json::to_string(&Answers { answers: &answers }).unwrap_or_default(),
+                is_error: false,
+                meta: Some(serde_json::json!({
+                    "questions": questions,
+                    "answers": answers,
+                })),
+            },
+            None => {
+                tools::ToolOutcome::error("The question was cancelled before the user answered.")
+            }
+        }
     }
 
     /// Fetches a web page as text, when the session's sandbox allows the

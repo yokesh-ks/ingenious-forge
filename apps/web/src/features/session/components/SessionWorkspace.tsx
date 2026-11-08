@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ApprovalDecision } from "@/api/types";
+import type { ApprovalDecision, QuestionAnswer } from "@/api/types";
 import type { SessionState } from "@/features/session/session-reducer";
 import Composer from "./Composer";
 import SessionView from "./SessionView";
@@ -10,6 +10,7 @@ interface SessionWorkspaceProps {
   onSend: (text: string) => boolean;
   onStop: () => void;
   onAnswerApproval: (callId: string, decision: ApprovalDecision) => void;
+  onAnswerQuestion?: (callId: string, answers: QuestionAnswer[]) => void;
   /** A row directly above the composer, as wide as it is. */
   composerBar?: ReactNode;
   /** Controls at the left of the composer's bottom row. */
@@ -25,6 +26,7 @@ export default function SessionWorkspace({
   onSend,
   onStop,
   onAnswerApproval,
+  onAnswerQuestion,
   composerBar,
   startControls,
   endControls,
@@ -42,6 +44,7 @@ export default function SessionWorkspace({
           running={state.running}
           error={state.error}
           onAnswerApproval={onAnswerApproval}
+          onAnswerQuestion={onAnswerQuestion}
         />
       </div>
       <div className="flex flex-col gap-2">

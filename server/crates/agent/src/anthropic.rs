@@ -791,7 +791,17 @@ mod tests {
             .collect();
         assert_eq!(
             names,
-            ["read", "write", "edit", "glob", "grep", "web_fetch", "bash"]
+            [
+                "read",
+                "write",
+                "edit",
+                "glob",
+                "grep",
+                "web_fetch",
+                "bash",
+                "todo_write",
+                "ask_user_question"
+            ]
         );
         assert!(body["tools"][0]["input_schema"].is_object());
     }
