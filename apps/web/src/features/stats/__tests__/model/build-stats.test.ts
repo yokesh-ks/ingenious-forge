@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { SessionEnvelope, SessionEvent } from "@/api/types";
 import {
+  answerPreview,
   buildStats,
   cacheHit,
+  callGroups,
   contextTokens,
+  countLines,
+  diffLines,
+  formatClock,
   formatClockMs,
   formatKTokens,
   formatMs,
   stepTiming,
+  toolHint,
   turnTotals,
 } from "../../model/build-stats";
 
@@ -146,12 +152,12 @@ describe("buildStats", () => {
     expect(first.tools).toEqual([
       expect.objectContaining({
         name: "bash",
-        detail: "List top-level project files",
+        hint: "List top-level project files",
         chars: 5,
         lines: 3,
         ms: 80,
       }),
-      expect.objectContaining({ name: "read", detail: "README.md", chars: 6, ms: 30 }),
+      expect.objectContaining({ name: "read", hint: "/p/README.md", chars: 6, ms: 30 }),
     ]);
     expect(first.answer).toBe("I'll start by listing.");
     expect(second.tools).toEqual([]);
@@ -164,7 +170,177 @@ describe("buildStats", () => {
       turn.rows.map((r) => (r.kind === "step" ? `step ${r.step.step}` : r.event.label)),
     ).toEqual(["step 1", "System prompt", "Request header", "step 2"]);
     const prompt = turn.rows.find((r) => r.kind === "event");
-    expect(prompt?.kind === "event" && prompt.event.detail).toBe("6.1K chars");
+    expect(prompt?.kind === "event" && prompt.event.detail).toBe("set · 6.1K chars");
+    const header = turn.rows.filter((r) => r.kind === "event")[1];
+    expect(header.kind === "event" && header.event.detail).toBe("initial · 0 tools");
+  });
+
+  it("marks how each turn ended", () => {
+    const events = session();
+    const running = buildStats(events.slice(0, -1))[0];
+    expect(running.state).toBe("running");
+    expect(buildStats(events)[0].state).toBe("completed");
+    const failed = [
+      ...events.slice(0, -1),
+      at(4_020, {
+        type: "turn_ended",
+        session_id: S,
+        turn: 1,
+        reason: { kind: "error", code: "model", message: "boom" },
+      }),
+    ];
+    expect(buildStats(failed)[0].state).toBe("failed");
+    const stopped = [
+      ...events.slice(0, -1),
+      at(4_020, { type: "turn_ended", session_id: S, turn: 1, reason: { kind: "interrupted" } }),
+    ];
+    expect(buildStats(stopped)[0].state).toBe("interrupted");
+  });
+
+  it("adds approval and failed-attempt rows, naming the tool asked about", () => {
+    const events = session();
+    const [turn] = buildStats([
+      ...events.slice(0, 5),
+      at(1_050, {
+        type: "approval_requested",
+        session_id: S,
+        call_id: "t1",
+        kind: "command",
+        command: "ls",
+        path: null,
+        diff: null,
+      }),
+      at(1_060, { type: "approval_resolved", session_id: S, call_id: "t1", decision: "approve" }),
+      at(1_070, { type: "assistant_attempt", session_id: S, turn: 1, step: 1, error: "reset" }),
+      ...events.slice(5),
+    ]);
+    const rows = turn.rows.flatMap((r) =>
+      r.kind === "event" ? [`${r.event.label} | ${r.event.subject} | ${r.event.detail}`] : [],
+    );
+    expect(rows).toEqual([
+      "System prompt | set | set · 6.1K chars",
+      "Request header | nvidia / nemotron | initial · 0 tools",
+      "Approval | command | ls · waiting",
+      "Approval | command | ls · allowed once",
+      "Model attempt | reset | Model attempt without a committed message",
+    ]);
+  });
+
+  it("records failures, edit line counts and read files on tool calls", () => {
+    const events = session();
+    const [turn] = buildStats([
+      ...events.slice(0, 7),
+      at(2_100, {
+        type: "tool_result",
+        session_id: S,
+        call_id: "t1",
+        output: "no such file",
+        is_error: true,
+        exit_code: 1,
+        meta: null,
+        started_at: 2_010,
+        ended_at: 2_090,
+      }),
+      at(2_105, {
+        type: "tool_call",
+        session_id: S,
+        call_id: "e1",
+        name: "edit",
+        args: { file_path: "/p/src/a.ts" },
+        turn: 1,
+        step: 1,
+      }),
+      at(2_106, {
+        type: "tool_result",
+        session_id: S,
+        call_id: "e1",
+        output: "edited",
+        is_error: false,
+        exit_code: null,
+        meta: { path: "/p/src/a.ts", additions: 3, deletions: 1, diff: "@@ -1 +1 @@\n-a\n+b" },
+        started_at: 2_105,
+        ended_at: 2_106,
+      }),
+      ...events.slice(8),
+    ]);
+    const [bash, edit] = turn.steps[0].tools;
+    expect(bash.isError).toBe(true);
+    expect(edit).toEqual(
+      expect.objectContaining({
+        hint: "src/a.ts",
+        added: 3,
+        removed: 1,
+        diff: "@@ -1 +1 @@\n-a\n+b",
+      }),
+    );
+  });
+
+  it("keeps the first 16,000 characters of a long answer or result", () => {
+    const events = session();
+    const long = "y".repeat(16_500);
+    const [turn] = buildStats([
+      ...events.slice(0, 7),
+      at(2_100, {
+        type: "tool_result",
+        session_id: S,
+        call_id: "t1",
+        output: long,
+        is_error: false,
+        exit_code: 0,
+        meta: null,
+        started_at: 2_010,
+        ended_at: 2_090,
+      }),
+      ...events.slice(8),
+    ]);
+    const [bash] = turn.steps[0].tools;
+    expect(bash.chars).toBe(16_500);
+    expect(bash.output?.length).toBe(16_000);
+    expect(bash.truncated).toBe(true);
+  });
+});
+
+describe("execution cell parts", () => {
+  it("cuts each tool's hint to the reference lengths", () => {
+    expect(toolHint("bash", { description: "List project files excluding the build" })).toBe(
+      "List project files excluding …",
+    );
+    expect(toolHint("bash", { command: "ls -la\npwd" })).toBe("ls -la");
+    expect(toolHint("read", { file_path: "/Users/me/ingenious-forge/README.md" })).toBe(
+      "ingenious-forge/README.md",
+    );
+    expect(toolHint("glob", { pattern: "**/*.md", include: "docs" })).toBe("**/*.md (docs)");
+    expect(toolHint("web_fetch", { url: "https://example.com/a" })).toBe("example.com/a");
+    expect(toolHint("todo_write", {})).toBeNull();
+  });
+
+  it("counts lines without a trailing newline's empty line", () => {
+    expect(countLines("")).toBe(0);
+    expect(countLines("a")).toBe(1);
+    expect(countLines("a\nb\n")).toBe(2);
+  });
+
+  it("groups calls by tool and target, in first-call order", () => {
+    const [turn] = buildStats(session());
+    const tools = turn.steps[0].tools;
+    const groups = callGroups([tools[0], tools[1], tools[0]]);
+    expect(groups.map((g) => `${g.name} ${g.hint} ×${g.calls.length}`)).toEqual([
+      "bash List top-level project files ×2",
+      "read /p/README.md ×1",
+    ]);
+  });
+
+  it("previews an answer by its first non-empty line", () => {
+    expect(answerPreview("\n\n  First line\nsecond")).toBe("First line");
+    expect(answerPreview("  ")).toBeNull();
+  });
+
+  it("turns a unified diff into signed lines without its headers", () => {
+    expect(diffLines("--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n keep\n-old\n+new")).toEqual([
+      { sign: " ", text: "keep" },
+      { sign: "−", text: "old" },
+      { sign: "+", text: "new" },
+    ]);
   });
 });
 
@@ -231,6 +407,7 @@ describe("formatting", () => {
     expect(formatKTokens(60)).toBe("0.06K");
     expect(formatKTokens(1_900)).toBe("1.9K");
     expect(formatKTokens(79_900)).toBe("79.9K");
+    expect(formatKTokens(12_300_000)).toBe("12.3M");
   });
 
   it("gives the context and cache hit of a usage", () => {
@@ -243,5 +420,6 @@ describe("formatting", () => {
     const ts = new Date(2026, 10, 8, 9, 15, 6, 410).getTime();
     expect(formatClockMs(ts, false)).toBe("11-08 09:15");
     expect(formatClockMs(ts, true)).toBe("11-08 09:15:06.410");
+    expect(formatClock(ts)).toBe("09:15:06");
   });
 });

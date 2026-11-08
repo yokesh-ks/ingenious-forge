@@ -51,7 +51,7 @@ function events(): SessionEnvelope[] {
       session_id: S,
       turn: 1,
       step: 2,
-      content: [{ type: "text", text: "Here is the summary." }],
+      content: [{ type: "text", text: "Here is the **summary**.\n\nMore." }],
       provider: "p",
       model: "m",
       usage: null,
@@ -114,11 +114,15 @@ describe("StatisticsView", () => {
     expect(turn).toHaveTextContent("1240.0 tok/s");
     expect(turn).toHaveTextContent("3.01 s");
     const step1 = row(/^Step 1/);
-    expect(step1).toHaveTextContent("bash List files");
+    expect(step1).toHaveTextContent("bash List files 3 chars");
+    expect(
+      within(step1).getByTitle(/^started \d\d:\d\d:\d\d · first token 600 ms/),
+    ).toBeInTheDocument();
     expect(step1).toHaveTextContent("95.24%");
     expect(step1).toHaveTextContent("80 ms");
     const step2 = row(/^Step 2/);
-    expect(step2).toHaveTextContent("answer · Here is the summary.");
+    expect(step2).toHaveTextContent("answer · Here is the **summary**.");
+    expect(step2).not.toHaveTextContent("More.");
     // A step that called no tool has no tool time, and says why.
     expect(within(step2).getByTitle("not recorded")).toHaveTextContent("—");
   });
@@ -138,18 +142,34 @@ describe("StatisticsView", () => {
     expect(details).toHaveTextContent("1 tool calls");
     expect(details).toHaveTextContent("bash");
     expect(details).toHaveTextContent("3 chars · 2 lines · 80 ms");
-    expect(within(details).getByText(/^a\s+b$/)).toBeInTheDocument();
+    expect(within(details).getByText("a")).toBeInTheDocument();
+    expect(within(details).getByText("b")).toBeInTheDocument();
+    await userEvent.click(within(details).getByRole("button", { name: "{}" }));
+    expect(details).toHaveTextContent("raw arguments");
+    expect(details).toHaveTextContent('"description": "List files"');
+  });
+
+  it("renders a step's answer as Markdown", async () => {
+    view();
+    await userEvent.click(row(/^Step 2/));
+    const details = screen.getByRole("region", { name: "Step 2 details" });
+    expect(within(details).getByText("summary").tagName).toBe("STRONG");
   });
 
   it("adds event rows, context deltas and the session total on request", async () => {
     view();
     expect(screen.queryByRole("row", { name: /^System prompt/ })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("switch", { name: "Show event rows" }));
-    expect(row(/^System prompt/)).toHaveTextContent("943 chars");
+    expect(row(/^System prompt/)).toHaveTextContent("set · 943 chars");
+    expect(row(/^System prompt/)).toHaveTextContent(/^System prompt\s*\d\d:\d\d:\d\d\s*set/);
     await userEvent.click(screen.getByRole("switch", { name: "Show context delta" }));
     expect(row(/^Step 2/)).toHaveTextContent("24.0K+3.0K");
     await userEvent.click(screen.getByRole("switch", { name: "Show total row" }));
-    expect(await screen.findByRole("row", { name: /^Total/ })).toHaveTextContent("45.0K");
+    const total = await screen.findByRole("row", { name: /^Whole-session total/ });
+    expect(total).toHaveTextContent("Whole-session total · 1 turns · 2 steps");
+    expect(total).toHaveTextContent("45.0K");
+    // No whole-session wall time exists, so the total is model plus tool time.
+    expect(total).toHaveTextContent("2.68 s");
   });
 
   it("sums the turn's context when the basis is cumulative", async () => {
@@ -166,6 +186,63 @@ describe("StatisticsView", () => {
     unmount();
     view();
     expect(screen.getByText("Beginning of history reached")).toBeInTheDocument();
+  });
+
+  it("marks cache misses and failures and summarises each tool's output", () => {
+    const call = (id: string, name: string, args: object, output: string, is_error = false) => [
+      at(2_000, {
+        type: "tool_call",
+        session_id: S,
+        call_id: id,
+        name,
+        args: args as Record<string, string>,
+        turn: 1,
+        step: 1,
+      }),
+      at(2_001, {
+        type: "tool_result",
+        session_id: S,
+        call_id: id,
+        output,
+        is_error,
+        exit_code: null,
+        meta: name === "edit" ? { additions: 4, deletions: 2, diff: "-a\n+b" } : null,
+        started_at: 2_000,
+        ended_at: 2_001,
+      }),
+    ];
+    view({
+      events: [
+        at(1_000, { type: "user_message", session_id: S, text: "Go", source: "human" }),
+        at(1_010, { type: "turn_started", session_id: S, turn: 1 }),
+        at(1_020, { type: "step_started", session_id: S, turn: 1, step: 1 }),
+        ...call("e", "edit", { file_path: "a.ts" }, "edited"),
+        ...call("r", "read", { file_path: "a.md" }, "1: x\n2: y\n"),
+        ...call("b1", "bash", { command: "ls" }, "boom", true),
+        ...call("b2", "bash", { command: "pwd" }, "/p"),
+        ...call("g", "glob", { pattern: "*.md" }, "a.md"),
+        at(2_210, {
+          type: "step_ended",
+          session_id: S,
+          turn: 1,
+          step: 1,
+          usage: { input: 9_000, output: 10, cache_read: 1_000, cache_write: 0 },
+          first_token_ms: 100,
+          generation_ms: 100,
+        }),
+      ],
+    });
+    const turn = row(/^Turn 1/);
+    expect(turn).toHaveTextContent("running");
+    expect(turn).toHaveTextContent("cache miss");
+    expect(turn).toHaveTextContent("1 failed");
+    // Pills are ordered by count, three at most.
+    expect(turn).toHaveTextContent(/bash ×2\s*edit ×1\s*read ×1\s*1 more\s*→ 26 chars/);
+    const step = row(/^Step 1/);
+    expect(step).toHaveTextContent("read a.md 2 lines");
+    expect(step).toHaveTextContent("bash ls 4 chars");
+    expect(step).toHaveTextContent("edit a.ts +4 −2");
+    expect(step).toHaveTextContent("2 more calls");
   });
 
   it("says when there is nothing to show yet", () => {
