@@ -10,7 +10,7 @@ export default function AppSidebar() {
       collapsible="offcanvas"
       className="h-full [&>[data-slot=sidebar-inner]]:bg-background"
     >
-      <SidebarHeader className="flex-row items-center justify-between px-4 py-2.5">
+      <SidebarHeader className="flex-row items-center justify-between">
         <div className="flex items-center gap-3">
           <img
             src={logoUrl}
