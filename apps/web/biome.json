@@ -3,7 +3,7 @@
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!src/api/types.ts", "!src/features/workspace-panel/vendor"]
+    "includes": ["**", "!src/api/types.ts", "!src/features/workspace-panel/vendor", "!src/stories"]
   },
   "formatter": {
     "enabled": true,

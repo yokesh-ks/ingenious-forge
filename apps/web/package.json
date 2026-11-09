@@ -13,7 +13,9 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
@@ -67,6 +69,16 @@
     "tailwindcss": "^4.3.3",
     "typescript": "7.0.2",
     "vite": "8.3.5",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "storybook": "^10.6.6",
+    "@storybook/react-vite": "^10.6.6",
+    "@chromatic-com/storybook": "latest",
+    "@storybook/addon-vitest": "^10.6.6",
+    "@storybook/addon-a11y": "^10.6.6",
+    "@storybook/addon-docs": "^10.6.6",
+    "@storybook/addon-mcp": "^10.6.6",
+    "@vitest/browser-playwright": "5.1.0",
+    "@vitest/coverage-v8": "5.1.0",
+    "playwright": "latest"
   }
 }
