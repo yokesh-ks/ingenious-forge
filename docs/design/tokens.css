@@ -1,0 +1,92 @@
+/* Ingenious Clan — generated from tokens.json */
+:root, [data-theme="light"] {
+  --ground: #eceeea;
+  --surface: #f8f9f6;
+  --surface-raised: #ffffff;
+  --surface-sunken: #e1e4de;
+  --line: #cdd2ca;
+  --line-strong: #78827a;
+  --ink: #141a17;
+  --ink-muted: #4b5550;
+  --on-ink: #f8f9f6;
+  --focus: var(--ink);
+  --proof: #0b6673;
+  --on-proof: #ffffff;
+  --proof-wash: #d6ebee;
+  --gate: #e5ad1c;
+  --on-gate: #241a00;
+  --gate-ink: #755200;
+  --gate-wash: #f8ecc9;
+  --halt: #b5360e;
+  --on-halt: #ffffff;
+  --halt-wash: #f9e0d6;
+  --up: #1d58b3;
+  --down: #9a4a06;
+  --added: var(--up);
+  --added-wash: #dde8f8;
+  --removed: var(--down);
+  --removed-wash: #f7e5d2;
+  --iron: #1b2420;
+  --iron-raised: #2f3b35;
+  --on-iron: #eaeee9;
+  --on-iron-muted: #a6b0a9;
+  --shadow-raised: 0 8px 24px rgba(20, 26, 23, 0.18);
+}
+
+[data-theme="dark"] {
+  --ground: #0f1311;
+  --surface: #161b18;
+  --surface-raised: #1e2521;
+  --surface-sunken: #0a0d0c;
+  --line: #2c3530;
+  --line-strong: #6b7870;
+  --ink: #eaeee9;
+  --ink-muted: #a6b0a9;
+  --on-ink: #0f1311;
+  --focus: var(--ink);
+  --proof: #56cfd6;
+  --on-proof: #06262b;
+  --proof-wash: #10323a;
+  --gate: #f0bf3f;
+  --on-gate: #241a00;
+  --gate-ink: #f0bf3f;
+  --gate-wash: #33290f;
+  --halt: #ff8f5e;
+  --on-halt: #2b0e02;
+  --halt-wash: #3a1c10;
+  --up: #86b4ff;
+  --down: #f2a96f;
+  --added: var(--up);
+  --added-wash: #16294a;
+  --removed: var(--down);
+  --removed-wash: #3a2511;
+  --iron: #0a0d0c;
+  --iron-raised: #222b26;
+  --on-iron: #eaeee9;
+  --on-iron-muted: #a6b0a9;
+  --shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-full: 999px;
+  --control-sm: 28px;
+  --control-md: 36px;
+  --control-lg: 44px;
+  --rail-width: 72px;
+  --header-height: 44px;
+  --sidebar-width: 260px;
+  --panel-width: 500px;
+  --font-display: "Big Shoulders Display", "Arial Narrow", sans-serif;
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}

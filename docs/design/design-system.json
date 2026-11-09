@@ -1,0 +1,93 @@
+{
+  "v": 3,
+  "layout": "files",
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-11-09T12:00:00Z"
+  },
+  "title": "Ingenious Clan",
+  "namespace": "Clan",
+  "libraries": [
+    {
+      "name": "react",
+      "version": "18"
+    },
+    {
+      "name": "react-dom",
+      "version": "18"
+    }
+  ],
+  "sections": {},
+  "groups": [
+    "Logos"
+  ],
+  "assetGroups": {
+    "Logos": {
+      "name": "Logos",
+      "tile": "l",
+      "order": [
+        "clan-mark.svg",
+        "clan-mark-reversed.svg",
+        "clan-app-icon.svg",
+        "clan-lockup.png",
+        "clan-lockup-reversed.png",
+        "clan-mark-ink.svg",
+        "clan-mark-white.svg"
+      ],
+      "files": {
+        "clan-mark.svg": {
+          "name": "clan-mark.svg",
+          "blob": "1984e8fd168f3e35eb9784bc746e746e",
+          "size": 658,
+          "type": "image/svg+xml"
+        },
+        "clan-mark-reversed.svg": {
+          "name": "clan-mark-reversed.svg",
+          "blob": "829c5d0c34b0b5756ef88747a81829e8",
+          "size": 658,
+          "type": "image/svg+xml"
+        },
+        "clan-app-icon.svg": {
+          "name": "clan-app-icon.svg",
+          "blob": "9a4456a9d9a9131597d29055785229ee",
+          "size": 757,
+          "type": "image/svg+xml"
+        },
+        "clan-lockup.png": {
+          "name": "clan-lockup.png",
+          "blob": "8235d2afd1778b6535f6b1222caba665",
+          "size": 47869,
+          "type": "image/png"
+        },
+        "clan-lockup-reversed.png": {
+          "name": "clan-lockup-reversed.png",
+          "blob": "a5eeee7c2fea36f8ca210927bbc9142c",
+          "size": 48125,
+          "type": "image/png"
+        },
+        "clan-mark-ink.svg": {
+          "name": "clan-mark-ink.svg",
+          "blob": "a57564868d21eb14a31b52b7d04ea465",
+          "size": 658,
+          "type": "image/svg+xml"
+        },
+        "clan-mark-white.svg": {
+          "name": "clan-mark-white.svg",
+          "blob": "549ec9119d7e39ec82bbbf82fa3043cf",
+          "size": 658,
+          "type": "image/svg+xml"
+        }
+      }
+    }
+  },
+  "blobs": {},
+  "docs": {
+    "readme": "project/README.md",
+    "sections": []
+  },
+  "lastChange": {
+    "by": "yokesh-ks",
+    "at": "2026-11-09T18:00:00Z",
+    "note": "Added the Shadcn theme mapping and its preview."
+  }
+}

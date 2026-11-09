@@ -1,0 +1,21 @@
+<!-- @dsCard group="Authority" height=220 -->
+<!doctype html>
+<html>
+<head><!-- standalone: -->
+<script>document.documentElement.setAttribute('data-theme',new URLSearchParams(location.search).get('theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'))</script>
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../bundle.css">
+<script src="../bundle.js"></script>
+<style>html{background:var(--ground)}</style>
+<meta charset="utf-8"><title>KillSwitch</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"><style>body{margin:0;padding:16px;background:transparent}.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}</style></head>
+<body>
+<div id="root"></div>
+<script>
+  var C = window.Clan, h = React.createElement;
+  
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{style:{display:'grid',gap:16}},h(C.KillSwitch,{scope:'Trading'}),h(C.KillSwitch,{scope:'Trading',defaultHalted:true,detail:'Halted 14:02:11 by you. 3 open orders cancelled.'})));
+</script>
+</body>
+</html>

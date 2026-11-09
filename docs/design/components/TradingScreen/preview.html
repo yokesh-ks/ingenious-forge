@@ -1,0 +1,33 @@
+<!-- @dsCard group="Showcase" height=840 width=1280 page -->
+<!doctype html>
+<html>
+<head><!-- standalone: -->
+<script>document.documentElement.setAttribute('data-theme',new URLSearchParams(location.search).get('theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'))</script>
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../bundle.css">
+<script src="../bundle.js"></script>
+<style>html{background:var(--ground)}</style>
+<meta charset="utf-8"><title>TradingScreen</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"><style>body{margin:0;padding:0;background:transparent}.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}</style></head>
+<body>
+<div id="root"></div>
+<script>
+  var C = window.Clan, h = React.createElement;
+  var rvw={name:'Reviewer',code:'RVW',kind:'agent'},bkp={name:'Bookkeeper',code:'BKP',kind:'agent'},sct={name:'Scout',code:'SCT',kind:'agent'},me={name:'Ada Moss',kind:'human'};
+  ReactDOM.createRoot(document.getElementById('root')).render(h('div',{className:'ic',style:{display:'grid',gridTemplateColumns:'72px minmax(0,1fr)',background:'var(--ground)',minHeight:820}},
+ h(C.TradeRail,{defaultValue:'trading',trades:[{id:'forge',code:'Fg',name:'Work'},{id:'finance',code:'Fi',name:'Finance',held:1},{id:'trading',code:'Tr',name:'Trading',held:2},{id:'wiki',code:'Wk',name:'Wiki'},{id:'slides',code:'Sl',name:'Slides'},{id:'schedules',code:'Sc',name:'Schedules'}]}),
+ h('main',{style:{padding:24,display:'grid',gap:24,alignContent:'start'}},
+  h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:12}},
+   h('h1',{style:{margin:0,fontFamily:'var(--font-display)',fontSize:40,lineHeight:'40px',fontWeight:800}},'Trading'),
+   h(C.DaemonStatus,{state:'connected',address:'127.0.0.1:4317',surface:'Desktop'})),
+  h('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:12}},
+   h(C.FigureTile,{label:'Paper book',value:'$48,212.06',basis:'Reconciled 09 Nov'}),
+   h(C.FigureTile,{label:'P&L, today',value:'+$612.40',delta:'1.27%',direction:'up',basis:'Replay matched'}),
+   h(C.FigureTile,{label:'Open orders',value:'3',basis:'Broker sim agrees'})),
+  h('div',{style:{display:'grid',gridTemplateColumns:'minmax(0,5fr) minmax(0,7fr)',gap:24,alignItems:'start'}},
+   h('div',{style:{display:'grid',gap:16}},h(C.ApprovalGate,{mode:'Paper',actor:{name:'Scout',code:'SCT',kind:'agent',role:'Market research, limit $5,000'},title:'Buy 40 ACME at limit 212.40',amount:'$8,496.00',reason:"This order is over Scout's limit, so it waits for you.",policy:'trading.order.over_limit',stepUp:true,checks:[{state:'proved',label:'Fill model replayed against 09 Nov quotes'},{state:'proved',label:'Position stays under 12% of the paper book'},{state:'held',label:'Your approval'}]}),h(C.AuthorityMeter,{label:'Scout, daily notional',used:4300,limit:5000,format:function(n){return '$'+n.toLocaleString('en-US')}})),
+   h('div',{style:{display:'grid',gap:16}},h(C.KillSwitch,{scope:'Trading'}),h(C.AuditTrail,{items:[{time:'14:02:11',actor:sct,verb:'proposed',object:'a paper order for 40 ACME',state:'held',hash:'a41f9c2'},{time:'13:58:40',actor:bkp,verb:'reconciled',object:'412 of 415 entries',state:'failed',hash:'7be0d13'},{time:'13:41:05',actor:rvw,verb:'proved',object:'the change on feat/ledger-export',state:'proved',hash:'3c92ae8'},{time:'13:40:12',actor:me,verb:'approved',object:'a budget increase for Builder',state:'proved',hash:'e10b77f'}]}))))));
+</script>
+</body>
+</html>

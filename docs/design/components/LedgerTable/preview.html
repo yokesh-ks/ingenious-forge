@@ -1,0 +1,21 @@
+<!-- @dsCard group="Records" height=260 -->
+<!doctype html>
+<html>
+<head><!-- standalone: -->
+<script>document.documentElement.setAttribute('data-theme',new URLSearchParams(location.search).get('theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'))</script>
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../bundle.css">
+<script src="../bundle.js"></script>
+<style>html{background:var(--ground)}</style>
+<meta charset="utf-8"><title>LedgerTable</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"><style>body{margin:0;padding:16px;background:transparent}.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}</style></head>
+<body>
+<div id="root"></div>
+<script>
+  var C = window.Clan, h = React.createElement;
+  
+  ReactDOM.createRoot(document.getElementById('root')).render(h(C.LedgerTable,{caption:'October close, bank account 4021',columns:[{key:'ref',label:'Ref',mono:true},{key:'desc',label:'Description'},{key:'state',label:'State'},{key:'book',label:'Book',numeric:true},{key:'bank',label:'Bank',numeric:true}],rows:[{ref:'J-2201',desc:'Hosting invoice',state:'proved',book:'1,204.00',bank:'1,204.00'},{ref:'J-2202',desc:'Contractor payment',state:'failed',book:'3,450.00',bank:'3,405.00'},{ref:'J-2203',desc:'Software licences',state:'proved',book:'318.50',bank:'318.50'}],total:{ref:'',desc:'Total',state:'',book:'4,972.50',bank:'4,927.50'}}));
+</script>
+</body>
+</html>
