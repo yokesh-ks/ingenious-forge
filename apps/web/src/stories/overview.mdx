@@ -1,0 +1,88 @@
+import { Meta } from "@storybook/addon-docs/blocks";
+
+<Meta title="Overview" />
+
+# Ingenious Forge — Component Library
+
+This Storybook documents the UI component library for the Ingenious Forge web application. It covers the 53 Shadcn-based primitives in `src/components/ui/`, the cross-cutting shared components, and the patterns for writing new stories.
+
+---
+
+## Project structure
+
+The web app is organised feature-first. Each domain lives under `src/features/<domain>/` and owns its own `components/`, `hooks/`, `api/`, and `store/` as needed. Only genuinely cross-cutting code belongs in the top-level shared layers:
+
+<table>
+  <thead>
+    <tr><th>Path</th><th>Contents</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>src/components/ui/</code></td><td>Shadcn primitives (CLI-managed)</td></tr>
+    <tr><td><code>src/components/ai-elements/</code></td><td>Chat primitives — message-scroller, message, bubble</td></tr>
+    <tr><td><code>src/components/markdown/</code></td><td>Shared Markdown renderer and code card</td></tr>
+    <tr><td><code>src/hooks/</code></td><td>use-theme, use-mobile</td></tr>
+    <tr><td><code>src/lib/</code></td><td>Utils, router, platform, models, highlight</td></tr>
+    <tr><td><code>src/api/</code></td><td>Typed client and generated types</td></tr>
+    <tr><td><code>src/pages/</code></td><td>Route-level composition</td></tr>
+  </tbody>
+</table>
+
+Feature domains: `session`, `chat`, `stats`, `trajectory`, `workspace-panel`, `git`, `sandbox`, `terminal`.
+
+---
+
+## Writing a story
+
+Stories live in `src/stories/<category>/` and mirror the source tree. The file must end in `.stories.tsx`.
+
+```tsx
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { Button } from "@/components/ui/button";
+
+const meta: Meta<typeof Button> = {
+  title: "UI/Button",
+  component: Button,
+  parameters: { layout: "centered" },
+  tags: ["autodocs"],
+};
+
+export default meta;
+type Story = StoryObj<typeof Button>;
+
+export const Default: Story = {
+  args: { children: "Start session" },
+};
+```
+
+**Conventions**
+
+- Use `title: "UI/<ComponentName>"` for Shadcn primitives and `title: "Features/<Domain>/<ComponentName>"` for feature components.
+- Add `tags: ["autodocs"]` to generate a docs page automatically.
+- Use real Forge content in story args — "Start session", "View diff", "Delete" rather than generic labels.
+- For icon use, import from `lucide-react` at 16 px with a 2 px stroke.
+
+---
+
+## Theming
+
+The app uses Tailwind CSS v4 with CSS variables for all tokens. Light and dark themes are toggled via a `data-theme` attribute on `<html>`. Storybook's theme toolbar switches between them.
+
+Component variants follow the Shadcn pattern — `variant` and `size` props map to `cva` classes. Add new variants in the component file, not via inline Tailwind classes in stories.
+
+---
+
+## Tooling
+
+<table>
+  <thead>
+    <tr><th>Command</th><th>Purpose</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>npm run storybook</code></td><td>Start Storybook dev server on port 6006</td></tr>
+    <tr><td><code>npm run build-storybook</code></td><td>Build static Storybook to storybook-static/</td></tr>
+    <tr><td><code>npx biome check .</code></td><td>Lint and format-check (run before committing)</td></tr>
+    <tr><td><code>npm test</code></td><td>Vitest unit tests</td></tr>
+  </tbody>
+</table>
+
+Storybook addons active in this project: **Docs**, **Vitest** (story-level tests), **a11y** (accessibility audit), **Chromatic** (visual regression), **MCP**.
