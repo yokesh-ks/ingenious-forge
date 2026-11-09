@@ -57,7 +57,7 @@ jobs:
         working-directory: apps/web
 
       - name: Publish to Chromatic
-        uses: chromaui/action@18c76b3e1491c2a56d3f2d42f6de34fcc6c3c61e # v13
+        uses: chromaui/action@012c0b12dd0dbe38ec47aee5199b436a3059fb5b # v18.14.2
         with:
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
           workingDir: apps/web
