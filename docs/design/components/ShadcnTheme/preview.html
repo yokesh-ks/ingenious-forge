@@ -1,0 +1,72 @@
+<!-- @dsCard group="Foundations" height=880 subtitle="Shadcn variables mapped to Clan tokens" -->
+<!doctype html>
+<html>
+<head><!-- standalone: -->
+<script>document.documentElement.setAttribute('data-theme',new URLSearchParams(location.search).get('theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'))</script>
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<link rel="stylesheet" href="../../tokens.css">
+<link rel="stylesheet" href="../bundle.css">
+<script src="../bundle.js"></script>
+<style>html{background:var(--ground)}</style>
+<meta charset="utf-8"><title>ShadcnTheme</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root,[data-theme="dark"],[data-theme="light"]{
+  --background: var(--ground);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface-raised);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: var(--on-ink);
+  --secondary: var(--surface-sunken);
+  --secondary-foreground: var(--ink);
+  --accent: var(--surface-sunken);
+  --accent-foreground: var(--ink);
+  --destructive: var(--halt);
+  --destructive-foreground: var(--on-halt);
+  --muted: var(--surface-sunken);
+  --muted-foreground: var(--ink-muted);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--focus);
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--ink);
+  --sidebar-primary-foreground: var(--on-ink);
+  --sidebar-accent: var(--surface-sunken);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--focus);
+  --chart-1: var(--ink);
+  --chart-2: var(--up);
+  --chart-3: var(--down);
+  --chart-4: var(--ink-muted);
+  --chart-5: var(--line-strong);
+}
+body{margin:0;padding:16px;background:transparent;font:14px/20px var(--font-sans);color:var(--foreground)}
+#t{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:24px}
+h4{margin:12px 0 4px;font-size:12px;line-height:16px;font-weight:600;color:var(--muted-foreground)}h4:first-child{margin-top:0}
+.v{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:8px;align-items:center;height:20px;font-size:12px;line-height:16px}
+.v i{width:16px;height:16px;border-radius:2px;box-shadow:inset 0 0 0 1px var(--line-strong)}.v code{font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.v span{color:var(--muted-foreground);font-family:var(--font-mono)}
+.kit{display:grid;gap:12px;align-content:start;padding:16px;background:var(--background);border:1px solid var(--border);border-radius:4px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.b{display:inline-flex;align-items:center;height:36px;padding:0 10px;border:1px solid transparent;border-radius:4px;font:500 14px/20px var(--font-sans);cursor:pointer;background:transparent;color:var(--foreground)}
+.d{background:var(--primary);color:var(--primary-foreground)}.s{background:var(--secondary);color:var(--secondary-foreground)}.o{border-color:var(--border);background:var(--background)}[data-theme="dark"] .o{border-color:var(--input);background:color-mix(in srgb,var(--input) 30%,transparent)}.g:hover,.o:hover{background:var(--muted)}.x{background:var(--destructive);color:var(--destructive-foreground)}.l{color:var(--primary);text-decoration:underline;text-underline-offset:4px}
+.bd{display:inline-flex;height:20px;align-items:center;padding:0 8px;border:1px solid transparent;border-radius:2px;font-size:12px;font-weight:500}
+.c{padding:16px;background:var(--card);color:var(--card-foreground);border:1px solid var(--border);border-radius:4px;display:grid;gap:12px}.c h5{margin:0;font-size:16px;line-height:20px;font-weight:600}.c p{margin:0;color:var(--muted-foreground);font-size:13px}
+.i{height:36px;width:100%;box-sizing:border-box;padding:0 10px;border:1px solid var(--input);border-radius:4px;background:transparent;color:var(--foreground);font:14px var(--font-sans)}
+.a{padding:8px 12px;border:1px solid var(--border);border-radius:4px;background:var(--card);font-size:13px}.a b{display:block;font-weight:600}.a.x2{color:var(--destructive)}
+.tb{display:inline-flex;gap:2px;padding:3px;background:var(--muted);border-radius:4px}.tb span{padding:2px 10px;border-radius:4px;font-size:13px;color:var(--muted-foreground)}.tb .on{background:var(--background);color:var(--foreground);font-weight:500}
+.sw{width:32px;height:18px;border-radius:2px;background:var(--primary);position:relative;flex:none}.sw::after{content:'';position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:2px;background:var(--primary-foreground)}
+.p{height:8px;background:var(--muted);border-radius:2px;overflow:hidden}.p i{display:block;height:100%;width:62%;background:var(--primary)}
+.gt{background:var(--gate);color:var(--on-gate)}.pf{background:var(--proof-wash);color:var(--proof)}
+</style></head>
+<body><div id="t"><div><h4>Page and panels</h4><div class="v"><i style="background:var(--background)"></i><code>--background</code><span>ground</span></div><div class="v"><i style="background:var(--foreground)"></i><code>--foreground</code><span>ink</span></div><div class="v"><i style="background:var(--card)"></i><code>--card</code><span>surface</span></div><div class="v"><i style="background:var(--card-foreground)"></i><code>--card-foreground</code><span>ink</span></div><div class="v"><i style="background:var(--popover)"></i><code>--popover</code><span>surface-raised</span></div><div class="v"><i style="background:var(--popover-foreground)"></i><code>--popover-foreground</code><span>ink</span></div><h4>Actions</h4><div class="v"><i style="background:var(--primary)"></i><code>--primary</code><span>ink</span></div><div class="v"><i style="background:var(--primary-foreground)"></i><code>--primary-foreground</code><span>on-ink</span></div><div class="v"><i style="background:var(--secondary)"></i><code>--secondary</code><span>surface-sunken</span></div><div class="v"><i style="background:var(--secondary-foreground)"></i><code>--secondary-foreground</code><span>ink</span></div><div class="v"><i style="background:var(--accent)"></i><code>--accent</code><span>surface-sunken</span></div><div class="v"><i style="background:var(--accent-foreground)"></i><code>--accent-foreground</code><span>ink</span></div><div class="v"><i style="background:var(--destructive)"></i><code>--destructive</code><span>halt</span></div><div class="v"><i style="background:var(--destructive-foreground)"></i><code>--destructive-foreground</code><span>on-halt</span></div><h4>Quiet text and edges</h4><div class="v"><i style="background:var(--muted)"></i><code>--muted</code><span>surface-sunken</span></div><div class="v"><i style="background:var(--muted-foreground)"></i><code>--muted-foreground</code><span>ink-muted</span></div><div class="v"><i style="background:var(--border)"></i><code>--border</code><span>line</span></div><div class="v"><i style="background:var(--input)"></i><code>--input</code><span>line-strong</span></div><div class="v"><i style="background:var(--ring)"></i><code>--ring</code><span>focus</span></div><h4>Sidebar</h4><div class="v"><i style="background:var(--sidebar)"></i><code>--sidebar</code><span>surface</span></div><div class="v"><i style="background:var(--sidebar-foreground)"></i><code>--sidebar-foreground</code><span>ink</span></div><div class="v"><i style="background:var(--sidebar-primary)"></i><code>--sidebar-primary</code><span>ink</span></div><div class="v"><i style="background:var(--sidebar-primary-foreground)"></i><code>--sidebar-primary-foreground</code><span>on-ink</span></div><div class="v"><i style="background:var(--sidebar-accent)"></i><code>--sidebar-accent</code><span>surface-sunken</span></div><div class="v"><i style="background:var(--sidebar-accent-foreground)"></i><code>--sidebar-accent-foreground</code><span>ink</span></div><div class="v"><i style="background:var(--sidebar-border)"></i><code>--sidebar-border</code><span>line</span></div><div class="v"><i style="background:var(--sidebar-ring)"></i><code>--sidebar-ring</code><span>focus</span></div><h4>Charts (provisional)</h4><div class="v"><i style="background:var(--chart-1)"></i><code>--chart-1</code><span>ink</span></div><div class="v"><i style="background:var(--chart-2)"></i><code>--chart-2</code><span>up</span></div><div class="v"><i style="background:var(--chart-3)"></i><code>--chart-3</code><span>down</span></div><div class="v"><i style="background:var(--chart-4)"></i><code>--chart-4</code><span>ink-muted</span></div><div class="v"><i style="background:var(--chart-5)"></i><code>--chart-5</code><span>line-strong</span></div></div><div class="kit">
+<div class="row"><button class="b d">Default</button><button class="b s">Secondary</button><button class="b o">Outline</button><button class="b g">Ghost</button><button class="b x">Destructive</button><button class="b l">Link</button></div>
+<div class="row"><span class="bd d">Default</span><span class="bd s">Secondary</span><span class="bd x">Destructive</span><span class="bd" style="border-color:var(--border)">Outline</span><span class="bd gt">Held</span><span class="bd pf">Proved</span></div>
+<div class="c"><div><h5>Project settings</h5><p>Choose how the agent works here.</p></div><input class="i" value="ingenious-forge" aria-label="Project name"><div class="row"><span class="sw"></span>Sandbox commands</div><div class="p"><i></i></div></div>
+<div class="a"><b>Default alert</b><span style="color:var(--muted-foreground)">Muted text on the card surface.</span></div><div class="a x2"><b>Commands are not sandboxed</b>The sandbox could not start.</div>
+<div class="tb"><span class="on">Chat</span><span>Trajectory</span><span>Statistics</span></div>
+</div></div></body></html>
