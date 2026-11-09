@@ -27,3 +27,6 @@ server/sessions/
 
 # The launcher's Office conversion engine, installed by npm
 packages/launcher/node_modules/
+
+# dev-start.sh server logs
+.dev-logs/
