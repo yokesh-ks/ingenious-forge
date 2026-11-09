@@ -174,7 +174,7 @@ export default function ProjectsNav() {
 
   return (
     <SidebarGroup>
-      <SidebarGroupLabel>Projects</SidebarGroupLabel>
+      <SidebarGroupLabel className="text-sm font-semibold">Projects</SidebarGroupLabel>
       <SidebarGroupAction
         type="button"
         title="Select Project Directory"

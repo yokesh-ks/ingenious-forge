@@ -10,7 +10,7 @@ export default function AppSidebar() {
       className="h-full [&>[data-slot=sidebar-inner]]:bg-background"
     >
       <SidebarHeader className="flex-row items-center justify-between">
-        <h2 className="text-base font-semibold">Work</h2>
+        <h2 className="text-[26px] leading-[28px] font-display font-bold">Work</h2>
         <SidebarTrigger aria-label="Collapse sidebar" />
       </SidebarHeader>
       <SidebarContent>

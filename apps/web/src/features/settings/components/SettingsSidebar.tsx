@@ -24,7 +24,7 @@ export default function SettingsSidebar({ path }: { path: string }) {
       className="h-full [&>[data-slot=sidebar-inner]]:bg-background"
     >
       <SidebarHeader className="flex-row items-center justify-between px-4 py-2.5">
-        <h2 className="text-base font-semibold">Settings</h2>
+        <h2 className="text-[26px] leading-[28px] font-display font-bold">Settings</h2>
         <SidebarTrigger aria-label="Collapse sidebar" />
       </SidebarHeader>
       <SidebarContent>

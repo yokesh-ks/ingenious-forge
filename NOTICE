@@ -85,3 +85,28 @@ own license:
   @lobehub/icons-static-svg 1.102.0, under the MIT License. See
   apps/web/src/features/settings/logos/LICENSE.lobe-icons. The logos are
   trademarks of their owners and are used only to identify each provider.
+
+- apps/web/public/fonts/ holds WOFF2 font files from Google Fonts, under the
+  SIL Open Font License (OFL) 1.1. See apps/web/public/fonts/OFL.txt.
+  - ibm-plex-sans/{400,500,600}.woff2 — IBM Plex Sans, IBM, OFL 1.1
+  - ibm-plex-mono/{400,500,600}.woff2 — IBM Plex Mono, IBM, OFL 1.1
+  - big-shoulders-display/{700,800}.woff2 — Big Shoulders Display, OFL 1.1
+
+- apps/web/public/fonts/ibm-plex-sans/ holds IBM Plex Sans font files
+  (400, 500, 600), Copyright (c) IBM, under the SIL Open Font License
+  1.1. See https://github.com/IBM/plex. Font .woff2 files and the
+  upstream LICENSE file must be vendored here (network-dependent step;
+  see @font-face declarations in apps/web/src/styles/globals.css).
+
+- apps/web/public/fonts/ibm-plex-mono/ holds IBM Plex Mono font files
+  (400, 500, 600), Copyright (c) IBM, under the SIL Open Font License
+  1.1. See https://github.com/IBM/plex. Font .woff2 files and the
+  upstream LICENSE file must be vendored here (network-dependent step;
+  see @font-face declarations in apps/web/src/styles/globals.css).
+
+- apps/web/public/fonts/big-shoulders-display/ holds Big Shoulders Display
+  font files (700, 800), Copyright (c) The Big Shoulders Display Project
+  Authors, under the SIL Open Font License 1.1. See Google Fonts.
+  Font .woff2 files and the upstream LICENSE file must be vendored here
+  (network-dependent step; see @font-face declarations in
+  apps/web/src/styles/globals.css).

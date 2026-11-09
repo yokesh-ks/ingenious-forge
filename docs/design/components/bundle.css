@@ -173,7 +173,7 @@ a.ic-hm:hover { background: var(--tone-wash); }
 .ic-rail-punch { display: grid; place-items: center; width: 32px; height: 32px; border: 1.5px solid currentColor; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 12px; line-height: 14px; font-weight: 600; }
 .ic-rail button.on .ic-rail-punch { background: var(--on-iron); border-color: var(--on-iron); color: var(--iron); }
 .ic-rail-icon { border-color: transparent; }
-.ic-rail-name { font-size: 11px; line-height: 14px; }
+.ic-rail-name { font-family: var(--font-display); font-size: 11px; line-height: 14px; font-weight: 700; }
 .ic-rail-held { position: absolute; top: var(--space-1); right: var(--space-1); min-width: 18px; padding: 1px 3px; border-radius: var(--radius-sm); background: var(--gate); color: var(--on-gate); font-family: var(--font-mono); font-size: 11px; line-height: 14px; font-weight: 600; }
 .ic-rail .ic-rail-tools { margin-top: auto; padding-top: var(--space-4); }
 
