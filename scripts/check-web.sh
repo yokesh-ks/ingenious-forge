@@ -6,6 +6,7 @@
 set -e
 cd "$(dirname "$0")/../apps/web"
 npx biome check .
+npx playwright install chromium --with-deps
 npm test
 npm run build
 echo "web: ok"
