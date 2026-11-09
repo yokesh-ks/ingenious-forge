@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import AppBreadcrumb from "@/components/layout/AppBreadcrumb";
 import AppRail from "@/components/layout/AppRail";
 import AppSidebar from "@/components/layout/AppSidebar";
-import AppTopBar from "@/components/layout/AppTopBar";
 import { sectionForPath } from "@/components/layout/app-sections";
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
@@ -78,10 +77,9 @@ export default function App() {
   return (
     <div className="flex h-svh flex-col bg-sidebar">
       <Toaster />
-      <AppTopBar />
       <div className="flex min-h-0 flex-1">
         <AppRail path={path} />
-        <div className="mr-2 mb-2 flex min-w-0 flex-1 overflow-clip rounded-md border bg-background">
+        <div className="flex min-w-0 flex-1 overflow-clip bg-background">
           {/* `contain-layout` makes this box, not the viewport, anchor the fixed sidebars. */}
           <SidebarProvider
             className="h-full min-h-0 contain-layout"
