@@ -1,0 +1,68 @@
+# Chromatic visual-regression build: publishes Storybook and captures
+# component snapshots whenever stories change.  Runs only when a PR or
+# branch push touches files under apps/web/src/stories/ or any
+# *.stories.* file inside apps/web/src/ (Storybook picks them up from
+# anywhere under src/, not just the stories/ folder).
+#
+# Token: store the Chromatic project token as a repository secret named
+# CHROMATIC_PROJECT_TOKEN (Settings → Secrets and variables → Actions).
+# It is never logged; GitHub masks it in all job output.
+#
+# Third-party actions are pinned to a full commit SHA.
+
+name: chromatic
+
+on:
+  pull_request:
+    paths:
+      - "apps/web/src/stories/**"
+      - "apps/web/src/**/*.stories.js"
+      - "apps/web/src/**/*.stories.jsx"
+      - "apps/web/src/**/*.stories.ts"
+      - "apps/web/src/**/*.stories.tsx"
+      - "apps/web/src/**/*.stories.mjs"
+      - "apps/web/.storybook/**"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/web/src/stories/**"
+      - "apps/web/src/**/*.stories.js"
+      - "apps/web/src/**/*.stories.jsx"
+      - "apps/web/src/**/*.stories.ts"
+      - "apps/web/src/**/*.stories.tsx"
+      - "apps/web/src/**/*.stories.mjs"
+      - "apps/web/.storybook/**"
+
+permissions:
+  contents: read
+
+jobs:
+  chromatic:
+    name: chromatic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: "apps/web/package-lock.json"
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: apps/web
+
+      - name: Publish to Chromatic
+        uses: chromaui/action@18c76b3e1491c2a56d3f2d42f6de34fcc6c3c61e # v13
+        with:
+          projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          workingDir: apps/web
+          buildScriptName: build-storybook
+          exitZeroOnChanges: true
+          onlyChanged: true
+          externals: |
+            apps/web/src/**/*.css
