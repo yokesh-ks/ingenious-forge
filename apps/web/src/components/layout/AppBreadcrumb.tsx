@@ -23,6 +23,18 @@ export default function AppBreadcrumb({ path }: { path: string }) {
   const root = section && section.id !== "work" ? section.label : "Projects";
   const settingsPage = settingsSectionForPath(path);
 
+  if (sessionMatch) {
+    return (
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbPage>{sessionTitle ?? sessionMatch.sessionId}</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
+    );
+  }
+
   return (
     <Breadcrumb>
       <BreadcrumbList>
@@ -47,21 +59,7 @@ export default function AppBreadcrumb({ path }: { path: string }) {
           <>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              {sessionMatch ? (
-                <BreadcrumbLink asChild>
-                  <Link to={`/projects/${projectId}`}>{project?.name ?? projectId}</Link>
-                </BreadcrumbLink>
-              ) : (
-                <BreadcrumbPage>{project?.name ?? projectId}</BreadcrumbPage>
-              )}
-            </BreadcrumbItem>
-          </>
-        )}
-        {sessionMatch && (
-          <>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>{sessionTitle ?? sessionMatch.sessionId}</BreadcrumbPage>
+              <BreadcrumbPage>{project?.name ?? projectId}</BreadcrumbPage>
             </BreadcrumbItem>
           </>
         )}

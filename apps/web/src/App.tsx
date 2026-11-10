@@ -1,12 +1,19 @@
+import { PanelRightIcon } from "lucide-react";
 import { useEffect } from "react";
 import AppBreadcrumb from "@/components/layout/AppBreadcrumb";
 import AppRail from "@/components/layout/AppRail";
 import AppSidebar from "@/components/layout/AppSidebar";
 import { sectionForPath } from "@/components/layout/app-sections";
+import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
+import { SessionTabsBar } from "@/features/session/components/SessionTabs";
 import SettingsSidebar from "@/features/settings/components/SettingsSidebar";
 import { SETTINGS_SECTIONS, settingsSectionForPath } from "@/features/settings/settings-sections";
+import {
+  useWorkspacePanelContext,
+  WorkspacePanelProvider,
+} from "@/features/workspace-panel/workspace-panel-context";
 import { Link, matchPath, navigate, usePath } from "@/lib/router";
 import ComingSoonPage from "@/pages/ComingSoonPage";
 import EmptyMainView from "@/pages/EmptyMainView";
@@ -41,6 +48,22 @@ function ReopenSidebarTrigger() {
   return <SidebarTrigger aria-label="Open sidebar" />;
 }
 
+/** Toggles the workspace panel; only renders when WorkspacePanel has registered itself. */
+function WorkspacePanelTrigger() {
+  const ctx = useWorkspacePanelContext();
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      aria-label="Toggle workspace panel"
+      onClick={() => ctx?.toggleRef.current?.()}
+    >
+      <PanelRightIcon className="size-4" />
+    </Button>
+  );
+}
+
 /**
  * Keeps Cmd/Ctrl+B for whoever is being typed in (the composer, the terminal):
  * the sidebar's own shortcut listens on `window`, so stopping here shields it.
@@ -71,6 +94,7 @@ export default function App() {
   const sectionId = sectionForPath(path)?.id;
   const onWork = sectionId === "work";
   const onSettings = sectionId === "settings";
+  const onSession = !!matchPath("/projects/:id/sessions/:sessionId", path);
   useTextFieldsKeepSidebarShortcut();
   useSettingsOpensItsFirstPage(path);
 
@@ -87,15 +111,25 @@ export default function App() {
           >
             {onWork && <AppSidebar />}
             {onSettings && <SettingsSidebar path={path} />}
-            <SidebarInset className="min-h-0 min-w-0">
-              <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-                {(onWork || onSettings) && <ReopenSidebarTrigger />}
-                <AppBreadcrumb path={path} />
-              </header>
-              <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
-                <Page path={path} />
-              </div>
-            </SidebarInset>
+            <WorkspacePanelProvider>
+              <SidebarInset className="min-h-0 min-w-0">
+                <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+                  {(onWork || onSettings) && <ReopenSidebarTrigger />}
+                  <AppBreadcrumb path={path} />
+                  {onSession && (
+                    <>
+                      <div className="ml-auto">
+                        <SessionTabsBar />
+                      </div>
+                      <WorkspacePanelTrigger />
+                    </>
+                  )}
+                </header>
+                <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
+                  <Page path={path} />
+                </div>
+              </SidebarInset>
+            </WorkspacePanelProvider>
           </SidebarProvider>
         </div>
       </div>

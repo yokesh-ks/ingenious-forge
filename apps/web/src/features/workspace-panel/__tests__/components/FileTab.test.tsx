@@ -110,10 +110,8 @@ describe("a file opened from a link", () => {
   it("shows the full path with the project's folder", async () => {
     const { control } = setup();
     await waitFor(() => expect(control.current).not.toBeNull());
-    await screen.findByRole("button", { name: "Open right sidebar" });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    await waitFor(() => expect(control.current).not.toBeNull());
+    fireEvent.keyDown(window, { code: "KeyB", metaKey: true, shiftKey: true });
     await open(control, "/work/p/README.md");
     expect(tabs()).toEqual(["README.md"]);
     expect(await screen.findByTitle("/work/p/README.md")).toHaveTextContent("/work/p/README.md");
@@ -366,7 +364,7 @@ describe("the Workspace files page", () => {
   const start = async () => {
     const user = userEvent.setup();
     const result = setup();
-    await user.click(screen.getByRole("button", { name: "Open right sidebar" }));
+    fireEvent.keyDown(window, { code: "KeyB", metaKey: true, shiftKey: true });
     await user.click(within(panel()).getByRole("button", { name: /^Workspace files/ }));
     return { user, ...result };
   };

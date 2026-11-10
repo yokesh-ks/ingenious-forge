@@ -20,7 +20,6 @@ import {
 import { api } from "@/api/client";
 import type { SessionEnvelope } from "@/api/types";
 import ResizeHandle from "@/components/layout/ResizeHandle";
-import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import ChangedFilesPanel from "@/features/git/components/ChangedFilesPanel";
 import { useProject } from "@/features/session/hooks/use-project";
@@ -62,6 +61,7 @@ import {
 import { readPanel, readWidth, writePanel, writeWidth } from "../model/saved-layout";
 import { pickShell } from "../model/shell-choice";
 import { type PanelTab, type TabKind, type TabShell, titleOf } from "../model/tabs";
+import { useWorkspacePanelContext } from "../workspace-panel-context";
 import FilesPage from "./FilesPage";
 import FileTab from "./FileTab";
 import FileTypeIcon from "./FileTypeIcon";
@@ -292,6 +292,18 @@ export default function WorkspacePanel({
         return moveTab(l, tabId, target.pane, target.kind === "strip" ? target.index : undefined);
       }),
   });
+
+  const panelCtx = useWorkspacePanelContext();
+  useEffect(() => {
+    if (!panelCtx) return;
+    panelCtx.toggleRef.current = () => {
+      setFullscreen(false);
+      setOpen((v) => !v);
+    };
+    return () => {
+      panelCtx.toggleRef.current = null;
+    };
+  }, [panelCtx]);
 
   const [origin, setOrigin] = useState({ x: 0, y: 0 });
   // biome-ignore lint/correctness/useExhaustiveDependencies: the frame only moves with the panel's layout
@@ -542,19 +554,6 @@ export default function WorkspacePanel({
 
   return (
     <TooltipProvider>
-      {!open && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Open right sidebar"
-          title="Open sidebar"
-          className="relative z-20 self-start"
-          onClick={() => setOpen(true)}
-        >
-          <PanelRightIcon />
-        </Button>
-      )}
       {/* Off stage rather than unmounted: collapsing keeps the terminals, and
           floating panels stay on screen. */}
       <aside
@@ -617,38 +616,23 @@ export default function WorkspacePanel({
               }}
             >
               {pane === lastPane && (
-                <>
-                  <StripTip
-                    label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-                    keys={shortcutLabel("alt", "↩")}
+                <StripTip
+                  label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+                  keys={shortcutLabel("alt", "↩")}
+                >
+                  <button
+                    type="button"
+                    aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+                    className={STRIP_BUTTON}
+                    onClick={() => setFullscreen((v) => !v)}
                   >
-                    <button
-                      type="button"
-                      aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-                      className={STRIP_BUTTON}
-                      onClick={() => setFullscreen((v) => !v)}
-                    >
-                      {fullscreen ? (
-                        <Minimize2Icon aria-hidden className="size-4" />
-                      ) : (
-                        <Maximize2Icon aria-hidden className="size-4" />
-                      )}
-                    </button>
-                  </StripTip>
-                  <StripTip label="Collapse sidebar" keys={shortcutLabel("shift", "B")}>
-                    <button
-                      type="button"
-                      aria-label="Collapse right sidebar"
-                      className={STRIP_BUTTON}
-                      onClick={() => {
-                        setFullscreen(false);
-                        setOpen(false);
-                      }}
-                    >
-                      <PanelRightIcon aria-hidden className="size-4" />
-                    </button>
-                  </StripTip>
-                </>
+                    {fullscreen ? (
+                      <Minimize2Icon aria-hidden className="size-4" />
+                    ) : (
+                      <Maximize2Icon aria-hidden className="size-4" />
+                    )}
+                  </button>
+                </StripTip>
               )}
             </TabStrip>
           ))}

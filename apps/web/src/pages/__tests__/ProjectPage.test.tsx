@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -176,7 +176,7 @@ describe("ProjectPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Edited files" }));
     await userEvent.click(screen.getByRole("button", { name: "Edit · a.md" }));
     expect(screen.getByTestId("tool-output")).toHaveTextContent("Edited a.md");
-    await userEvent.click(screen.getByRole("button", { name: "Open right sidebar" }));
+    fireEvent.keyDown(window, { code: "KeyB", metaKey: true, shiftKey: true });
     await userEvent.click(screen.getByRole("button", { name: /^Code review and changes/ }));
     expect(
       screen.getAllByRole("button", { name: /a\.md/ }).some((b) => b.textContent?.includes("+1−1")),
