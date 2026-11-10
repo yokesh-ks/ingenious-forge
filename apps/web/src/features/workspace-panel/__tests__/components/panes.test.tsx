@@ -43,7 +43,8 @@ const strips = () =>
         .getAllByRole("tab")
         .map((t) => t.textContent),
     );
-const expand = () => userEvent.click(screen.getByRole("button", { name: "Open right sidebar" }));
+const expand = () =>
+  Promise.resolve(fireEvent.keyDown(window, { code: "KeyB", metaKey: true, shiftKey: true }));
 const button = (name: string | RegExp) => within(panel()).getAllByRole("button", { name });
 
 beforeEach(() => {
@@ -76,7 +77,6 @@ describe("splitting the panel", () => {
     await expand();
     await userEvent.click(button("Split")[0]);
     expect(button("Fullscreen")).toHaveLength(1);
-    expect(button("Collapse right sidebar")).toHaveLength(1);
     const strip = within(panel()).getAllByRole("tablist")[1].parentElement as HTMLElement;
     expect(within(strip).getByRole("button", { name: "Fullscreen" })).toBeInTheDocument();
   });
@@ -355,7 +355,7 @@ describe("floating a tab", () => {
     await expand();
     act(() => control.current?.openFile({ path: "a.txt" }));
     await dragOut("a.txt");
-    await userEvent.click(button("Collapse right sidebar")[0]);
+    fireEvent.keyDown(window, { code: "KeyB", metaKey: true, shiftKey: true });
     expect(panel().style.visibility).toBe("hidden");
     expect(floating().style.visibility).toBe("visible");
     await userEvent.click(within(floating()).getByRole("button", { name: "Close" }));

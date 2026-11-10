@@ -11,7 +11,7 @@ import SandboxBadge from "@/features/sandbox/components/SandboxBadge";
 import { useModelCatalog } from "@/features/sandbox/hooks/use-model-catalog";
 import { useSandbox } from "@/features/sandbox/hooks/use-sandbox";
 import ProjectPicker from "@/features/session/components/ProjectPicker";
-import SessionTabs from "@/features/session/components/SessionTabs";
+import { useSessionView } from "@/features/session/components/SessionTabs";
 import SessionWorkspace from "@/features/session/components/SessionWorkspace";
 import { useProjectSessions } from "@/features/session/hooks/use-project-sessions";
 import { useSession } from "@/features/session/hooks/use-session";
@@ -77,69 +77,67 @@ function SessionPane({
   } = useSession(sessionId);
   const panel = useRef<WorkspacePanelControl>(null);
   const openFile = useCallback((target: FileTarget) => panel.current?.openFile(target), []);
+  const [view] = useSessionView();
 
   return (
     <OpenFileContext.Provider value={openFile}>
       <div className="flex min-h-0 flex-1 gap-4">
         <div className="flex min-w-0 flex-1 flex-col gap-3">
           <SandboxBadge sandbox={sandbox} />
-          <SessionWorkspace
-            state={state}
-            connected={connected}
-            onSend={send}
-            onStop={stop}
-            onAnswerApproval={answerApproval}
-            onAnswerQuestion={answerQuestion}
-            hasOlder={hasOlder}
-            loadingOlder={loadingOlder}
-            onLoadOlder={loadOlder}
-            footer={<SessionMetrics sessionId={sessionId} refreshKey={metricsKey(state.turns)} />}
-            frame={(chat) => (
-              <SessionTabs
-                chat={chat}
-                trajectory={
-                  <TrajectoryView
-                    events={events}
-                    loaded={loaded}
-                    hasOlder={hasOlder}
-                    loadingOlder={loadingOlder}
-                    onLoadOlder={loadOlder}
-                  />
-                }
-                statistics={
-                  <StatisticsView
-                    sessionId={sessionId}
-                    refreshKey={metricsKey(state.turns)}
-                    events={events}
-                    hasOlder={hasOlder}
-                    loadingOlder={loadingOlder}
-                    onLoadOlder={loadOlder}
-                  />
-                }
-              />
-            )}
-            composerBar={
-              <div className="flex items-center justify-between gap-2">
-                <ProjectPicker projectId={projectId} />
-                <GitBadge status={git.status} />
-              </div>
-            }
-            startControls={
-              <ApprovalModePicker
-                mode={approvalMode}
-                onChange={onApprovalModeChange}
-                saving={savingMode}
-              />
-            }
-            endControls={
-              <ModelPicker
-                model={model}
-                catalog={catalog}
-                onChange={onModelChange}
-                disabled={savingModel || state.running}
-              />
-            }
-          />
+          {view === "chat" && (
+            <SessionWorkspace
+              state={state}
+              connected={connected}
+              onSend={send}
+              onStop={stop}
+              onAnswerApproval={answerApproval}
+              onAnswerQuestion={answerQuestion}
+              hasOlder={hasOlder}
+              loadingOlder={loadingOlder}
+              onLoadOlder={loadOlder}
+              footer={<SessionMetrics sessionId={sessionId} refreshKey={metricsKey(state.turns)} />}
+              composerBar={
+                <div className="flex items-center justify-between gap-2">
+                  <ProjectPicker projectId={projectId} />
+                  <GitBadge status={git.status} />
+                </div>
+              }
+              startControls={
+                <ApprovalModePicker
+                  mode={approvalMode}
+                  onChange={onApprovalModeChange}
+                  saving={savingMode}
+                />
+              }
+              endControls={
+                <ModelPicker
+                  model={model}
+                  catalog={catalog}
+                  onChange={onModelChange}
+                  disabled={savingModel || state.running}
+                />
+              }
+            />
+          )}
+          {view === "trajectory" && (
+            <TrajectoryView
+              events={events}
+              loaded={loaded}
+              hasOlder={hasOlder}
+              loadingOlder={loadingOlder}
+              onLoadOlder={loadOlder}
+            />
+          )}
+          {view === "statistics" && (
+            <StatisticsView
+              sessionId={sessionId}
+              refreshKey={metricsKey(state.turns)}
+              events={events}
+              hasOlder={hasOlder}
+              loadingOlder={loadingOlder}
+              onLoadOlder={loadOlder}
+            />
+          )}
         </div>
         <WorkspacePanel
           key={sessionId}

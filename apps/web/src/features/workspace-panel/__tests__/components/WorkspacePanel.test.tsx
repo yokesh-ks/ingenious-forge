@@ -44,7 +44,8 @@ function setup(files: FileChange[] = []) {
   return { onRevertAll };
 }
 
-const expand = () => userEvent.click(screen.getByRole("button", { name: "Open right sidebar" }));
+const expand = () =>
+  Promise.resolve(fireEvent.keyDown(window, { code: "KeyB", metaKey: true, shiftKey: true }));
 const panel = () => screen.getByLabelText("Workspace panel");
 const card = (name: RegExp) => within(panel()).getByRole("button", { name });
 const tabs = () =>
@@ -76,7 +77,6 @@ describe("WorkspacePanel", () => {
     expect(card(/^Code review and changes/)).toBeInTheDocument();
     expect(within(panel()).getByText("Run commands in the Session workspace")).toBeVisible();
     expect(card(/^Session log/)).toBeEnabled();
-    expect(screen.queryByRole("button", { name: "Open right sidebar" })).not.toBeInTheDocument();
   });
 
   it("opens a card in Start's place and brings Start back with New tab", async () => {
@@ -117,7 +117,7 @@ describe("WorkspacePanel", () => {
     await userEvent.click(card(/^New terminal/));
     await userEvent.click(screen.getByRole("button", { name: "New tab" }));
     await userEvent.click(card(/^Workspace files/));
-    await userEvent.click(screen.getByRole("button", { name: "Collapse right sidebar" }));
+    fireEvent.keyDown(window, { code: "KeyB", metaKey: true, shiftKey: true });
     await expand();
     expect(terminalMounts).toHaveBeenCalledTimes(1);
     expect(terminalUnmounts).not.toHaveBeenCalled();

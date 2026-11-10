@@ -40,8 +40,8 @@ describe("App", () => {
     });
     render(<App />);
     const breadcrumb = await screen.findByRole("navigation", { name: /breadcrumb/i });
-    expect(await within(breadcrumb).findByText("forge")).toBeInTheDocument();
     expect(await within(breadcrumb).findByText("Fix it")).toBeInTheDocument();
+    expect(within(breadcrumb).queryByText("forge")).not.toBeInTheDocument();
   });
 
   it("shows not found for other paths", async () => {
