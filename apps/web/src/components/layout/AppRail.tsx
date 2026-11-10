@@ -10,7 +10,7 @@ export default function AppRail({ path }: { path: string }) {
   return (
     <nav
       aria-label="Sections"
-      className="flex w-15 shrink-0 flex-col overflow-y-auto px-1 py-4 space-y-5 bg-[#1b2420]"
+      className="flex w-15 shrink-0 flex-col overflow-y-auto px-1 py-4 space-y-5 bg-iron"
     >
       <div className="flex items-center justify-center w-full gap-3">
         <img src={logoUrl} alt="Ingenious Clan" className="flex-none" width={28} height={28} />
@@ -25,15 +25,15 @@ export default function AppRail({ path }: { path: string }) {
             aria-current={isActive ? "page" : undefined}
             className={cn(
               "group/rail flex flex-col items-center gap-1 rounded-md text-center text-[11px] leading-tight outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              isActive ? "font-medium text-white" : "text-white hover:text-white",
+              isActive ? "font-medium text-on-iron" : "text-on-iron-muted hover:text-on-iron",
             )}
           >
             <span
               className={cn(
                 "flex size-8 items-center justify-center rounded-md border border-transparent",
                 isActive
-                  ? "border-border bg-background shadow-xs text-black"
-                  : "group-hover/rail:bg-background/60",
+                  ? "border-iron-raised bg-iron-raised text-on-iron"
+                  : "group-hover/rail:bg-iron-raised",
               )}
             >
               <Icon className="size-4" aria-hidden="true" />
