@@ -563,7 +563,7 @@ export default function WorkspacePanel({
         aria-hidden={!open && layout.floats.length === 0 ? true : undefined}
         style={!open ? offStage(shownWidth) : fullscreen ? undefined : { width: shownWidth }}
         className={cn(
-          "relative -my-6 -mr-4 min-h-0 min-w-[300px] shrink-0 flex-col border-l bg-background",
+          "relative -my-6 -mr-4 min-h-0 min-w-[300px] shrink-0 flex-col border-l bg-card",
           "max-w-[min(70%,calc(100%-400px))]",
           "max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-10 max-lg:my-0 max-lg:mr-0 max-lg:w-full! max-lg:max-w-[480px]",
           "max-md:fixed max-md:inset-0 max-md:z-40 max-md:max-w-none",
