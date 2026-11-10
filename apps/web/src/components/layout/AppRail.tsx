@@ -13,13 +13,7 @@ export default function AppRail({ path }: { path: string }) {
       className="flex w-15 shrink-0 flex-col overflow-y-auto px-1 py-4 space-y-5 bg-[#1b2420]"
     >
       <div className="flex items-center justify-center w-full gap-3">
-        <img
-          src={logoUrl}
-          alt="Ingenious Clan"
-          className="flex-none"
-          width={28}
-          height={28}
-        />
+        <img src={logoUrl} alt="Ingenious Clan" className="flex-none" width={28} height={28} />
       </div>
       {APP_SECTIONS.filter((section) => !section.comingSoon).map((section) => {
         const isActive = section.id === active?.id;
@@ -31,9 +25,7 @@ export default function AppRail({ path }: { path: string }) {
             aria-current={isActive ? "page" : undefined}
             className={cn(
               "group/rail flex flex-col items-center gap-1 rounded-md text-center text-[11px] leading-tight outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              isActive
-                ? "font-medium text-white"
-                : "text-white hover:text-white",
+              isActive ? "font-medium text-white" : "text-white hover:text-white",
             )}
           >
             <span

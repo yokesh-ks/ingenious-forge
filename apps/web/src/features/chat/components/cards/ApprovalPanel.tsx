@@ -1,5 +1,6 @@
 import type { ApprovalDecision } from "@/api/types";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import DiffView from "@/features/git/components/DiffView";
 import type { Approval } from "@/features/session/session-reducer";
 import { cn } from "@/lib/utils";
@@ -32,33 +33,40 @@ export default function ApprovalPanel({
   }
   const what = approval.kind === "command" ? "Run this command?" : "Apply this edit?";
   return (
-    <section
+    <Card
+      className="mb-1.5 border border-[#e5ad1c] p-0 rounded-sm gap-4"
+      role="region"
       aria-label="Approval needed"
-      className="mb-1.5 flex flex-col gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2"
     >
-      <p className="text-xs font-medium">{what}</p>
-      {approval.command !== null && (
-        <pre className="overflow-x-auto rounded bg-muted px-2 py-1 font-mono text-xs">
-          {approval.command}
-        </pre>
-      )}
-      {approval.path !== null && (
-        <code className="font-mono text-xs text-muted-foreground">{approval.path}</code>
-      )}
-      {approval.diff !== null && <DiffView diff={approval.diff} />}
+      <CardHeader className="bg-[#e5ad1c] py-2 rounded-none">
+        <CardTitle className="text-xs font-medium">{what}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {approval.command !== null && (
+          <pre className="overflow-x-auto rounded bg-muted px-2 py-1 font-mono text-xs">
+            {approval.command}
+          </pre>
+        )}
+        {approval.path !== null && (
+          <code className="block font-mono text-xs text-muted-foreground">{approval.path}</code>
+        )}
+        {approval.diff !== null && <DiffView diff={approval.diff} />}
+      </CardContent>
       {onAnswer && (
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" onClick={() => onAnswer("approve")}>
-            Approve
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => onAnswer("deny")}>
-            Deny
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => onAnswer("always_allow")}>
-            Always allow
-          </Button>
-        </div>
+        <CardFooter className="mb-4">
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => onAnswer("approve")}>
+              Approve
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => onAnswer("deny")}>
+              Deny
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => onAnswer("always_allow")}>
+              Always allow
+            </Button>
+          </div>
+        </CardFooter>
       )}
-    </section>
+    </Card>
   );
 }
