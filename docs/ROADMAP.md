@@ -3,7 +3,7 @@
 Index of product work on the [Ingenious Forge board](https://github.com/users/yokesh-ks/projects/34).
 Scope comes from [PRD.md](PRD.md); detail lives in the linked issues.
 
-Last synced: 2026-10-31
+Last synced: 2026-11-22 (chat epics only; see Phase 2)
 
 > **Note — milestones pending:** The five Phase milestones need to be created on
 > GitHub (Settings → Milestones) with the titles and exit criteria below, then
@@ -46,7 +46,20 @@ Exit: A user completes a real coding task end to end — prompt, approvals, revi
 
 Exit: The team uses Forge daily to build Forge (PRD §9)
 
-No epics yet. P1 features from PRD §6.1 and §6.2 are planned here after Phase 1 ships.
+### Chats (planned 2026-11-22)
+
+| Epic | PRD | Refined | Stories | State |
+| --- | --- | --- | --- | --- |
+| [#244 The user works with the agent in a chat](https://github.com/yokesh-ks/ingenious-forge/issues/244) | §6.2 Chats | yes | #252, #253, #254, #256, #257, #255 | open |
+| [#245 The agent searches the web](https://github.com/yokesh-ks/ingenious-forge/issues/245) | §6.1 Web search | yes | #258, #263, #272, #273 | open |
+| [#246 The agent drives a browser](https://github.com/yokesh-ks/ingenious-forge/issues/246) | §6.1 Browser | yes | #259, #264, #265, #274, #266, #267 | open |
+| [#247 The agent writes a researched report](https://github.com/yokesh-ks/ingenious-forge/issues/247) | §6.1 Research | yes | #275, #281, #282, #285 | open |
+| [#248 User previews a web app the agent runs](https://github.com/yokesh-ks/ingenious-forge/issues/248) | §6.2 Workspace panel | yes | #260, #268 | open |
+| [#249 User teaches the agent a reusable skill](https://github.com/yokesh-ks/ingenious-forge/issues/249) | §6.1 Skills | yes | #223, #278, #279, #280, #283, #286, #284 | open |
+| [#250 A chat runs on a schedule](https://github.com/yokesh-ks/ingenious-forge/issues/250) | §6.2 Scheduled chats | yes | #261, #269, #276, #277 | open |
+| [#251 Chats share instructions in a folder](https://github.com/yokesh-ks/ingenious-forge/issues/251) | §6.2 Chats | yes | #262, #270, #271 | open |
+
+The other Phase 2 epics filed on 2026-11-11 (#137, #171–#185, #239–#241) are not yet indexed here; a full sync is pending.
 
 ---
 
@@ -67,6 +80,13 @@ Phase 1 dependencies:  #64 → #65 → #66, #67, #68, #72, #73, #74   (in parall
           #63 → #69 → #70 → #71
           #65 → #71
           #65 + #71 → #73
+
+Chats (Phase 2):  #252 → #253, #254, #256, #257, #255, #262, #269, #273
+          #170 + #258 → #263 → #272, #273, #275
+          #259 → #264, #265, #266, #267;  #265 → #274
+          #211 + #263 → #275 → #281, #282 → #285
+          #260 → #268;  #261 → #269 → #276, #277
+          #223 → #278 → #283 → #286;  #223 → #279, #280;  #223 + #256 → #284
 ```
 
 ## Stale
