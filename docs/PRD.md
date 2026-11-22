@@ -153,8 +153,13 @@ For a question that needs many sources, the agent plans the dimensions to cover,
 #### Code review command (`/review`) — P1
 Reviews uncommitted changes, a commit, or a whole branch and returns prioritized findings without changing any files.
 
-#### Skills and hooks — P2
-**Skills** are reusable instruction packs the agent loads when relevant (e.g. "release process"). **Hooks** run user scripts before or after tool calls (e.g. format after every edit, block certain commands).
+#### Skills — P1
+**Skills** are reusable instruction packs the agent loads when relevant (e.g. "release process", "weekly market report"). A skill is a folder with a `SKILL.md` (a name, a one-line description of when to use it, and instructions) and optional scripts, templates and reference files. Only each skill's name and description sit in the agent's context; the full instructions load when a task matches, and the session log names every skill loaded. Skills live in the user's skills folder, available to every chat and project, and in a project's `.agents/skills/` folder, available to that project. A user runs a skill by name from the composer as a slash command.
+
+The agent can also create and improve skills. Asked to "turn this into a skill", or offering to at the end of a repeated task, it drafts the `SKILL.md` and any scripts from the session's work and shows them as a diff; nothing is saved until the user approves, whatever the approval mode. While using a skill, the agent can propose a change to it the same way. Every saved change is kept as a version the user can compare and restore. A Skills page in Settings lists the installed skills with their source, turns each on or off, opens its files in the file tab, and deletes it after confirmation. Forge ships built-in skills for research reports, Word documents, slide decks, spreadsheets and charts; they write files with scripts in the sandbox, and the file viewers show the results.
+
+#### Hooks — P2
+**Hooks** run user scripts before or after tool calls (e.g. format after every edit, block certain commands).
 
 #### Cloud tasks — P2
 Send a task to a remote Forge environment, close the laptop, and apply the finished result to the local repository later.
