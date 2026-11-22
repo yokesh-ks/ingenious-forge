@@ -141,6 +141,15 @@ Users connect Model Context Protocol servers (local or remote) to give the agent
 #### Subagents — P1
 The agent can hand focused jobs (research a module, write tests, investigate a failure) to helper agents that run in parallel and report back, keeping the main session focused.
 
+#### Web search — P1
+A `web_search` tool returns ranked results (title, address and a short extract) for a query, and `web_fetch` reads the pages it picks. Search runs through a provider the user chooses and keys in Settings, through adapters like model providers, so new search providers can be added without changing the agent. Every claim the agent takes from the web is listed with its source address in the reply. Without a configured provider the tool is not offered.
+
+#### Browser — P1
+The agent can drive a headless browser: open an address, read the page as a list of its headings, text and numbered controls, click or type into a control by its number, scroll, go back, and take a screenshot for models that read images. Forge uses a Chromium-family browser installed on the user's machine and tells the user how to install one if none is found. The browser runs with a fresh profile kept in the session's folder, never the user's own profile, and closes with the session. Submitting a form or downloading a file follows the session's approval mode like a command does. Page content is marked as untrusted in the tool result.
+
+#### Research — P1
+For a question that needs many sources, the agent plans the dimensions to cover, hands each to a helper agent (see Subagents) that searches and reads in parallel, and writes a report with its sources. The report is saved as a Markdown file in the session's folder and opened in the workspace panel.
+
 #### Code review command (`/review`) — P1
 Reviews uncommitted changes, a commit, or a whole branch and returns prioritized findings without changing any files.
 
@@ -167,7 +176,7 @@ A global icon rail on the far left of every page holds the app's sections: Work,
 The Work section's sidebar lists recent projects, with the main area empty until one is chosen. An icon in the sidebar's Projects header opens the operating system's folder dialog, titled "Select Project Directory", to open another folder from disk. Each project expands in that sidebar to list its sessions (title and status) so the user can switch between them or resume old ones. A project's first session starts when it is opened with none. Each project row has an icon that starts a new session and a menu to rename the project (its name in Forge only), show its folder in the system file manager, or delete the workspace. Deleting asks for confirmation, is refused while one of its sessions is running, and removes the project and its session history from Forge without touching the folder on disk. Each session row has icons to pin and archive it and a menu to pin it, rename it, fork it, copy its id, open the project folder in the system file manager, VS Code or a terminal, or archive it. Pinned sessions stay at the top of the project's list. Forking starts a new session with a copy of the conversation so far, the same model and the same approval mode. Archiving hides a session under the project's Archived group, from where it can be restored; a running session can be neither forked nor archived.
 
 #### Chats — P1
-A toggle at the top of the Work sidebar switches it between **Code**, the project list described above, and **Chat**, a list of chats. A chat is a session with no project: it is for questions, planning, documents and one-off scripts that belong in no repository. Each chat gets a scratch folder that Forge creates for it in its own data directory, and the agent works there with the same tools, sandbox and approval modes as in a project. The workspace panel shows the scratch folder's files, so documents, spreadsheets and PDFs the agent writes open in the file viewers. A chat has no git status, changed-files panel or git actions, and loads no `AGENTS.md`. The Chat list has an icon to start a new chat, and each chat row can be pinned, renamed, archived or deleted like a session; deleting a chat asks for confirmation and removes its scratch folder. A chat's menu has **Move to project**: the user picks a parent folder and a name, Forge moves the scratch folder there, initializes a git repository in it, and opens it as a project whose first session is the chat, with its history kept.
+A toggle at the top of the Work sidebar switches it between **Code**, the project list described above, and **Chat**, a list of chats. A chat is a session with no project: it is for questions, planning, documents and one-off scripts that belong in no repository. Each chat gets a scratch folder that Forge creates for it in its own data directory, and the agent works there with the same tools, sandbox and approval modes as in a project. The workspace panel shows the scratch folder's files, so documents, spreadsheets and PDFs the agent writes open in the file viewers. A chat has no git status, changed-files panel or git actions, and loads no `AGENTS.md`. In a chat, Forge's own web tools (Web search, `web_fetch`, Browser) may reach the network by default, while shell commands keep the project rule of no network until the user widens the chat's sandbox. When the agent finishes a piece of work it can present its result files, which appear under its reply as cards that open in the workspace panel. The Chat list has an icon to start a new chat, and each chat row can be pinned, renamed, archived or deleted like a session; deleting a chat asks for confirmation and removes its scratch folder. A chat's menu has **Move to project**: the user picks a parent folder and a name, Forge moves the scratch folder there, initializes a git repository in it, and opens it as a project whose first session is the chat, with its history kept.
 
 #### Live session view — P0
 The agent's work streams into the browser as it happens: messages (rendered markdown and code), each tool call with its input and output, command output as it prints, and diffs as files change. Long sessions stay fast, and a dropped connection reconnects without losing or duplicating output.
@@ -185,6 +194,8 @@ A panel next to the chat, opened and closed from the session header. It starts c
 - **File tab:** the file's full path, with a choice of how to show it (rendered Markdown, code with line numbers, plain text, an image or PDF with zoom, an HTML page running in a sandbox, a spreadsheet for Excel, CSV and TSV files, or a PDF conversion of a Word or PowerPoint file, which warns of fonts this computer lacks), a reload button, automatic refresh when the file changes, an action to open it in any installed app that handles its type or show it in the file manager, and a toggle for the project file tree beside it. Opening a file that already has a tab selects that tab.
 - **Workspace files:** the project's folder and its file tree, listed one folder at a time; choosing a file opens its file tab.
 - **Changes:** the changed files and their diffs (see below).
+- **Browser (P1):** a live view of the agent's browser, streamed as it works, with its address and an action to take control so the user can log in or solve a check before handing back. Opens when the agent first uses the browser.
+- **Preview (P1):** a web app the agent starts in the session's folder, shown from its port through the Forge server on `localhost` only, with reload and open-in-new-tab actions.
 - **Terminal:** an interactive terminal in the project folder, choosing among the installed shells and remembering the choice. Its tab is named after the shell and can be renamed by double-clicking it.
 - **Session log:** the session's recorded events, as a raw list grouped by turn and step or as the chat's own parts (messages, each turn's process, each step's reasoning and response, and its tool calls in a group). Each record shows its index, type, turn and step, time and data; types can be filtered, groups folded and older records loaded. Selecting a record shows its raw data and marks its place in the chat, and an element picked in the chat selects its record.
 
@@ -195,7 +206,7 @@ A panel listing every file changed in the session, with unified or side-by-side 
 The row above the composer shows the current branch and status. The chat window has no buttons for git changes: the user asks the agent in the chat to create a branch, commit or push.
 
 #### Settings — P0
-Appearance (light, dark or following the system), model providers and API keys, default model and effort, default approval mode and sandbox rules, and the GitHub connection, each on its own page. For each provider the user can change the base URL and choose which models to offer, including from the list the provider reports. Each connected provider shows whether its key is good: green after a successful save or a passing key test, red after a failed test. Showing this makes no request to the provider. No provider is configured by default: a session cannot start until the user configures at least one, and the agent makes no model call before then. A key set through the provider's environment variable counts as configured.
+Appearance (light, dark or following the system), model providers and API keys, default model and effort, default approval mode and sandbox rules, the web search provider and its key (P1), and the GitHub connection, each on its own page. For each provider the user can change the base URL and choose which models to offer, including from the list the provider reports. Each connected provider shows whether its key is good: green after a successful save or a passing key test, red after a failed test. Showing this makes no request to the provider. No provider is configured by default: a session cannot start until the user configures at least one, and the agent makes no model call before then. A key set through the provider's environment variable counts as configured.
 
 #### Typed API — P0
 All data exchanged between server and browser is defined once in the backend and generated as TypeScript types for the frontend. CI fails if they drift apart.
@@ -293,6 +304,7 @@ graph TB
 
 - **Backend:** Rust, with modules `server`, `agent`, `services`, `git`, `db`, `api-types`, `utils`. The Board release adds a `board` service and a worktree manager.
 - **Frontend:** React and TypeScript single-page app, served by the local server.
+- **Browser (P1):** a Chromium-family browser already installed on the user's machine, driven over the Chrome DevTools Protocol by the `agent` crate. It is detected, not bundled.
 - **Distribution:** one npm package (`ingenious-forge`) that bundles prebuilt server binaries for macOS, Linux and Windows plus the built web UI. The `npx` entry script picks the right binary, starts it and opens the browser. No desktop app is built or shipped.
 
 ## 9. Release plan
@@ -321,6 +333,7 @@ graph TB
 | R1 | Sandboxing on Windows | WSL for MVP |
 | R2 | Agent changes that look right but don't work | The terminal in every session makes it quick to run tests before committing |
 | R3 | Exposing the server beyond `localhost` by mistake | Off by default; explicit flag plus an access token when enabled |
+| R4 | Web pages steering the agent (prompt injection) through search, fetch or the browser | Web content is marked untrusted in tool results; approval modes still gate commands, writes and form submissions; the browser never uses the user's own profile |
 | Q1 | Final name for the headless command (`forge exec`?) | |
 | Q3 | Hosted offering: InGeniousClan-hosted, self-host only, or both | |
 
