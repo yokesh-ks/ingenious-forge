@@ -10,7 +10,7 @@
 
 ## 1. Summary
 
-Ingenious Forge is a web-native coding harness. Engineers open a project in the browser, give an AI coding agent a task, watch and steer its work live, review the changes, and commit them.
+Ingenious Forge is a web-native coding harness. Engineers open a project in the browser, give an AI coding agent a task, watch and steer its work live, review the changes, and commit them. For work that has no repository yet, a chat gives the same agent a scratch folder of its own.
 
 Forge ships as a **web UI launched with `npx`**. One command starts Forge on the user's machine and opens it in their browser — there is no desktop app or terminal UI to install. Every feature is delivered through the web interface, which keeps the product simple, accessible, and the same on macOS, Linux and Windows.
 
@@ -107,7 +107,7 @@ The agent works in turns: it sends the conversation to the model, streams the re
 The model can call several tools in one reply; the agent runs them and returns every result before the next request. Each result keeps structured details beside its text, such as the line numbers and total line count of a read, so the UI can present it.
 
 #### Sandbox — P0
-Every command the agent runs is confined by an operating-system sandbox on macOS, Linux and Windows. By default the agent can write only inside the project folder and has no network access; projects can widen this (for example, allow network for package installs). The current sandbox and writable folders are always visible in the UI.
+Every command the agent runs is confined by an operating-system sandbox on macOS, Linux and Windows. By default the agent can write only inside the project folder (a chat's scratch folder, for a chat) and has no network access; projects can widen this (for example, allow network for package installs). The current sandbox and writable folders are always visible in the UI.
 
 #### Approval modes — P0
 Users choose how much the agent may do without asking:
@@ -161,10 +161,13 @@ How Forge is delivered and used: a local server that owns the agent and projects
 A single server process runs the agent and exposes it over HTTP and WebSocket to the web UI. It binds to `localhost` by default. Because state lives in the server, closing the browser tab does not stop a running agent; reopening the page reconnects to it, and several tabs can view the same session.
 
 #### App navigation — P0
-A global icon rail on the far left of every page holds the app's sections: Work, Artifacts, Scheduled, Plugins, Sites, Code Review and Settings. A slim top bar above it holds the Forge name and the theme toggle. Work opens the projects area and is the only section with the project sidebar; Settings has its own sidebar of settings pages. Artifacts, Scheduled, Plugins, Sites and Code Review each open a "coming soon" placeholder page for now, and listing them here does not commit to any feature behind them.
+A global icon rail on the far left of every page holds the app's sections: Work, Artifacts, Scheduled, Plugins, Sites, Code Review and Settings. A slim top bar above it holds the Forge name and the theme toggle. Work opens the projects area and is the only section with the project sidebar, which has a Chat / Code toggle at its top (see Chats); Settings has its own sidebar of settings pages. Artifacts, Scheduled, Plugins, Sites and Code Review each open a "coming soon" placeholder page for now, and listing them here does not commit to any feature behind them.
 
 #### Projects and session list — P0
 The Work section's sidebar lists recent projects, with the main area empty until one is chosen. An icon in the sidebar's Projects header opens the operating system's folder dialog, titled "Select Project Directory", to open another folder from disk. Each project expands in that sidebar to list its sessions (title and status) so the user can switch between them or resume old ones. A project's first session starts when it is opened with none. Each project row has an icon that starts a new session and a menu to rename the project (its name in Forge only), show its folder in the system file manager, or delete the workspace. Deleting asks for confirmation, is refused while one of its sessions is running, and removes the project and its session history from Forge without touching the folder on disk. Each session row has icons to pin and archive it and a menu to pin it, rename it, fork it, copy its id, open the project folder in the system file manager, VS Code or a terminal, or archive it. Pinned sessions stay at the top of the project's list. Forking starts a new session with a copy of the conversation so far, the same model and the same approval mode. Archiving hides a session under the project's Archived group, from where it can be restored; a running session can be neither forked nor archived.
+
+#### Chats — P1
+A toggle at the top of the Work sidebar switches it between **Code**, the project list described above, and **Chat**, a list of chats. A chat is a session with no project: it is for questions, planning, documents and one-off scripts that belong in no repository. Each chat gets a scratch folder that Forge creates for it in its own data directory, and the agent works there with the same tools, sandbox and approval modes as in a project. The workspace panel shows the scratch folder's files, so documents, spreadsheets and PDFs the agent writes open in the file viewers. A chat has no git status, changed-files panel or git actions, and loads no `AGENTS.md`. The Chat list has an icon to start a new chat, and each chat row can be pinned, renamed, archived or deleted like a session; deleting a chat asks for confirmation and removes its scratch folder. A chat's menu has **Move to project**: the user picks a parent folder and a name, Forge moves the scratch folder there, initializes a git repository in it, and opens it as a project whose first session is the chat, with its history kept.
 
 #### Live session view — P0
 The agent's work streams into the browser as it happens: messages (rendered markdown and code), each tool call with its input and output, command output as it prints, and diffs as files change. Long sessions stay fast, and a dropped connection reconnects without losing or duplicating output.
@@ -327,6 +330,7 @@ graph TB
 |---|---|
 | **Project** | A git repository opened in Forge |
 | **Session** | One conversation with the agent in a project, with its full history of messages, tool calls and changes |
+| **Chat** | A session with no project, which works in a scratch folder of its own and can later be moved into a project |
 | **Turn** | One round of the agent working in response to a message |
 | **Step** | One model request within a turn, plus the tool calls it makes |
 | **Approval mode** | How much the agent may do without asking the user |
