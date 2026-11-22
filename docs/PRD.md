@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | Draft v0.5 |
 | **Owner** | yokesh-ks |
-| **Last updated** | 2026-10-30 |
+| **Last updated** | 2026-11-22 |
 
 ---
 
@@ -73,7 +73,7 @@ flowchart LR
 
 1. The user runs `npx ingenious-forge`; the browser opens on the Forge home page.
 2. They pick a project folder (a git repository) or a recent project.
-3. They start a session and describe the task, optionally attaching images.
+3. They start a session and describe the task, optionally attaching images or files.
 4. The agent works. The user watches live, answers approval prompts, or steers it mid-turn.
 5. The changed-files panel shows every file the agent touched with its diff. The user comments or asks for changes in the chat.
 6. The user accepts: they ask the agent in the chat to commit, push, and optionally open a pull request. Or they discard the changes.
@@ -129,8 +129,8 @@ Every session is recorded as an append-only log of messages, tool calls and resu
 #### Context management — P1
 When a long session approaches the model's context limit, older parts are summarized automatically so the agent can keep working without losing the thread.
 
-#### Image input — P1
-Screenshots, mockups and diagrams can be attached to a prompt; the agent uses them as context (for example, "make the page look like this").
+#### Image and file input — P1
+Screenshots, mockups and diagrams can be attached to a prompt; the agent uses them as context (for example, "make the page look like this"). Text files and documents can be attached the same way, and the agent receives their content. An attachment is added from an attach button in the composer, by dragging it onto the composer, or by pasting it from the clipboard. Each attachment shows as a removable chip before the message is sent. An image the model cannot read, or a file too large to send, is reported before sending. The session log names every attachment.
 
 #### Headless mode (`forge exec`) — P1
 Runs a task without the UI, for scripts and CI pipelines only — it is an automation entry point, not an alternative interface for people. It prints progress, exits with a meaningful code, and can emit a JSON result describing what was changed.
